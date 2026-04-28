@@ -1,0 +1,11 @@
+time=2026-04-28T11:47:21.669-04:00 level=INFO msg="goose: no migrations to run. current version: 2"
+time=2026-04-28T11:47:21.669-04:00 level=INFO msg="database ready" path=./data/diet.db
+time=2026-04-28T11:47:21.670-04:00 level=INFO msg="server starting" addr=:8080 env=development db=./data/diet.db
+time=2026-04-28T11:47:27.433-04:00 level=INFO msg=request method=HEAD path=/ status=405 duration_ms=0 remote=[::1]:51790
+time=2026-04-28T11:47:27.444-04:00 level=INFO msg=request method=HEAD path=/assets/index-Dz4NsB3S.css status=405 duration_ms=0 remote=[::1]:51798
+time=2026-04-28T11:47:27.457-04:00 level=INFO msg=request method=HEAD path=/assets/index-xWC3cWlV.js status=405 duration_ms=0 remote=[::1]:51810
+time=2026-04-28T11:47:27.467-04:00 level=INFO msg=request method=HEAD path=/manifest.webmanifest status=405 duration_ms=0 remote=[::1]:51812
+time=2026-04-28T11:47:38.197-04:00 level=INFO msg=request method=GET path=/ status=301 duration_ms=0 remote=[::1]:39954
+time=2026-04-28T11:47:38.208-04:00 level=INFO msg=request method=GET path=/assets/index-Dz4NsB3S.css status=200 duration_ms=0 remote=[::1]:39966
+time=2026-04-28T11:47:38.222-04:00 level=INFO msg=request method=GET path=/assets/index-xWC3cWlV.js status=200 duration_ms=0 remote=[::1]:39978
+time=2026-04-28T11:47:38.235-04:00 level=INFO msg=request method=GET path=/manifest.webmanifest status=200 duration_ms=0 remote=[::1]:39990
