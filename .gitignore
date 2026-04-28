@@ -1,0 +1,19 @@
+# Binaries
+diet-tracker-server
+*.exe
+
+# Data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+
+# Build artifacts
+dist/
+node_modules/
+
+# Go
+vendor/

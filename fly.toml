@@ -1,0 +1,45 @@
+app = "diet-tracker-v2"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  DB_PATH = "/data/diet.db"
+  ENV = "production"
+  APP_DOMAIN = "https://diet-tracker-v2.fly.dev"
+  # Secrets (set via: fly secrets set KEY=value)
+  # JWT_SECRET
+  # GEMINI_API_KEY
+  # LITESTREAM_BUCKET
+  # LITESTREAM_REGION
+  # LITESTREAM_ACCESS_KEY_ID
+  # LITESTREAM_SECRET_ACCESS_KEY
+  # LITESTREAM_ENDPOINT
+
+[metrics]
+  port = 9090
+  path = "/metrics"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[mounts]]
+  source = "diet_data"
+  destination = "/data"
+  initial_size = "1gb"
