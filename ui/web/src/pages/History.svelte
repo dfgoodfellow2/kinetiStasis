@@ -203,8 +203,7 @@
                 <th class="py-2 pr-4">Date</th>
                 <th class="pr-4">Weight ({weightUnit(store.units)})</th>
                 <th class="pr-4">Waist ({lengthUnit(store.units)})</th>
-                <th class="pr-4">Shoulders</th>
-                <th class="pr-4">Calves</th>
+                
                 <th class="pr-4">Sleep h</th>
                 <th class="pr-4">Sleep Q</th>
                 <th class="pr-4">Feel</th>
@@ -219,8 +218,7 @@
                 <td class="py-2 pr-4">{row.date}</td>
                  <td class="pr-4">{row.weight_kg ? dispWeight(row.weight_kg, store.units) : '—'}</td>
                  <td class="pr-4">{row.waist_cm ? dispLength(row.waist_cm, store.units) : '—'}</td>
-                 <td class="pr-4">{row.shoulders_cm ? dispLength(row.shoulders_cm, store.units) : '—'}</td>
-                 <td class="pr-4">{row.calves_cm ? dispLength(row.calves_cm, store.units) : '—'}</td>
+                 
                 <td class="pr-4">{row.sleep_hours ?? '—'}</td>
                 <td class="pr-4">{row.sleep_quality ?? '—'}</td>
                 <td class="pr-4">{row.subjective_feel ?? '—'}</td>
