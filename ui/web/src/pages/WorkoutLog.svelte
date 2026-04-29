@@ -317,46 +317,60 @@
     return acc + (l > 0 ? Math.round(l * r * s) : 0)
   }, 0))
 
-  onMount(() => {
+  onMount(async () => {
     // Check if editing existing workout
     if (store.editData && store.editData.type === 'workout') {
       const w = store.editData.data
-      workout.date = w.date
-      workout.slot = String(w.slot)
-      workout.title = w.title || ''
-      workout.type = w.type || 'strength'
-      workout.style = w.style || ''
-      workout.surface = w.surface || ''
-      workout.focus = w.focus || ''
-      workout.rest_interval = w.rest_interval || ''
-      workout.duration_min = String(w.duration_min || '')
-      workout.rpe = w.rpe || ''
-      workout.avg_hr = String(w.avg_hr || '')
-      workout.max_hr = String(w.max_hr || '')
-      workout.calories_burned = String(w.calories_burned || '')
-      workout.notes = w.raw_notes || ''
-      workout.coach_notes = w.coach_notes || ''
-      // Map exercises to simple tab format
-      workout.exercises = (w.exercises || []).map(ex => {
-        // If already in simple tab format, use as-is
-        if (ex && ex.name && (ex.sets !== undefined || ex._sets)) {
-          return {
-            name: ex.name || '',
-            type: ex.type || 'strength',
-            // preserve legacy flat fields as strings for the simple UI
-            sets: String(ex.sets || (ex._sets ? ex._sets.length : '')),
-            reps: String(ex.reps || (ex._sets && ex._sets[0] ? ex._sets[0].reps : '')),
-            weight_lbs: ex.weight_lbs || (ex._sets ? String(ex._sets[0]?.load_lbs || '') : ''),
-            duration: ex.duration || '',
-            notes: ex.notes || '',
-            // keep nested _sets for accurate volume calculations / round-trip
-            _sets: ex._sets || [],
+      
+      // Build a YAML representation of the workout
+      let yamlText = `title: ${w.title || 'Workout'}\ntype: ${w.type || 'strength'}\n`
+      if (w.date) yamlText += `date: ${w.date}\n`
+      if (w.duration_min) yamlText += `duration: ${w.duration_min}\n`
+      if (w.calories_burned) yamlText += `calories: ${w.calories_burned}\n`
+      if (w.raw_notes) yamlText += `notes: ${w.raw_notes}\n`
+      if (w.exercises && w.exercises.length > 0) {
+        yamlText += 'exercises:\n'
+        for (const ex of w.exercises) {
+          yamlText += `  - name: "${ex.name}"\n`
+          if (ex.category) yamlText += `    type: ${ex.category}\n`
+          if (ex.Sets && ex.Sets.length > 0) {
+            yamlText += `    sets: ${ex.Sets.length}\n`
+            yamlText += `    reps: ${ex.Sets[0].reps || 0}\n`
+            if (ex.Sets[0].load_kg) {
+              yamlText += `    load: ${Math.round(ex.Sets[0].load_kg * 2.20462)} lbs\n`
+            }
           }
         }
-        // Otherwise create blank
-        return { name: '', type: 'strength', sets: '', reps: '', weight_lbs: '', duration: '', notes: '', _sets: [] }
-      })
-      tab = 'simple'  // switch to simple tab for basic editing
+      }
+      
+      try {
+        // Parse through the API which converts to simple format
+        let parsed
+        try {
+          parsed = await api.parseWorkout(yamlText, 'simple')
+        } catch (innerErr) {
+          // Fallback to yaml format if 'simple' not supported
+          parsed = await api.parseWorkout(yamlText, 'yaml')
+        }
+        if (parsed) {
+          workout.date = parsed.date || w.date
+          workout.slot = String(parsed.slot || w.slot || '1')
+          workout.title = parsed.title || w.title || ''
+          workout.type = parsed.type || 'strength'
+          workout.duration_min = String(parsed.duration_min || '')
+          workout.calories_burned = String(parsed.calories_burned || '')
+          workout.notes = parsed.raw_notes || w.raw_notes || ''
+          workout.exercises = parsed.exercises || []
+        }
+      } catch (e) {
+        // Fall back to basic fields
+        workout.date = w.date
+        workout.title = w.title || ''
+        workout.type = w.type || 'strength'
+        workout.duration_min = String(w.duration_min || '')
+      }
+      
+      tab = 'simple'
       clearEditData()
     }
   })
