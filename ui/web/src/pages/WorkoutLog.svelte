@@ -317,59 +317,53 @@
     return acc + (l > 0 ? Math.round(l * r * s) : 0)
   }, 0))
 
-  onMount(async () => {
+  onMount(() => {
     // Check if editing existing workout
     if (store.editData && store.editData.type === 'workout') {
       const w = store.editData.data
-      
-      // Build a YAML representation of the workout
-      let yamlText = `title: ${w.title || 'Workout'}\ntype: ${w.type || 'strength'}\n`
-      if (w.date) yamlText += `date: ${w.date}\n`
-      if (w.duration_min) yamlText += `duration: ${w.duration_min}\n`
-      if (w.calories_burned) yamlText += `calories: ${w.calories_burned}\n`
-      if (w.raw_notes) yamlText += `notes: ${w.raw_notes}\n`
-      if (w.exercises && w.exercises.length > 0) {
-        yamlText += 'exercises:\n'
-        for (const ex of w.exercises) {
-          yamlText += `  - name: "${ex.name}"\n`
-          if (ex.category) yamlText += `    type: ${ex.category}\n`
-          if (ex.Sets && ex.Sets.length > 0) {
-            yamlText += `    sets: ${ex.Sets.length}\n`
-            yamlText += `    reps: ${ex.Sets[0].reps || 0}\n`
-            if (ex.Sets[0].load_kg) {
-              yamlText += `    load: ${Math.round(ex.Sets[0].load_kg * 2.20462)} lbs\n`
-            }
-          }
+
+      // Basic fields
+      workout.date = w.date || today()
+      workout.slot = String(w.slot || '1')
+      workout.title = w.title || ''
+      workout.type = w.type || 'strength'
+      workout.style = w.style || ''
+      workout.surface = w.surface || ''
+      workout.focus = w.focus || ''
+      workout.rest_interval = w.rest_interval || ''
+      workout.duration_min = String(w.duration_min || '')
+      workout.rpe = w.rpe || ''
+      workout.avg_hr = String(w.avg_hr || '')
+      workout.max_hr = String(w.max_hr || '')
+      workout.calories_burned = String(w.calories_burned || '')
+      workout.notes = w.raw_notes || ''
+      workout.coach_notes = w.coach_notes || ''
+
+      // Map exercises from API format (ExerciseEntry.Sets)
+      workout.exercises = (w.exercises || []).map(ex => {
+        const firstSet = ex.Sets?.[0]
+        return {
+          name: ex.name || '',
+          type: ex.category || 'strength',
+          surface: ex.surface || '',
+          notes: ex.notes || '',
+          pace: ex.pace || '',
+          duration: ex.DurationRaw || '',
+          // Legacy fields for display
+          sets: String(ex.Sets?.length || 0),
+          reps: String(firstSet?.reps || 0),
+          weight_lbs: firstSet?.load_lbs ? String(Math.round(firstSet.load_lbs)) : '',
+          // _sets array for volume calc
+          _sets: (ex.Sets || []).map(s => ({
+            load_kg: s.load_kg,
+            load_lbs: s.load_lbs,
+            reps: s.reps,
+            rpe: s.rpe,
+            tempo: s.tempo,
+          }))
         }
-      }
-      
-      try {
-        // Parse through the API which converts to simple format
-        let parsed
-        try {
-          parsed = await api.parseWorkout(yamlText, 'simple')
-        } catch (innerErr) {
-          // Fallback to yaml format if 'simple' not supported
-          parsed = await api.parseWorkout(yamlText, 'yaml')
-        }
-        if (parsed) {
-          workout.date = parsed.date || w.date
-          workout.slot = String(parsed.slot || w.slot || '1')
-          workout.title = parsed.title || w.title || ''
-          workout.type = parsed.type || 'strength'
-          workout.duration_min = String(parsed.duration_min || '')
-          workout.calories_burned = String(parsed.calories_burned || '')
-          workout.notes = parsed.raw_notes || w.raw_notes || ''
-          workout.exercises = parsed.exercises || []
-        }
-      } catch (e) {
-        // Fall back to basic fields
-        workout.date = w.date
-        workout.title = w.title || ''
-        workout.type = w.type || 'strength'
-        workout.duration_min = String(w.duration_min || '')
-      }
-      
+      })
+
       tab = 'simple'
       clearEditData()
     }
