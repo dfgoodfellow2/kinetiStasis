@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { store, clearEditData } from '../lib/stores.svelte.js'
   import { api } from '../lib/api.js'
   import { today } from '../lib/utils.js'
   import Card from '../components/Card.svelte'
@@ -15,6 +16,25 @@
   let aiText = $state('')
   let aiResult = $state(null)
   let aiLoading = $state(false)
+
+  onMount(() => {
+    // Check if we're editing an existing nutrition log
+    if (store.editData && store.editData.type === 'nutrition') {
+      const row = store.editData.data
+      form = { 
+        date: row.date, 
+        calories: String(row.calories ?? ''), 
+        protein: String(row.protein_g ?? ''), 
+        carbs: String(row.carbs_g ?? ''), 
+        fat: String(row.fat_g ?? ''), 
+        fiber: String(row.fiber_g ?? ''), 
+        water_ml: String(row.water_ml ?? ''), 
+        notes: row.meal_notes ?? '' 
+      }
+      mode = 'manual'
+      clearEditData()
+    }
+  })
 
   async function submitManual() {
     error = ''

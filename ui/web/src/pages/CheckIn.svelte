@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
-  import { store } from '../lib/stores.svelte.js'
+  import { store, clearEditData } from '../lib/stores.svelte.js'
   import { today, daysAgo, dispWeight, weightUnit, inputWeight, dispLength, lengthUnit, inputLength, inputLoad, dispLoad, loadUnit } from '../lib/utils.js'
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
@@ -61,17 +61,19 @@
     measLoading = true
     try {
       await api.postMeasurement({
-        date:      measForm.date,
-        neck_cm:   inputLength(measForm.neck_cm, store.units),
-        chest_cm:  inputLength(measForm.chest_cm, store.units),
-        waist_cm:  inputLength(measForm.waist_cm, store.units),
-        hips_cm:   inputLength(measForm.hips_cm, store.units),
-        thigh_cm:  inputLength(measForm.thigh_cm, store.units),
-        bicep_cm:  inputLength(measForm.bicep_cm, store.units),
-        notes:     measForm.notes || '',
+        date:         measForm.date,
+        neck_cm:      inputLength(measForm.neck_cm, store.units),
+        chest_cm:     inputLength(measForm.chest_cm, store.units),
+        waist_cm:     inputLength(measForm.waist_cm, store.units),
+        hips_cm:      inputLength(measForm.hips_cm, store.units),
+        thigh_cm:     inputLength(measForm.thigh_cm, store.units),
+        bicep_cm:     inputLength(measForm.bicep_cm, store.units),
+        shoulders_cm: inputLength(measForm.shoulders_cm, store.units),
+        calves_cm:    inputLength(measForm.calves_cm, store.units),
+        notes:        measForm.notes || '',
       })
       measSuccess = 'Measurement saved'
-      measForm = { date: today(), neck_cm: '', chest_cm: '', waist_cm: '', hips_cm: '', thigh_cm: '', bicep_cm: '', notes: '' }
+      measForm = { date: today(), neck_cm: '', chest_cm: '', waist_cm: '', hips_cm: '', thigh_cm: '', bicep_cm: '', shoulders_cm: '', calves_cm: '', notes: '' }
       await loadMeasurements()
     } catch (e) {
       measError = e.message
@@ -97,6 +99,40 @@
   }
 
   onMount(() => {
+    // Check if we're editing existing data
+    if (store.editData) {
+      if (store.editData.type === 'biometric') {
+        const row = store.editData.data
+        dailyForm = { 
+          date: row.date, 
+          weight_kg: String(row.weight_kg ?? ''),
+          waist_cm: String(row.waist_cm ?? ''),
+          grip_kg: String(row.grip_kg ?? ''),
+          bolt_score: String(row.bolt_score ?? ''),
+          sleep_hours: String(row.sleep_hours ?? ''),
+          sleep_quality: String(row.sleep_quality ?? ''),
+          subjective: String(row.subjective_feel ?? ''),
+          notes: row.notes ?? ''
+        }
+        tab = 'daily'
+      } else if (store.editData.type === 'measurement') {
+        const row = store.editData.data
+        measForm = {
+          date: row.date,
+          neck_cm: String(row.neck_cm ?? ''),
+          chest_cm: String(row.chest_cm ?? ''),
+          waist_cm: String(row.waist_cm ?? ''),
+          hips_cm: String(row.hips_cm ?? ''),
+          thigh_cm: String(row.thigh_cm ?? ''),
+          bicep_cm: String(row.bicep_cm ?? ''),
+          shoulders_cm: String(row.shoulders_cm ?? ''),
+          calves_cm: String(row.calves_cm ?? ''),
+          notes: row.notes ?? ''
+        }
+        tab = 'measurements'
+      }
+      clearEditData()
+    }
     loadMeasurements()
     loadBodyFat()
   })

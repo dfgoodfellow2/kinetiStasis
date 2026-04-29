@@ -29,7 +29,7 @@ func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if to == "" {
 		to = today
 	}
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,shoulders_cm,calves_cm,notes,created_at FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, claims.UserID, from, to)
+	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, claims.UserID, from, to)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -38,7 +38,7 @@ func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
 	var out []models.BodyMeasurement
 	for rows.Next() {
 		var m models.BodyMeasurement
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Date, &m.NeckCm, &m.ChestCm, &m.WaistCm, &m.HipsCm, &m.ThighCm, &m.BicepCm, &m.ShouldersCm, &m.CalvesCm, &m.Notes, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Date, &m.NeckCm, &m.ChestCm, &m.WaistCm, &m.HipsCm, &m.ThighCm, &m.BicepCm, &m.Notes, &m.CreatedAt, &m.ShouldersCm, &m.CalvesCm); err != nil {
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}
@@ -47,7 +47,7 @@ func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, out)
 }
 
-// POST /v1/measurements — insert or ignore (one per date)
+// POST /v1/measurements — upsert (insert or update)
 func (h *MeasurementsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	var in models.BodyMeasurement
@@ -59,18 +59,14 @@ func (h *MeasurementsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		in.ID = uuid.New().String()
 	}
 	now := time.Now().UTC().Format(constants.TimeFormat)
-	res, err := h.db.ExecContext(r.Context(), `INSERT OR IGNORE INTO body_measurements (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,shoulders_cm,calves_cm,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, in.ID, in.UserID, in.Date, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.ShouldersCm, in.CalvesCm, in.Notes, now)
+	// UPSERT: insert or replace if date already exists for this user
+	_, err := h.db.ExecContext(r.Context(), `INSERT INTO body_measurements (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,date) DO UPDATE SET neck_cm=excluded.neck_cm,chest_cm=excluded.chest_cm,waist_cm=excluded.waist_cm,hips_cm=excluded.hips_cm,thigh_cm=excluded.thigh_cm,bicep_cm=excluded.bicep_cm,notes=excluded.notes,shoulders_cm=excluded.shoulders_cm,calves_cm=excluded.calves_cm`, in.ID, in.UserID, in.Date, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.Notes, now, in.ShouldersCm, in.CalvesCm)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	if ra, _ := res.RowsAffected(); ra == 0 {
-		// already exists
-		respond.Error(w, http.StatusConflict, "measurement for date already exists")
-		return
-	}
 	in.CreatedAt = now
-	respond.JSON(w, http.StatusCreated, in)
+	respond.JSON(w, http.StatusOK, in)
 }
 
 // PUT /v1/measurements/{date} — update existing
@@ -83,7 +79,7 @@ func (h *MeasurementsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	in.UserID = claims.UserID
 	in.Date = date
-	res, err := h.db.ExecContext(r.Context(), `UPDATE body_measurements SET neck_cm=?,chest_cm=?,waist_cm=?,hips_cm=?,thigh_cm=?,bicep_cm=?,shoulders_cm=?,calves_cm=?,notes=? WHERE user_id=? AND date=?`, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.ShouldersCm, in.CalvesCm, in.Notes, claims.UserID, date)
+	res, err := h.db.ExecContext(r.Context(), `UPDATE body_measurements SET neck_cm=?,chest_cm=?,waist_cm=?,hips_cm=?,thigh_cm=?,bicep_cm=?,notes=?,shoulders_cm=?,calves_cm=? WHERE user_id=? AND date=?`, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.Notes, in.ShouldersCm, in.CalvesCm, claims.UserID, date)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return

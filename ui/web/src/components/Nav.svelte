@@ -6,7 +6,6 @@
   function goto(p) {
     setCurrentPage(p)
     mobileOpen = false
-    moreOpen = false
   }
 
   async function doLogout() {
