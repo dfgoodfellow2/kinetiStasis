@@ -291,39 +291,22 @@
     {:else if wrkData.length === 0}
       <div class="text-gray-400">No workouts logged in the last 30 days.</div>
     {:else}
-      <div class="space-y-3">
+      <div class="overflow-x-auto">
         {#each wrkData as day}
-          <div class="bg-gray-800 p-3 rounded border border-gray-700">
-            <div class="font-bold text-emerald-400 mb-2">{day.date}</div>
+          <div class="mb-4">
+            <div class="text-emerald-400 font-bold mb-2">{day.date}</div>
             {#each day.workouts as w}
-              <div class="mt-2 p-2 bg-gray-700 rounded">
-                <div class="font-semibold">
-                  {w.title}
-                  {#if w.duration_min}<span class="text-gray-400 text-sm font-normal">({w.duration_min} min)</span>{/if}
+              <div class="flex items-center justify-between py-2 border-t border-gray-800">
+                <div class="flex-1">
+                  <span class="font-semibold">{w.title}</span>
+                  {#if w.duration_min}<span class="text-gray-400 text-sm ml-2">({w.duration_min} min)</span>{/if}
+                  {#if w.exercises && w.exercises.length > 0}
+                    <span class="text-gray-400 text-sm ml-2">
+                      {w.exercises.map(e => e.name).join(', ')}
+                    </span>
+                  {/if}
                 </div>
-                {#if w.exercises && w.exercises.length > 0}
-                    <ul class="mt-1 ml-3 list-disc text-sm text-gray-300">
-                     {#each w.exercises as ex}
-                       <li>
-                         {#if ex.distance_km}
-                           {ex.name} — {dispDist(ex.distance_km, store.units)} {distUnit(store.units)}{ex.pace ? ` @ ${ex.pace}/km` : ''}
-                         {:else if ex.sets && ex.sets.length > 0}
-                           {@const n = ex.sets.length}
-                           {@const reps0 = ex.sets[0]?.reps ?? 0}
-                           {@const allSame = ex.sets.every(s => s.reps === reps0)}
-                           {@const loadStr = ex.load_raw || (ex.sets[0]?.load_lbs ? `${dispLoad(ex.sets[0].load_lbs * 0.45359237, store.units)} ${loadUnit(store.units)}` : 'BW')}
-                           {ex.name} — {n}×{allSame && reps0 ? reps0 : '?'} @ {loadStr}
-                         {:else}
-                           {ex.name}
-                         {/if}
-                       </li>
-                     {/each}
-                   </ul>
-                {/if}
-                {#if w.raw_notes}
-                  <div class="mt-1 text-xs text-gray-400 whitespace-pre-wrap">{w.raw_notes}</div>
-                {/if}
-                <div class="mt-1">
+                <div>
                   <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(w)} title="Edit">✏️</button>
                   <button class="text-gray-400 hover:text-red-400" onclick={() => deleteW(day.date, w.slot)} title="Delete">🗑️</button>
                 </div>
