@@ -19,6 +19,7 @@ pwa-build:
 	cp -r ui/web/dist/. internal/web/dist/
 
 build: pwa-build
+	mkdir -p data
 	CGO_ENABLED=0 go build -tags pwa -ldflags="-s -w" \
 		-o bin/diet-tracker-server ./cmd/server
 
