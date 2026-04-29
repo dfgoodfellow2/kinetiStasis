@@ -339,9 +339,10 @@
       workout.notes = w.raw_notes || ''
       workout.coach_notes = w.coach_notes || ''
 
-      // Map exercises from API format (ExerciseEntry.Sets)
+      // Map exercises from API format (ex.Sets -> JSON: sets array with load_kg, load_lbs, reps)
       workout.exercises = (w.exercises || []).map(ex => {
-        const firstSet = ex.Sets?.[0]
+        const apiSets = ex.Sets || []
+        const firstSet = apiSets[0] || {}
         return {
           name: ex.name || '',
           type: ex.category || 'strength',
@@ -349,17 +350,17 @@
           notes: ex.notes || '',
           pace: ex.pace || '',
           duration: ex.DurationRaw || '',
-          // Legacy fields for display
-          sets: String(ex.Sets?.length || 0),
-          reps: String(firstSet?.reps || 0),
-          weight_lbs: firstSet?.load_lbs ? String(Math.round(firstSet.load_lbs)) : '',
-          // _sets array for volume calc
-          _sets: (ex.Sets || []).map(s => ({
-            load_kg: s.load_kg,
-            load_lbs: s.load_lbs,
-            reps: s.reps,
-            rpe: s.rpe,
-            tempo: s.tempo,
+          // Legacy fields - check both snake_case (JSON) and Capital (Go struct)
+          sets: String(apiSets.length || 0),
+          reps: String(firstSet.reps || firstSet.Reps || 0),
+          weight_lbs: (firstSet.load_lbs || firstSet.LoadLbs || 0) > 0 ? String(Math.round(firstSet.load_lbs || firstSet.LoadLbs)) : '',
+          // _sets array preserves full set data for volume calc
+          _sets: apiSets.map(s => ({
+            load_kg: s.load_kg || s.LoadKg || 0,
+            load_lbs: s.load_lbs || s.LoadLbs || 0,
+            reps: s.reps || s.Reps || 0,
+            rpe: s.rpe || s.RPE || 0,
+            tempo: s.tempo || s.Tempo || '',
           }))
         }
       })
