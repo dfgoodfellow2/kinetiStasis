@@ -147,10 +147,10 @@
 <div class="max-w-4xl mx-auto">
   <!-- Tab bar -->
   <div class="flex space-x-2 mb-4">
-    <button class={tab === 'nutrition' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'nutrition'}>Nutrition</button>
-    <button class={tab === 'biometrics' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'biometrics'}>Biometrics</button>
-    <button class={tab === 'measurements' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'measurements'}>Measurements</button>
-    <button class={tab === 'workout' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'workout'}>Workout</button>
+    <button class={tab === 'nutrition' ? 'btn-primary' : 'btn-secondary'} onclick={() => tab = 'nutrition'}>Nutrition</button>
+    <button class={tab === 'biometrics' ? 'btn-primary' : 'btn-secondary'} onclick={() => tab = 'biometrics'}>Biometrics</button>
+    <button class={tab === 'measurements' ? 'btn-primary' : 'btn-secondary'} onclick={() => tab = 'measurements'}>Measurements</button>
+    <button class={tab === 'workout' ? 'btn-primary' : 'btn-secondary'} onclick={() => tab = 'workout'}>Workout</button>
   </div>
 
   <!-- Nutrition tab -->
