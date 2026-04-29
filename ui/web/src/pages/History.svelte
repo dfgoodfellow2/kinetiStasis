@@ -285,35 +285,52 @@
     {/if}
 
   <!-- Workout tab -->
-  {:else if tab === 'workout'}
+    {:else if tab === 'workout'}
     {#if wrkLoading}
       <Spinner />
     {:else if wrkData.length === 0}
       <div class="text-gray-400">No workouts logged in the last 30 days.</div>
     {:else}
       <div class="overflow-x-auto">
-        {#each wrkData as day}
-          <div class="mb-4">
-            <div class="text-emerald-400 font-bold mb-2">{day.date}</div>
-            {#each day.workouts as w}
-              <div class="flex items-center justify-between py-2 border-t border-gray-800">
-                <div class="flex-1">
-                  <span class="font-semibold">{w.title}</span>
-                  {#if w.duration_min}<span class="text-gray-400 text-sm ml-2">({w.duration_min} min)</span>{/if}
-                  {#if w.exercises && w.exercises.length > 0}
-                    <span class="text-gray-400 text-sm ml-2">
-                      {w.exercises.map(e => e.name).join(', ')}
-                    </span>
-                  {/if}
-                </div>
-                <div>
-                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(w)} title="Edit">✏️</button>
-                  <button class="text-gray-400 hover:text-red-400" onclick={() => deleteW(day.date, w.slot)} title="Delete">🗑️</button>
-                </div>
-              </div>
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="text-left text-gray-300">
+              <th class="py-2 pr-4">Date</th>
+              <th class="pr-4">Title</th>
+              <th class="pr-4">Duration</th>
+              <th class="pr-4">Exercises</th>
+              <th class="pr-4">Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each wrkData as day}
+              {#each day.workouts as w}
+                <tr class="border-t border-gray-800">
+                  <td class="py-2 pr-4">{day.date}</td>
+                  <td class="pr-4 font-semibold">{w.title}</td>
+                  <td class="pr-4">{w.duration_min ? w.duration_min + ' min' : '—'}</td>
+                  <td class="pr-4 text-gray-400">
+                    {#if w.exercises && w.exercises.length > 0}
+                      {w.exercises.map(e => {
+                        const sets = e.sets?.length || 0
+                        const reps = e.sets?.[0]?.reps || 0
+                        return sets > 0 ? `${sets}×${reps} ${e.name}` : e.name
+                      }).join(', ')}
+                    {:else}
+                      —
+                    {/if}
+                  </td>
+                  <td class="pr-4 text-gray-500 text-xs">{w.raw_notes || '—'}</td>
+                  <td class="py-2">
+                    <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(w)} title="Edit">✏️</button>
+                    <button class="text-gray-400 hover:text-red-400" onclick={() => deleteW(day.date, w.slot)} title="Delete">🗑️</button>
+                  </td>
+                </tr>
+              {/each}
             {/each}
-          </div>
-        {/each}
+          </tbody>
+        </table>
       </div>
     {/if}
   {/if}
