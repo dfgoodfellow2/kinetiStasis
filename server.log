@@ -1,11 +1,31 @@
-time=2026-04-28T11:47:21.669-04:00 level=INFO msg="goose: no migrations to run. current version: 2"
-time=2026-04-28T11:47:21.669-04:00 level=INFO msg="database ready" path=./data/diet.db
-time=2026-04-28T11:47:21.670-04:00 level=INFO msg="server starting" addr=:8080 env=development db=./data/diet.db
-time=2026-04-28T11:47:27.433-04:00 level=INFO msg=request method=HEAD path=/ status=405 duration_ms=0 remote=[::1]:51790
-time=2026-04-28T11:47:27.444-04:00 level=INFO msg=request method=HEAD path=/assets/index-Dz4NsB3S.css status=405 duration_ms=0 remote=[::1]:51798
-time=2026-04-28T11:47:27.457-04:00 level=INFO msg=request method=HEAD path=/assets/index-xWC3cWlV.js status=405 duration_ms=0 remote=[::1]:51810
-time=2026-04-28T11:47:27.467-04:00 level=INFO msg=request method=HEAD path=/manifest.webmanifest status=405 duration_ms=0 remote=[::1]:51812
-time=2026-04-28T11:47:38.197-04:00 level=INFO msg=request method=GET path=/ status=301 duration_ms=0 remote=[::1]:39954
-time=2026-04-28T11:47:38.208-04:00 level=INFO msg=request method=GET path=/assets/index-Dz4NsB3S.css status=200 duration_ms=0 remote=[::1]:39966
-time=2026-04-28T11:47:38.222-04:00 level=INFO msg=request method=GET path=/assets/index-xWC3cWlV.js status=200 duration_ms=0 remote=[::1]:39978
-time=2026-04-28T11:47:38.235-04:00 level=INFO msg=request method=GET path=/manifest.webmanifest status=200 duration_ms=0 remote=[::1]:39990
+time=2026-04-28T21:39:31.228-04:00 level=INFO msg="goose: no migrations to run. current version: 3"
+time=2026-04-28T21:39:31.228-04:00 level=INFO msg="database ready" path=./data/diet.db
+time=2026-04-28T21:39:31.229-04:00 level=INFO msg="server starting" addr=:8080 env=development db=./data/diet.db
+time=2026-04-28T21:39:32.064-04:00 level=INFO msg=request method=GET path=/v1/measurements status=401 duration_ms=0 remote=[::1]:52878
+time=2026-04-28T21:39:57.047-04:00 level=INFO msg=request method=GET path=/v1/health status=200 duration_ms=0 remote=[::1]:34228
+time=2026-04-28T21:41:43.317-04:00 level=INFO msg=request method=GET path=/ status=200 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.533-04:00 level=INFO msg=request method=GET path=/assets/index-CqVBOnDR.js status=200 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.533-04:00 level=INFO msg=request method=GET path=/registerSW.js status=200 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.533-04:00 level=INFO msg=request method=GET path=/assets/index-DpviyxZg.css status=200 duration_ms=0 remote=127.0.0.1:57124
+time=2026-04-28T21:41:43.847-04:00 level=INFO msg=request method=GET path=/v1/auth/me status=401 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.861-04:00 level=INFO msg=request method=GET path=/icon-192.png status=200 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.885-04:00 level=INFO msg=request method=POST path=/v1/auth/refresh status=200 duration_ms=2 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.917-04:00 level=INFO msg=request method=GET path=/v1/auth/me status=200 duration_ms=1 remote=127.0.0.1:57116
+time=2026-04-28T21:41:43.985-04:00 level=INFO msg=request method=GET path=/v1/profile status=200 duration_ms=1 remote=127.0.0.1:57116
+time=2026-04-28T21:41:44.021-04:00 level=INFO msg=request method=GET path=/v1/dashboard status=200 duration_ms=4 remote=127.0.0.1:57116
+time=2026-04-28T21:41:46.642-04:00 level=INFO msg=request method=GET path=/v1/measurements status=500 duration_ms=2 remote=127.0.0.1:57116
+time=2026-04-28T21:41:46.643-04:00 level=INFO msg=request method=GET path=/v1/calc/bodyfat status=200 duration_ms=1 remote=127.0.0.1:57124
+time=2026-04-28T21:42:14.687-04:00 level=INFO msg=request method=POST path=/v1/measurements status=409 duration_ms=5 remote=127.0.0.1:57116
+time=2026-04-28T21:43:02.897-04:00 level=INFO msg=request method=GET path=/v1/nutrition/logs status=200 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:43:02.897-04:00 level=INFO msg=request method=GET path=/v1/biometrics status=200 duration_ms=0 remote=127.0.0.1:57124
+time=2026-04-28T21:43:02.897-04:00 level=INFO msg=request method=GET path=/v1/measurements status=500 duration_ms=0 remote=127.0.0.1:38964
+time=2026-04-28T21:43:02.898-04:00 level=INFO msg=request method=GET path=/v1/workouts status=200 duration_ms=0 remote=127.0.0.1:57116
+time=2026-04-28T21:47:39.381-04:00 level=INFO msg=request method=GET path=/v1/measurements status=401 duration_ms=17 remote=[::1]:54678
+time=2026-04-28T21:51:04.302-04:00 level=INFO msg=request method=GET path=/ status=200 duration_ms=15 remote=127.0.0.1:58944
+time=2026-04-28T21:51:04.411-04:00 level=INFO msg=request method=GET path=/assets/index-CqVBOnDR.js status=200 duration_ms=0 remote=127.0.0.1:58944
+time=2026-04-28T21:51:04.412-04:00 level=INFO msg=request method=GET path=/assets/index-DpviyxZg.css status=200 duration_ms=0 remote=127.0.0.1:58946
+time=2026-04-28T21:51:04.412-04:00 level=INFO msg=request method=GET path=/registerSW.js status=200 duration_ms=0 remote=127.0.0.1:58944
+time=2026-04-28T21:51:04.626-04:00 level=INFO msg=request method=GET path=/v1/auth/me status=200 duration_ms=7 remote=127.0.0.1:58944
+time=2026-04-28T21:51:04.658-04:00 level=INFO msg=request method=GET path=/v1/profile status=200 duration_ms=1 remote=127.0.0.1:58944
+time=2026-04-28T21:51:04.670-04:00 level=INFO msg=request method=GET path=/icon-192.png status=200 duration_ms=0 remote=127.0.0.1:58944
+time=2026-04-28T21:51:04.711-04:00 level=INFO msg=request method=GET path=/v1/dashboard status=200 duration_ms=5 remote=127.0.0.1:58944

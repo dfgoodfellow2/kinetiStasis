@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
-  import { store, setCurrentPage } from '../lib/stores.svelte.js'
+  import { store, setCurrentPage, setEditData, clearEditData } from '../lib/stores.svelte.js'
   import { daysAgo, today, fmt0, dispWeight, weightUnit, dispLength, lengthUnit, dispLoad, loadUnit, dispDist, distUnit } from '../lib/utils.js'
   import Spinner from '../components/Spinner.svelte'
 
@@ -83,7 +83,10 @@
   })
 
   // --- Actions (edit / delete) ---
-  async function editNut(row) { setCurrentPage('logmeal') }
+  async function editNut(row) { 
+    setEditData({ type: 'nutrition', data: row })
+    setCurrentPage('logmeal') 
+  }
 
   async function deleteNut(date) {
     if (!confirm(`Delete nutrition log for ${date}?`)) return
@@ -95,7 +98,10 @@
     }
   }
 
-  async function editBio(row) { setCurrentPage('checkin') }
+  async function editBio(row) { 
+    setEditData({ type: 'biometric', data: row })
+    setCurrentPage('checkin') 
+  }
 
   async function deleteBio(date) {
     if (!confirm(`Delete biometrics for ${date}?`)) return
@@ -120,8 +126,7 @@
   }
 
   async function editMeas(row) {
-    // Navigate to checkin with measurement data pre-filled
-    // Could store in a store and navigate, or just alert for now
+    setEditData({ type: 'measurement', data: row })
     setCurrentPage('checkin')
   }
 
@@ -174,7 +179,7 @@
                 <td class="pr-4">{fmt0(row.fat_g)}g</td>
                 <td class="text-gray-400 text-xs">{row.meal_notes ?? ''}</td>
                 <td class="py-2">
-                  <button class="text-gray-400 hover:text-emerald-400 mr-2" onclick={() => editNut(row)} title="Edit">✏️</button>
+                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editNut(row)} title="Edit">✏️</button>
                   <button class="text-gray-400 hover:text-red-400" onclick={() => deleteNut(row.date)} title="Delete">🗑️</button>
                 </td>
               </tr>
@@ -223,7 +228,7 @@
                 <td class="pr-4">{row.bolt_score ?? '—'}</td>
                 <td class="text-gray-400 text-xs">{row.notes ?? ''}</td>
                 <td class="py-2">
-                  <button class="text-gray-400 hover:text-emerald-400 mr-2" onclick={() => editBio(row)} title="Edit">✏️</button>
+                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editBio(row)} title="Edit">✏️</button>
                   <button class="text-gray-400 hover:text-red-400" onclick={() => deleteBio(row.date)} title="Delete">🗑️</button>
                 </td>
               </tr>
@@ -270,7 +275,7 @@
                 <td class="pr-4">{dispLength(row.calves_cm, store.units)}</td>
                 <td class="text-gray-400 text-xs">{row.notes ?? ''}</td>
                 <td class="py-2">
-                  <button class="text-gray-400 hover:text-emerald-400 mr-2" onclick={() => editMeas(row)} title="Edit">✏️</button>
+                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editMeas(row)} title="Edit">✏️</button>
                   <button class="text-gray-400 hover:text-red-400" onclick={() => deleteMeas(row.date)} title="Delete">🗑️</button>
                 </td>
               </tr>
@@ -320,7 +325,7 @@
                   <div class="mt-1 text-xs text-gray-400 whitespace-pre-wrap">{w.raw_notes}</div>
                 {/if}
                 <div class="mt-1">
-                  <button class="text-gray-400 hover:text-emerald-400 mr-2" onclick={() => editW(day.date, w.slot)} title="Edit">✏️</button>
+                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(day.date, w.slot)} title="Edit">✏️</button>
                   <button class="text-gray-400 hover:text-red-400" onclick={() => deleteW(day.date, w.slot)} title="Delete">🗑️</button>
                 </div>
               </div>
