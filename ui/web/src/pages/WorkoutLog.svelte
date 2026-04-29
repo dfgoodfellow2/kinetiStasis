@@ -339,31 +339,46 @@
       workout.notes = w.raw_notes || ''
       workout.coach_notes = w.coach_notes || ''
 
-      // Map exercises - include distance/elevation for conditioning
+      // Map ALL exercise fields from API to simple tab format
       workout.exercises = (w.exercises || []).map(ex => {
         const exerciseSets = ex.sets || []
         const firstExerciseSet = exerciseSets[0] || {}
         return {
+          // Basic fields
           name: ex.name || '',
           type: ex.category || 'strength',
           surface: ex.surface || '',
           notes: ex.notes || '',
-          pace: ex.pace || '',
-          // Distance and elevation for conditioning exercises
+          
+          // Strength: sets/reps/weight
+          sets: exerciseSets.length > 0 ? String(exerciseSets.length) : '',
+          reps: firstExerciseSet.reps ? String(firstExerciseSet.reps) : '',
+          weight_lbs: firstExerciseSet.load_lbs ? String(Math.round(firstExerciseSet.load_lbs)) : '',
+          
+          // Conditioning: distance/elevation/pace/duration
           distance_km: ex.distance_km || 0,
           elevation_m: ex.elevation_m || 0,
+          pace: ex.pace || '',
           duration: ex.duration_raw || '',
-          // Sets/reps for strength
-          sets: String(exerciseSets.length),
-          reps: String(firstExerciseSet.reps || ''),
-          weight_lbs: String(firstExerciseSet.load_lbs || ''),
-          // _sets array preserves full set data
+          
+          // Load info
+          load: ex.load_raw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
+          
+          // RPE and tempo
+          rpe: ex.rpe ? String(ex.rpe) : '',
+          tempo: ex.tempo || '',
+          
+          // Bias
+          bias: ex.bias || '',
+          
+          // _sets array preserves all set data for save
           _sets: exerciseSets.map(s => ({
             load_kg: s.load_kg || 0,
             load_lbs: s.load_lbs || 0,
             reps: s.reps || 0,
-            rpe: s.rpe || 0,
+            rpe: s.rpe || s.RPE || 0,
             tempo: s.tempo || '',
+            duration: s.duration_raw || s.DurationRaw || '',
           }))
         }
       })
