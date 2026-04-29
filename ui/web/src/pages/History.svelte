@@ -113,7 +113,10 @@
     }
   }
 
-  async function editW(date, slot) { setCurrentPage('workoutlog') }
+  async function editW(date, slot, title) { 
+    setEditData({ type: 'workout', data: { date, slot, title } })
+    setCurrentPage('workoutlog') 
+  }
 
   async function deleteW(date, slot) {
     if (!confirm(`Delete workout on ${date} (slot ${slot})?`)) return
@@ -321,7 +324,7 @@
                   <div class="mt-1 text-xs text-gray-400 whitespace-pre-wrap">{w.raw_notes}</div>
                 {/if}
                 <div class="mt-1">
-                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(day.date, w.slot)} title="Edit">✏️</button>
+                  <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(day.date, w.slot, w.title)} title="Edit">✏️</button>
                   <button class="text-gray-400 hover:text-red-400" onclick={() => deleteW(day.date, w.slot)} title="Delete">🗑️</button>
                 </div>
               </div>
