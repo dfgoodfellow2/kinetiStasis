@@ -339,23 +339,23 @@
       workout.notes = w.raw_notes || ''
       workout.coach_notes = w.coach_notes || ''
 
-      // Map exercises from API format — JSON uses lowercase: sets array with load_kg, load_lbs, reps
+      // Map exercises - use distinct variable names to avoid shadowing
       workout.exercises = (w.exercises || []).map(ex => {
-        const apiSets = ex.sets || []  // lowercase!
-        const firstSet = apiSets[0] || {}
+        const exerciseSets = ex.sets || []
+        const firstExerciseSet = exerciseSets[0] || {}
         return {
           name: ex.name || '',
           type: ex.category || 'strength',
           surface: ex.surface || '',
           notes: ex.notes || '',
           pace: ex.pace || '',
-          duration: ex.duration_raw || ex.DurationRaw || '',
-          // Legacy fields - use lowercase from JSON
-          sets: String(apiSets.length || 0),
-          reps: String(firstSet.reps || 0),
-          weight_lbs: (firstSet.load_lbs || 0) > 0 ? String(Math.round(firstSet.load_lbs)) : '',
+          duration: ex.duration_raw || '',
+          // Use distinct variable names
+          sets: exerciseSets.length ? String(exerciseSets.length) : '',
+          reps: String(firstExerciseSet.reps || ''),
+          weight_lbs: String(firstExerciseSet.load_lbs || ''),
           // _sets array preserves full set data
-          _sets: apiSets.map(s => ({
+          _sets: exerciseSets.map(s => ({
             load_kg: s.load_kg || 0,
             load_lbs: s.load_lbs || 0,
             reps: s.reps || 0,
