@@ -322,8 +322,21 @@
     if (store.editData && store.editData.type === 'workout') {
       const w = store.editData.data
       workout.date = w.date
-      workout.slot = w.slot
+      workout.slot = String(w.slot)
       workout.title = w.title || ''
+      workout.type = w.type || 'strength'
+      workout.style = w.style || ''
+      workout.surface = w.surface || ''
+      workout.focus = w.focus || ''
+      workout.rest_interval = w.rest_interval || ''
+      workout.duration_min = String(w.duration_min || '')
+      workout.rpe = w.rpe || ''
+      workout.avg_hr = String(w.avg_hr || '')
+      workout.max_hr = String(w.max_hr || '')
+      workout.calories_burned = String(w.calories_burned || '')
+      workout.notes = w.raw_notes || ''
+      workout.coach_notes = w.coach_notes || ''
+      workout.exercises = w.exercises || []
       tab = 'simple'  // switch to simple tab for basic editing
       clearEditData()
     }
