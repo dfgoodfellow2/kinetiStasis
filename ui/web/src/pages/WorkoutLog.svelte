@@ -336,7 +336,26 @@
       workout.calories_burned = String(w.calories_burned || '')
       workout.notes = w.raw_notes || ''
       workout.coach_notes = w.coach_notes || ''
-      workout.exercises = w.exercises || []
+      // Map exercises to simple tab format
+      workout.exercises = (w.exercises || []).map(ex => {
+        // If already in simple tab format, use as-is
+        if (ex && ex.name && (ex.sets !== undefined || ex._sets)) {
+          return {
+            name: ex.name || '',
+            type: ex.type || 'strength',
+            // preserve legacy flat fields as strings for the simple UI
+            sets: String(ex.sets || (ex._sets ? ex._sets.length : '')),
+            reps: String(ex.reps || (ex._sets && ex._sets[0] ? ex._sets[0].reps : '')),
+            weight_lbs: ex.weight_lbs || (ex._sets ? String(ex._sets[0]?.load_lbs || '') : ''),
+            duration: ex.duration || '',
+            notes: ex.notes || '',
+            // keep nested _sets for accurate volume calculations / round-trip
+            _sets: ex._sets || [],
+          }
+        }
+        // Otherwise create blank
+        return { name: '', type: 'strength', sets: '', reps: '', weight_lbs: '', duration: '', notes: '', _sets: [] }
+      })
       tab = 'simple'  // switch to simple tab for basic editing
       clearEditData()
     }
