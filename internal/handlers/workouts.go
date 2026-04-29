@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -105,17 +106,6 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if in.ID == "" {
 		in.ID = uuid.New().String()
 	}
-	// check date+slot uniqueness
-	var exists string
-	if err := h.db.QueryRowContext(r.Context(),
-		`SELECT id FROM workouts WHERE user_id = ? AND date = ? AND slot = ?`,
-		claims.UserID, in.Date, in.Slot).Scan(&exists); err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
-		return
-	} else if exists != "" {
-		respond.Error(w, http.StatusConflict, "workout already exists for date+slot")
-		return
-	}
 	// Auto-calculate calories from MET if not provided and we have a recent weight
 	if in.CaloriesBurned == 0 && len(in.Exercises) > 0 {
 		weightKg := fetchLatestWeight(r.Context(), h.db, claims.UserID)
@@ -126,17 +116,28 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	exb, _ := json.Marshal(in.Exercises)
 	metb, _ := json.Marshal(in.Metadata)
-	_, err := h.db.ExecContext(r.Context(),
-		`INSERT INTO workouts (id,user_id,date,slot,title,raw_notes,duration_min,calories_burned,mwv,nds,session_density,exercises_json,metadata_json,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		in.ID, in.UserID, in.Date, in.Slot, in.Title, in.RawNotes,
-		in.DurationMin, in.CaloriesBurned, in.MWV, in.NDS, in.SessionDensity,
-		string(exb), string(metb), in.UpdatedAt)
+
+	// Upsert: try UPDATE first, then INSERT if not found
+	res, err := h.db.ExecContext(r.Context(),
+		`UPDATE workouts SET title=?, raw_notes=?, duration_min=?, calories_burned=?, exercises_json=?, metadata_json=?, updated_at=? WHERE user_id=? AND date=? AND slot=?`,
+		in.Title, in.RawNotes, in.DurationMin, in.CaloriesBurned, string(exb), string(metb), in.UpdatedAt, claims.UserID, in.Date, in.Slot)
 	if err != nil {
+		slog.Error("workout update", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	respond.JSON(w, http.StatusCreated, in)
+	if ra, _ := res.RowsAffected(); ra == 0 {
+		// Not found, INSERT
+		_, err := h.db.ExecContext(r.Context(),
+			`INSERT INTO workouts (id,user_id,date,slot,title,raw_notes,duration_min,calories_burned,mwv,nds,session_density,exercises_json,metadata_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			in.ID, claims.UserID, in.Date, in.Slot, in.Title, in.RawNotes, in.DurationMin, in.CaloriesBurned, in.MWV, in.NDS, in.SessionDensity, string(exb), string(metb), in.UpdatedAt)
+		if err != nil {
+			slog.Error("workout insert", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error")
+			return
+		}
+	}
+	respond.JSON(w, http.StatusOK, in)
 }
 
 // PUT /v1/workouts/{date}/{slot}
