@@ -202,7 +202,6 @@
               <tr class="text-left text-gray-300">
                 <th class="py-2 pr-4">Date</th>
                 <th class="pr-4">Weight ({weightUnit(store.units)})</th>
-                <th class="pr-4">Waist ({lengthUnit(store.units)})</th>
                 
                 <th class="pr-4">Sleep h</th>
                 <th class="pr-4">Sleep Q</th>
@@ -217,7 +216,6 @@
               <tr class="border-t border-gray-800">
                 <td class="py-2 pr-4">{row.date}</td>
                  <td class="pr-4">{row.weight_kg ? dispWeight(row.weight_kg, store.units) : '—'}</td>
-                 <td class="pr-4">{row.waist_cm ? dispLength(row.waist_cm, store.units) : '—'}</td>
                  
                 <td class="pr-4">{row.sleep_hours ?? '—'}</td>
                 <td class="pr-4">{row.sleep_quality ?? '—'}</td>

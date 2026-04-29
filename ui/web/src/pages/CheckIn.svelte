@@ -10,7 +10,7 @@
   let tab = $state('daily')
 
   // --- Daily tab ---
-  let dailyForm = $state({ date: today(), weight_kg: '', waist_cm: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleep_quality: '', subjective: '', notes: '' })
+  let dailyForm = $state({ date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleep_quality: '', subjective: '', notes: '' })
   let dailyLoading = $state(false)
   let dailyError = $state('')
   let dailySuccess = $state('')
@@ -23,7 +23,7 @@
       await api.postBiometric({
         date: dailyForm.date,
         weight_kg:       inputWeight(dailyForm.weight_kg, store.units),
-        waist_cm:        inputLength(dailyForm.waist_cm, store.units),
+        // waist removed
         grip_kg:         inputLoad(dailyForm.grip_kg, store.units),
         bolt_score:      Number(dailyForm.bolt_score)    || 0,
         sleep_hours:     Number(dailyForm.sleep_hours)   || 0,
@@ -32,7 +32,7 @@
         notes:           dailyForm.notes || '',
       })
       dailySuccess = 'Check-in saved'
-      dailyForm = { date: today(), weight_kg: '', waist_cm: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleep_quality: '', subjective: '', notes: '' }
+      dailyForm = { date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleep_quality: '', subjective: '', notes: '' }
     } catch (e) {
       dailyError = e.message
     } finally {
@@ -101,12 +101,11 @@
   onMount(() => {
     // Check if we're editing existing data
     if (store.editData) {
-      if (store.editData.type === 'biometric') {
+        if (store.editData.type === 'biometric') {
         const row = store.editData.data
         dailyForm = { 
           date: row.date, 
           weight_kg: String(row.weight_kg ?? ''),
-          waist_cm: String(row.waist_cm ?? ''),
           grip_kg: String(row.grip_kg ?? ''),
           bolt_score: String(row.bolt_score ?? ''),
           sleep_hours: String(row.sleep_hours ?? ''),
@@ -163,10 +162,7 @@
           <input class="input" id="ci-weight" type="number" step="0.1" bind:value={dailyForm.weight_kg} />
         </div>
 
-        <div>
-          <label class="text-xs text-gray-400" for="ci-waist">Waist ({lengthUnit(store.units)})</label>
-          <input class="input" id="ci-waist" type="number" step="0.1" bind:value={dailyForm.waist_cm} />
-        </div>
+        
 
         <div>
           <label class="text-xs text-gray-400" for="ci-grip">Grip Strength ({loadUnit(store.units)})</label>
