@@ -339,7 +339,7 @@
       workout.notes = w.raw_notes || ''
       workout.coach_notes = w.coach_notes || ''
 
-      // Map exercises - use distinct variable names to avoid shadowing
+      // Map exercises - include distance/elevation for conditioning
       workout.exercises = (w.exercises || []).map(ex => {
         const exerciseSets = ex.sets || []
         const firstExerciseSet = exerciseSets[0] || {}
@@ -349,9 +349,12 @@
           surface: ex.surface || '',
           notes: ex.notes || '',
           pace: ex.pace || '',
+          // Distance and elevation for conditioning exercises
+          distance_km: ex.distance_km || 0,
+          elevation_m: ex.elevation_m || 0,
           duration: ex.duration_raw || '',
-          // Use distinct variable names
-          sets: exerciseSets.length ? String(exerciseSets.length) : '',
+          // Sets/reps for strength
+          sets: String(exerciseSets.length),
           reps: String(firstExerciseSet.reps || ''),
           weight_lbs: String(firstExerciseSet.load_lbs || ''),
           // _sets array preserves full set data
