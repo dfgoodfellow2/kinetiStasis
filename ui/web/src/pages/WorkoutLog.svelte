@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.js'
-  import { store } from '../lib/stores.svelte.js'
+  import { store, clearEditData } from '../lib/stores.svelte.js'
+  import { onMount } from 'svelte'
   import { today, dispLoad, loadUnit, inputLoad, distUnit, inputDist, elevUnit, inputElev } from '../lib/utils.js'
   import Alert from '../components/Alert.svelte'
 
@@ -315,6 +316,18 @@
     const s = Number(ex.sets) || 0
     return acc + (l > 0 ? Math.round(l * r * s) : 0)
   }, 0))
+
+  onMount(() => {
+    // Check if editing existing workout
+    if (store.editData && store.editData.type === 'workout') {
+      const w = store.editData.data
+      workout.date = w.date
+      workout.slot = w.slot
+      workout.title = w.title || ''
+      tab = 'simple'  // switch to simple tab for basic editing
+      clearEditData()
+    }
+  })
 </script>
 
 <div class="max-w-2xl mx-auto">
