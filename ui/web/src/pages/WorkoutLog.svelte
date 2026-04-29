@@ -26,7 +26,7 @@
     focus: '',
     rest_interval: '',
     duration_min: '',
-    rpe: '',
+    
     avg_hr: '',
     max_hr: '',
     calories_burned: '',
@@ -115,7 +115,7 @@
       focus:           focusStr           || workout.focus,
       rest_interval:   res.rest_interval  || workout.rest_interval,
       duration_min:    res.duration_min   || workout.duration_min,
-      rpe:             res.rpe            || workout.rpe,
+      // session-level RPE removed: store RPE per-exercise only
       avg_hr:          res.avg_hr         || workout.avg_hr,
       max_hr:          res.max_hr         || workout.max_hr,
       calories_burned: res.calories_burned || workout.calories_burned,
@@ -190,7 +190,6 @@
           surface:       workout.surface      || '',
           focus:         workout.focus ? workout.focus.split(',').map(s => s.trim()).filter(Boolean) : [],
           rest_interval: workout.rest_interval || '',
-          rpe:           Number(workout.rpe)   || 0,
           avg_hr:        Number(workout.avg_hr) || 0,
           max_hr:        Number(workout.max_hr) || 0,
         },
@@ -199,7 +198,14 @@
           // Otherwise build sets array from flat form fields
           let sets
           if (Array.isArray(ex._sets) && ex._sets.length > 0) {
-            sets = ex._sets
+            // sanitize preserved _sets to match Go ExerciseSet model (no RPE)
+            sets = ex._sets.map(s => ({
+              reps: s.reps || 0,
+              load_kg: s.load_kg || 0,
+              load_lbs: s.load_lbs || 0,
+              tut_seconds: s.tut_seconds || s.tutSeconds || 0,
+              rest_seconds: s.rest_seconds || s.restSeconds || 0,
+            }))
           } else {
             const n = Number(ex.sets) || 1
             const reps = Number(ex.reps) || 0
@@ -233,11 +239,11 @@
       }
       await api.postWorkout(payload)
       success = 'Workout saved!'
-      workout = {
-        date: today(), slot: '1', title: '', type: 'strength', style: '', surface: '',
-        focus: '', rest_interval: '', duration_min: '', rpe: '', avg_hr: '', max_hr: '',
-        calories_burned: '', notes: '', coach_notes: '', exercises: [],
-      }
+       workout = {
+         date: today(), slot: '1', title: '', type: 'strength', style: '', surface: '',
+         focus: '', rest_interval: '', duration_min: '', avg_hr: '', max_hr: '',
+         calories_burned: '', notes: '', coach_notes: '', exercises: [],
+       }
       aiRaw = ''; aiParsed = false
       yamlRaw = ''; yamlParsed = false
     } catch (e) {
@@ -332,7 +338,7 @@
       workout.focus = w.focus || ''
       workout.rest_interval = w.rest_interval || ''
       workout.duration_min = String(w.duration_min || '')
-      workout.rpe = w.rpe || ''
+       // session-level RPE removed: no assignment to workout.rpe
       workout.avg_hr = String(w.avg_hr || '')
       workout.max_hr = String(w.max_hr || '')
       workout.calories_burned = String(w.calories_burned || '')
@@ -364,19 +370,18 @@
           // Load info
           load: ex.load_raw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
           
-          // RPE and tempo
-          rpe: ex.rpe ? String(ex.rpe) : '',
+          // Tempo (RPE kept only at exercise level when saving)
           tempo: ex.tempo || '',
           
           // Bias
           bias: ex.bias || '',
           
           // _sets array preserves all set data for save
-          _sets: exerciseSets.map(s => ({
+           _sets: exerciseSets.map(s => ({
             load_kg: s.load_kg || 0,
             load_lbs: s.load_lbs || 0,
             reps: s.reps || 0,
-            rpe: s.rpe || s.RPE || 0,
+            // strip any set-level RPE (ExerciseSet model does not include RPE)
             tempo: s.tempo || '',
             duration: s.duration_raw || s.DurationRaw || '',
           }))
@@ -467,7 +472,7 @@
         {#if workout.duration_min}<span>Duration: <span class="text-white">{workout.duration_min} min</span></span>{/if}
         {#if totalVol > 0}<span>Total Vol: <span class="text-white">{dispLoad(totalVol, store.units)} {loadUnit(store.units)}</span></span>{/if}
         {#if workout.calories_burned}<span>Cal: <span class="text-white">{workout.calories_burned} kcal</span></span>{/if}
-        {#if workout.rpe}<span>RPE: <span class="text-white">{workout.rpe}</span></span>{/if}
+        <!-- session-level RPE removed -->
         {#if workout.avg_hr}<span>Avg HR: <span class="text-white">{workout.avg_hr} bpm</span></span>{/if}
         {#if workout.focus}<span>Focus: <span class="text-white">{workout.focus}</span></span>{/if}
       </div>
@@ -514,10 +519,7 @@
       <label class="text-xs text-gray-400" for="wo-duration">Duration (min)</label>
       <input class="input" id="wo-duration" type="number" bind:value={workout.duration_min} />
     </div>
-    <div>
-      <label class="text-xs text-gray-400" for="wo-rpe">Session RPE</label>
-      <input class="input" id="wo-rpe" type="number" min="1" max="10" placeholder="1-10" bind:value={workout.rpe} />
-    </div>
+    <!-- session-level RPE removed -->
     <div>
       <label class="text-xs text-gray-400" for="wo-avg-hr">Avg HR (bpm)</label>
       <input class="input" id="wo-avg-hr" type="number" bind:value={workout.avg_hr} />
