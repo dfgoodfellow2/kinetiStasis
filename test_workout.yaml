@@ -1,0 +1,58 @@
+title: "Full Body Strength Test"
+date: 2026-04-29
+slot: "1"
+type: strength
+style: circuit
+surface: gym
+rest_interval: "90 sec"
+duration: 60
+avg_hr: 145
+max_hr: 168
+focus: "Squat, Push, Pull, Hinge"
+notes: "Test session for all fields"
+coach_notes: "Verify all data maps correctly"
+
+exercises:
+  - name: "Barbell Back Squat"
+    type: squat
+    sets: 4
+    reps: 8
+    load: "225 lbs"
+    tempo: "3-0-1-0"
+    rpe: "7"
+    bias: bilateral
+
+  - name: "Bench Press"
+    type: push
+    sets: 3
+    reps: 10
+    load: "135 lbs"
+    tempo: "2-0-2-0"
+    rpe: "6"
+    bias: bilateral
+
+  - name: "Pullups"
+    type: pull
+    sets: 3
+    reps: 12
+    load: "BW"
+    tempo: "2-1-0-1"
+    rpe: "7"
+    bias: unilateral
+
+  - name: "KB Deadlift"
+    type: hinge
+    sets: 3
+    reps: 15
+    load: "70 lbs"
+    tempo: "2-0-1-0"
+    rpe: "6"
+
+  - name: "Treadmill Run"
+    type: cardio
+    sets: 1
+    duration: "20 min"
+    distance: "3.2 km"
+    pace: "6:15/km"
+    elevation: 50
+    rpe: "5"
