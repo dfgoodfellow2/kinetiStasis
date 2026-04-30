@@ -376,10 +376,11 @@
           
           // Load info
           load: ex.load_raw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
-          
-          // Tempo (RPE kept only at exercise level when saving)
+
+          // RPE and Tempo
+          rpe: String(ex.rpe || ''),
           tempo: ex.tempo || '',
-          
+
           // Bias
           bias: ex.bias || '',
           
