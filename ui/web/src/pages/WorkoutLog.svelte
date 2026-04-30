@@ -299,7 +299,7 @@
     if (vol > 0) extras.push(`vol: ${vol}`)
     const pct = epleyPct(loadNum, reps)
     if (pct) extras.push(`${pct}%1RM`)
-    if (ex.pace) extras.push(`pace: ${ex.pace}/km`)
+    if (ex.pace) extras.push(`pace: ${ex.pace}`)
     if (extras.length) base += ` (${extras.join(', ')})`
     if (ex.pattern) {
       const biasTag = ex.bias === 'bilateral' ? '(B)' : ex.bias === 'unilateral' ? '(U)' : ''
@@ -368,11 +368,11 @@
           reps: firstExerciseSet.reps ? String(firstExerciseSet.reps) : '',
           weight_lbs: firstExerciseSet.load_lbs ? String(Math.round(firstExerciseSet.load_lbs)) : '',
           
-          // Conditioning: distance/elevation/pace/duration
-          distance_km: ex.distance_km || 0,
-          elevation_m: ex.elevation_m || 0,
+          // Conditioning: distance/elevation/pace/duration (JSON uses camelCase)
+          distance_km: ex.distanceKm || ex.distance_km || 0,
+          elevation_m: ex.elevationM || ex.elevation_m || 0,
           pace: ex.pace || '',
-          duration: ex.duration_raw || '',
+          duration: ex.durationRaw || ex.duration_raw || '',
           
           // Load info
           load: ex.load_raw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
