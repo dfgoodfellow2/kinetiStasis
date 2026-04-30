@@ -335,7 +335,10 @@
       workout.type = w.type || 'strength'
       workout.style = w.style || ''
       workout.surface = w.surface || ''
-      workout.focus = w.focus || ''
+      // Focus is stored under metadata.focus as an array - join into a display string
+      workout.focus = Array.isArray(w.metadata?.focus)
+        ? w.metadata.focus.join(', ')
+        : (w.metadata?.focus ?? w.focus ?? '')
       workout.rest_interval = w.rest_interval || ''
       workout.duration_min = String(w.duration_min || '')
       // session-level RPE removed: no assignment to workout.rpe
@@ -353,7 +356,10 @@
         return {
           // Basic fields
           name: ex.name || '',
-          type: ex.category || 'strength',
+          // pattern is the movement pattern (squat, push, pull, hinge)
+          pattern: ex.category || '',
+          // UI type field - leave empty for simple tab
+          type: '',
           surface: ex.surface || '',
           notes: ex.notes || '',
           

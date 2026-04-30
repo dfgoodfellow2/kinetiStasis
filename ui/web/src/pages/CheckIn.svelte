@@ -7,6 +7,42 @@
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
 
+  // --- Weekly Check-in ---
+  let weeklyLoading = $state(false)
+  let weeklyError = $state('')
+  let weeklySuccess = $state('')
+  let checkinPreview = $state(null)
+  // Track if check-in was saved to disable button and change tab color
+  let checkinSaved = $state(false)
+
+  async function loadCheckinPreview() {
+    weeklyError = ''
+    try {
+      checkinPreview = await api.getCheckinPreview()
+    } catch (e) {
+      checkinPreview = null
+      weeklyError = e.message
+    }
+  }
+
+  async function acceptCheckin() {
+    if (!checkinPreview || !checkinPreview.can_check_in) return
+    weeklyError = ''
+    weeklySuccess = ''
+    weeklyLoading = true
+    try {
+      await api.postCheckin({ calories_after: checkinPreview.recommended_calories })
+      weeklySuccess = 'Check-in accepted'
+      checkinSaved = true
+      await loadCheckinPreview()
+    } catch (e) {
+      weeklyError = e.message
+    } finally {
+      weeklyLoading = false
+    }
+  }
+
+
   let tab = $state('daily')
 
   // --- Daily tab ---
@@ -222,6 +258,8 @@
     loadBodyFat()
     loadProfile()
     loadLastMeasuredBF()
+    // Load weekly checkin preview
+    loadCheckinPreview()
   })
 </script>
 
@@ -231,6 +269,7 @@
     <button class={tab === 'daily' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'daily'}>Daily</button>
     <button class={tab === 'measurements' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'measurements'}>Measurements</button>
     <button class={tab === 'bodyfat' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'bodyfat'}>Body Fat %</button>
+    <button class="px-3 py-2 rounded-lg {tab === 'weekly' ? 'btn-primary' : (checkinPreview?.can_check_in && !checkinSaved ? 'bg-emerald-600 text-white font-semibold' : 'bg-gray-700')}" onclick={() => tab = 'weekly'}>Weekly Target</button>
   </div>
 
   <!-- Daily tab -->
@@ -478,6 +517,64 @@
               Not enough data. Requires: weight + measurements (neck, waist).
             {/if}
           </p>
+        </Card>
+      {/if}
+    </div>
+  {:else if tab === 'weekly'}
+    {#if weeklyError}<Alert type="error" message={weeklyError} />{/if}
+    {#if weeklySuccess}<Alert type="success" message={weeklySuccess} />{/if}
+    <div class="space-y-4">
+      {#if !checkinPreview}
+        <Card>
+          <div class="p-4"><Spinner /></div>
+        </Card>
+      {:else}
+        <Card title="Weekly Check-in Preview">
+          <div class="space-y-3">
+            <div>
+              {#if checkinPreview.can_check_in}
+                <div class="text-emerald-400 font-semibold">✅ Ready for check-in</div>
+              {:else}
+                <div class="text-yellow-400 font-semibold">⏳ {checkinPreview.days_since_last_check_in ?? 0} days since last check-in</div>
+              {/if}
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="bg-gray-700 rounded-lg p-3">
+                <div class="text-xs text-gray-400">Weight Start</div>
+                <div class="text-lg font-semibold">{checkinPreview.weight_start ? checkinPreview.weight_start.toFixed(1) : '—'} kg</div>
+              </div>
+              <div class="bg-gray-700 rounded-lg p-3">
+                <div class="text-xs text-gray-400">Weight End</div>
+                <div class="text-lg font-semibold">{checkinPreview.weight_end ? checkinPreview.weight_end.toFixed(1) : '—'} kg</div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="bg-gray-700 rounded-lg p-3">
+                <div class="text-xs text-gray-400">Weight Change</div>
+                <div class="text-lg font-semibold">{checkinPreview.weight_change ? checkinPreview.weight_change.toFixed(2) : '—'} kg</div>
+              </div>
+              <div class="bg-gray-700 rounded-lg p-3">
+                <div class="text-xs text-gray-400">Expected vs Actual</div>
+                <div class="text-sm">Expected: {checkinPreview.expected_weight_change?.toFixed(2) ?? '—'} kg</div>
+                <div class="text-sm">Diff: {checkinPreview.weight_diff?.toFixed(2) ?? '—'} kg</div>
+              </div>
+            </div>
+
+            <div class="bg-gray-700 rounded-lg p-3">
+              <div class="text-xs text-gray-400">Recommendation</div>
+              <div class="text-sm">Reason: {checkinPreview.reason ?? '—'}</div>
+              <div class="text-sm">Current Calories: {checkinPreview.calories_before ?? '—'}</div>
+              <div class="text-sm">Recommended: {checkinPreview.recommended_calories ?? '—'}</div>
+              <div class="text-sm">Adjustment: {checkinPreview.calorie_adjustment ? Math.round(checkinPreview.calorie_adjustment) : '—'}</div>
+            </div>
+
+            <div class="flex space-x-2">
+              <button class="btn-primary" onclick={acceptCheckin} disabled={!checkinPreview.can_check_in || weeklyLoading || checkinSaved}>{weeklyLoading ? 'Processing…' : (checkinSaved ? 'Saved' : 'Accept Changes')}</button>
+              <button class="bg-gray-700 px-3 py-2 rounded-lg" disabled={!checkinPreview.can_check_in}>Skip</button>
+            </div>
+          </div>
         </Card>
       {/if}
     </div>

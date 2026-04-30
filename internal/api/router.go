@@ -142,6 +142,11 @@ func NewRouter(cfg *config.Config, db *sql.DB, webHandler http.Handler) http.Han
 			r.Get("/calc/bodyfat", calcH.BodyFat)
 			r.Get("/dashboard", calcH.Dashboard)
 
+			// Check-in
+			checkinH := handlers.NewCheckinHandler(db)
+			r.Get("/checkin", checkinH.Preview)
+			r.Post("/checkin", checkinH.Create)
+
 			// AI parsing — strict rate limit
 			r.Route("/parse", func(r chi.Router) {
 				r.Use(parseLimiter)

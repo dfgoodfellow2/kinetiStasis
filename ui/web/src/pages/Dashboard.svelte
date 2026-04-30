@@ -89,7 +89,9 @@ let checklist = $derived(data ? [
               <div class="text-gray-500 text-xs">Protein</div>
             </div>
             <div>
-              <div class="text-blue-400 font-semibold">{fmt0(data.today?.consumed?.carbs_g ?? 0)}g</div>
+                <div class="text-blue-400 font-semibold">
+                {fmt1(data.today?.consumed?.carbs_g ?? 0)} / {#if data.today?.targets?.carbs_g != null}{fmt1(data.today.targets.carbs_g)}{:else}—{/if}g
+              </div>
               <div class="text-gray-500 text-xs">Carbs</div>
             </div>
             <div>
@@ -125,11 +127,35 @@ let checklist = $derived(data ? [
 
     </div>
 
-    <!-- Stats row: TDEE, Readiness, Weekly, Personal Bests -->
-    <div class="grid md:grid-cols-4 gap-4">
-      <Card title="TDEE">
-        <div class="text-2xl font-bold text-gray-100">{fmt0(data.tdee?.observed_tdee ?? data.tdee?.estimated_tdee ?? 0)} <span class="text-sm font-normal text-gray-400">kcal</span></div>
-        <div class="text-xs text-gray-500 mt-1">{data.tdee?.confidence ?? '—'} confidence · {data.tdee?.method ?? '—'}</div>
+    <!-- Stats row: Targets, Readiness, Weekly -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      <Card title="Targets">
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-300">Calories</span>
+              <span class="font-tabular-nums">
+              {fmt0(data.today?.consumed?.calories ?? 0)} / {#if data.today?.targets?.calories != null}{fmt0(data.today.targets.calories)}{:else}—{/if} <span class="text-gray-500">kcal</span>
+            </span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-300">Protein</span>
+              <span class="font-tabular-nums">
+              {fmt1(data.today?.consumed?.protein_g ?? 0)} / {#if data.today?.targets?.protein_g != null}{fmt1(data.today.targets.protein_g)}{:else}—{/if} <span class="text-gray-500">g</span>
+            </span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-300">Carbs</span>
+              <span class="font-tabular-nums">
+              {fmt1(data.today?.consumed?.carbs_g ?? 0)} / {#if data.today?.targets?.carbs_g != null}{fmt1(data.today.targets.carbs_g)}{:else}—{/if} <span class="text-gray-500">g</span>
+            </span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-300">Fat</span>
+              <span class="font-tabular-nums">
+              {fmt1(data.today?.consumed?.fat_g ?? 0)} / {#if data.today?.targets?.fat_g != null}{fmt1(data.today.targets.fat_g)}{:else}—{/if} <span class="text-gray-500">g</span>
+            </span>
+          </div>
+        </div>
       </Card>
       <Card title="Readiness">
         {@const level = data.readiness?.level ?? 'green'}
@@ -155,13 +181,11 @@ let checklist = $derived(data ? [
         <div class="text-sm text-gray-300 mt-1">Workouts: <span class="font-semibold text-gray-100">{data.weekly_stats?.total_workouts ?? 0}</span></div>
         
       </Card>
-      <Card title="Personal Bests">
-        <div class="text-sm text-gray-300">Grip (120d): <span class="font-semibold text-emerald-400">{dispWeight(data.grip_personal_best ?? 0, store.units)} {weightUnit(store.units)}</span></div>
-      </Card>
+      
     </div>
 
     <!-- Weight Trend row -->
-    <div class="grid md:grid-cols-1 gap-4">
+    <div class="grid gap-4">
       <Card title="Weight Trend (30 days)">
         <WeightSparkline points={data.weight_trend ?? []} units={store.units} />
       </Card>

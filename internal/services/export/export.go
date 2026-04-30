@@ -102,6 +102,26 @@ func WorkoutsMarkdown(workouts []models.WorkoutEntry, from, to, units string) st
 		b.WriteString(fmt.Sprintf("## %s — %s\n\n", w.Date, w.Title))
 		b.WriteString(fmt.Sprintf("- Slot: %s\n", w.Slot))
 		b.WriteString(fmt.Sprintf("- Duration: %.0f min\n", w.DurationMin))
+		// session-level metadata: RPE and focus tags
+		if w.Metadata.RPE > 0 {
+			b.WriteString(fmt.Sprintf("- Session RPE: %.1f\n", w.Metadata.RPE))
+		}
+		if len(w.Metadata.Focus) > 0 {
+			b.WriteString(fmt.Sprintf("- Focus: %s\n", strings.Join(w.Metadata.Focus, ", ")))
+		}
+		// average exercise RPE (from exercises that have RPE)
+		var sumRPE float64
+		var rpeCount int
+		for _, ex := range w.Exercises {
+			if ex.RPE > 0 {
+				sumRPE += ex.RPE
+				rpeCount++
+			}
+		}
+		if rpeCount > 0 {
+			avg := sumRPE / float64(rpeCount)
+			b.WriteString(fmt.Sprintf("- Avg exercise RPE: %.1f\n", avg))
+		}
 		if w.CaloriesBurned > 0 {
 			b.WriteString(fmt.Sprintf("- Calories burned: %.0f\n", w.CaloriesBurned))
 		}
@@ -125,7 +145,11 @@ func WorkoutsMarkdown(workouts []models.WorkoutEntry, from, to, units string) st
 							loadVal = s.LoadKg * unitsconv.KgToLbs
 							loadUnit = "lbs"
 						}
-						b.WriteString(fmt.Sprintf("    - Set %d: %dx @ %.1f %s, TUT: %.0fs\n", i+1, s.Reps, loadVal, loadUnit, s.TUTSeconds))
+						if ex.RPE > 0 {
+							b.WriteString(fmt.Sprintf("    - Set %d: %dx @ %.1f %s, TUT: %.0fs, RPE: %.1f\n", i+1, s.Reps, loadVal, loadUnit, s.TUTSeconds, ex.RPE))
+						} else {
+							b.WriteString(fmt.Sprintf("    - Set %d: %dx @ %.1f %s, TUT: %.0fs\n", i+1, s.Reps, loadVal, loadUnit, s.TUTSeconds))
+						}
 					}
 				}
 				if ex.METValue > 0 {
@@ -153,15 +177,24 @@ func WorkoutsCSV(workouts []models.WorkoutEntry, from, to, units string) string 
 	if units == "imperial" {
 		loadHeader = "load_lbs"
 	}
-	b.WriteString(fmt.Sprintf("date,slot,title,duration_min,calories_burned,mwv,nds,session_density,%s\n", loadHeader))
+	// include rpe and focus columns
+	b.WriteString(fmt.Sprintf("date,slot,title,duration_min,calories_burned,mwv,nds,session_density,rpe,focus,%s\n", loadHeader))
 	for _, w := range workouts {
 		if w.Date < from || w.Date > to {
 			continue
 		}
 		// for CSV include a single load value per workout row (sum of loads? keep simple: leave blank)
 		// Historically this CSV didn't include set-level loads; we keep prior behavior but include header.
-		b.WriteString(fmt.Sprintf("%s,%s,%q,%.0f,%.0f,%.0f,%.0f,%.1f,\n",
-			w.Date, w.Slot, w.Title, w.DurationMin, w.CaloriesBurned, w.MWV, w.NDS, w.SessionDensity))
+		focus := ""
+		if len(w.Metadata.Focus) > 0 {
+			focus = strings.Join(w.Metadata.Focus, ";")
+		}
+		rpeStr := ""
+		if w.Metadata.RPE > 0 {
+			rpeStr = fmt.Sprintf("%.1f", w.Metadata.RPE)
+		}
+		b.WriteString(fmt.Sprintf("%s,%s,%q,%.0f,%.0f,%.0f,%.0f,%.1f,%s,%q,%q\n",
+			w.Date, w.Slot, w.Title, w.DurationMin, w.CaloriesBurned, w.MWV, w.NDS, w.SessionDensity, rpeStr, focus, ""))
 	}
 	return b.String()
 }
@@ -243,7 +276,25 @@ func CombinedMarkdown(logs []models.NutritionLog, biometrics []models.BiometricL
 				waistUnit = "in"
 			}
 			b.WriteString(fmt.Sprintf("- Weight: %.1f %s\n", weightVal, weightUnit))
+			// Waist may be tracked in body_measurements rather than biometric_logs;
+			// waistVal will be 0 if not present in biometric_logs.
 			b.WriteString(fmt.Sprintf("- Waist: %.1f %s\n", waistVal, waistUnit))
+			// additional biometric fields
+			if bio.GripKg > 0 {
+				gripVal := bio.GripKg
+				gripUnit := "kg"
+				if units == "imperial" {
+					gripVal = bio.GripKg * unitsconv.KgToLbs
+					gripUnit = "lbs"
+				}
+				b.WriteString(fmt.Sprintf("- Grip: %.1f %s\n", gripVal, gripUnit))
+			}
+			if bio.BoltScore > 0 {
+				b.WriteString(fmt.Sprintf("- BOLT: %.0f\n", bio.BoltScore))
+			}
+			if bio.BodyFatPct > 0 {
+				b.WriteString(fmt.Sprintf("- Body Fat: %.1f%%\n", bio.BodyFatPct))
+			}
 			if bio.SleepHours > 0 {
 				b.WriteString(fmt.Sprintf("- Sleep: %.1f hrs (quality: %.1f)\n", bio.SleepHours, bio.SleepQuality))
 			}
