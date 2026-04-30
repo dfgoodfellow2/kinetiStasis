@@ -147,8 +147,8 @@
       rpe:         e.rpe          ?? '',
       pattern:     e.category     || '',
       bias:        e.bias         || '',
-      distance_km: e.distance_km  ?? '',
-      elevation_m: e.elevation_m  ?? '',
+      distance_km: e.distanceKm ?? e.distance_km ?? '',
+      elevation_m: e.elevationM ?? e.elevation_m ?? '',
       pace:        e.pace         || '',
       // preserve nested sets for save round-trip
       _sets:       setsArr,
