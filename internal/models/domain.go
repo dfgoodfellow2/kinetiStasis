@@ -60,6 +60,7 @@ type BiometricLog struct {
 	SleepHours     float64 `json:"sleep_hours"`
 	SleepQuality   float64 `json:"sleep_quality"`
 	SubjectiveFeel int     `json:"subjective_feel"`
+	BodyFatPct     float64 `json:"body_fat_pct"` // Manual body fat % entry
 	Notes          string  `json:"notes"`
 	UpdatedAt      string  `json:"updated_at"`
 }
@@ -264,6 +265,9 @@ type WeeklyStats struct {
 	TotalMWV      float64 `json:"total_mwv"`
 	AvgSleepHours float64 `json:"avg_sleep_hours"`
 	AvgWeightKg   float64 `json:"avg_weight_kg"`
+	DailyLogged   []int   `json:"daily_logged"`   // 30-day array: 1 if any data logged, 0 if not
+	CurrentStreak int     `json:"current_streak"` // Consecutive days logged ending today
+	LongestStreak int     `json:"longest_streak"` // Longest consecutive logging streak in 30 days
 }
 
 type DashboardData struct {

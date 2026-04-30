@@ -178,6 +178,7 @@ type BiometricLog struct {
 	SleepHours     float64 `json:"sleep_hours"`
 	SleepQuality   float64 `json:"sleep_quality"`
 	SubjectiveFeel int     `json:"subjective_feel"`
+	BodyFatPct     float64 `json:"body_fat_pct"`
 	Notes          string  `json:"notes"`
 }
 
