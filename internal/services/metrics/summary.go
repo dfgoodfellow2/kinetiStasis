@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"math"
+	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 )
@@ -74,10 +75,11 @@ func TodaySummary(date string, logs []models.NutritionLog, targets models.Target
 	}
 }
 
-// WeeklyStats summarizes last 7 days
+// WeeklyStats summarizes last 7 days with 30-day logging streak data
 func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.BiometricLog, workouts []models.WorkoutEntry) models.WeeklyStats {
 	ws := models.WeeklyStats{}
-	// Avg calories/protein from nutrition logs
+
+	// 7-day averages from nutrition
 	if len(nutritionLogs) > 0 {
 		sumC, sumP := 0.0, 0.0
 		for _, l := range nutritionLogs {
@@ -87,7 +89,8 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 		ws.AvgCalories = sumC / float64(len(nutritionLogs))
 		ws.AvgProteinG = sumP / float64(len(nutritionLogs))
 	}
-	// workouts
+
+	// 7-day workouts
 	ws.TotalWorkouts = len(workouts)
 	totalMWV := 0.0
 	for _, w := range workouts {
@@ -116,5 +119,73 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 			ws.AvgWeightKg = sumWeight / float64(countWeight)
 		}
 	}
+
+	// 30-day logging streak calculation
+	// Check all data sources (biometrics, nutrition, workouts) for the last 30 days
+	today := time.Now().UTC()
+	thirtyDaysAgo := today.AddDate(0, 0, -30).Format("2006-01-02")
+
+	// Build maps of dates that have data
+	bioDates := make(map[string]bool)
+	for _, b := range biometrics {
+		if b.Date >= thirtyDaysAgo {
+			bioDates[b.Date] = true
+		}
+	}
+	nutDates := make(map[string]bool)
+	for _, n := range nutritionLogs {
+		if n.Date >= thirtyDaysAgo {
+			nutDates[n.Date] = true
+		}
+	}
+	workoutDates := make(map[string]bool)
+	for _, w := range workouts {
+		if w.Date >= thirtyDaysAgo {
+			workoutDates[w.Date] = true
+		}
+	}
+
+	// Build 30-day array (index 0 = 30 days ago, index 29 = today)
+	dailyLogged := make([]int, 30)
+	currentStreak := 0
+	longestStreak := 0
+	tempStreak := 0
+
+	for i := 0; i < 30; i++ {
+		day := today.AddDate(0, 0, -29+i) // -29 to get 30 days ending today
+		dateStr := day.Format("2006-01-02")
+
+		// Check if ANY data was logged that day
+		hasData := bioDates[dateStr] || nutDates[dateStr] || workoutDates[dateStr]
+		if hasData {
+			dailyLogged[i] = 1
+		} else {
+			dailyLogged[i] = 0
+		}
+
+		// Track streaks
+		if hasData {
+			tempStreak++
+			if tempStreak > longestStreak {
+				longestStreak = tempStreak
+			}
+		} else {
+			tempStreak = 0
+		}
+	}
+
+	// Current streak (consecutive days with data ending today)
+	for i := 29; i >= 0; i-- {
+		if dailyLogged[i] == 1 {
+			currentStreak++
+		} else {
+			break
+		}
+	}
+
+	ws.DailyLogged = dailyLogged
+	ws.CurrentStreak = currentStreak
+	ws.LongestStreak = longestStreak
+
 	return ws
 }

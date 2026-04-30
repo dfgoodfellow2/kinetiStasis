@@ -53,8 +53,24 @@ export const api = {
 
   // Biometrics
   listBiometrics: (from, to) => req('GET', `/biometrics?from=${from}&to=${to}`),
-  postBiometric: (b) => req('POST', '/biometrics', b),
-  putBiometric: (date, b) => req('PUT', `/biometrics/${date}`, b),
+  postBiometric: (b) => {
+    // include optional body_fat_pct if present on the object
+    const payload = Object.assign({}, b)
+    if (payload.body_fat_pct === undefined && payload.bodyFatPct !== undefined) {
+      // accept camelCase from some callers
+      payload.body_fat_pct = payload.bodyFatPct
+      delete payload.bodyFatPct
+    }
+    return req('POST', '/biometrics', payload)
+  },
+  putBiometric: (date, b) => {
+    const payload = Object.assign({}, b)
+    if (payload.body_fat_pct === undefined && payload.bodyFatPct !== undefined) {
+      payload.body_fat_pct = payload.bodyFatPct
+      delete payload.bodyFatPct
+    }
+    return req('PUT', `/biometrics/${date}`, payload)
+  },
   deleteBiometric: (date) => req('DELETE', `/biometrics/${date}`),
 
   // Workouts
