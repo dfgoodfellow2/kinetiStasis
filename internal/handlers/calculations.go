@@ -358,5 +358,22 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		GripPersonalBest: gripPB,
 		WorkoutToday:     workoutToday,
 	}
+
+	// include check-in readiness (last checkin)
+	var lastCheckInDate string
+	row := h.db.QueryRowContext(r.Context(), `SELECT check_in_date FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, claims.UserID)
+	if err := row.Scan(&lastCheckInDate); err == nil {
+		// compute days since
+		t, _ := time.Parse(constants.DateFormat, lastCheckInDate)
+		days := int(time.Since(t).Hours() / 24)
+		can := days >= 5
+		dash.CanChangeTargets = can
+		if !can {
+			dash.DaysUntilCheckin = 5 - days
+		}
+	} else {
+		// no prior checkin — allow
+		dash.CanChangeTargets = true
+	}
 	respond.JSON(w, http.StatusOK, dash)
 }

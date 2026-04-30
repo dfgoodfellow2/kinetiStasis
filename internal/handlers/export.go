@@ -103,6 +103,39 @@ func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	}
 	nut, _ := fetchNutritionLogs(r.Context(), h.db, claims.UserID, from)
 	bio, _ := fetchBiometricLogs(r.Context(), h.db, claims.UserID, from)
+	// body_measurements table stores circumference measurements (waist etc.)
+	// biometric_logs may not include waist; fetch body_measurements in range and merge waist values.
+	bmRows, err := h.db.QueryContext(r.Context(), `SELECT date, COALESCE(waist_cm,0) FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ?`, claims.UserID, from, to)
+	if err == nil {
+		defer bmRows.Close()
+		bmMap := make(map[string]float64)
+		for bmRows.Next() {
+			var d string
+			var waist float64
+			if err := bmRows.Scan(&d, &waist); err == nil {
+				if waist > 0 {
+					bmMap[d] = waist
+				}
+			}
+		}
+		if len(bmMap) > 0 {
+			// merge into bio slice: if biometric entry exists for date, set WaistCm if zero; otherwise create new biometric log entries for dates with only body measurements
+			bioMap := make(map[string]*models.BiometricLog)
+			for i := range bio {
+				bioMap[bio[i].Date] = &bio[i]
+			}
+			for d, w := range bmMap {
+				if b, ok := bioMap[d]; ok {
+					if b.WaistCm == 0 {
+						b.WaistCm = w
+					}
+				} else {
+					// create a minimal BiometricLog for this date
+					bio = append(bio, models.BiometricLog{Date: d, WaistCm: w})
+				}
+			}
+		}
+	}
 	workouts, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, from)
 	targets, err := fetchTargets(r.Context(), h.db, claims.UserID)
 	if err != nil {

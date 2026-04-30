@@ -161,6 +161,19 @@ type TargetSnapshot struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
+// CheckInLog records a weekly check-in event and the state before/after
+type CheckInLog struct {
+	ID             string  `json:"id"`
+	UserID         string  `json:"user_id"`
+	CheckInDate    string  `json:"check_in_date"`
+	WeightBefore   float64 `json:"weight_before"`
+	WeightAfter    float64 `json:"weight_after"`
+	CaloriesBefore int     `json:"calories_before"`
+	CaloriesAfter  int     `json:"calories_after"`
+	Reason         string  `json:"reason"`
+	CreatedAt      string  `json:"created_at"`
+}
+
 // SavedMeal is a named, reusable meal with its macro breakdown.
 type SavedMeal struct {
 	ID        string  `json:"id"`
@@ -288,6 +301,9 @@ type DashboardData struct {
 	TodayBio         *BiometricLog `json:"today_bio"`
 	GripPersonalBest float64       `json:"grip_personal_best"`
 	WorkoutToday     bool          `json:"workout_today"`
+	// Check-in readiness
+	CanChangeTargets bool `json:"can_change_targets"`
+	DaysUntilCheckin int  `json:"days_until_checkin"`
 }
 
 type ParsedMeal struct {

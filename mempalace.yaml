@@ -1,0 +1,30 @@
+wing: diet_tracker
+rooms:
+- name: backend
+  description: Files from models/
+  keywords:
+  - backend
+  - models
+- name: frontend
+  description: Files from ui/
+  keywords:
+  - frontend
+  - ui
+- name: documentation
+  description: Files from docs/
+  keywords:
+  - documentation
+  - docs
+- name: cmd
+  description: Files from cmd/
+  keywords:
+  - cmd
+  - cmd
+- name: types
+  description: Files from types/
+  keywords:
+  - types
+  - types
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []
