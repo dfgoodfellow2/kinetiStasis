@@ -338,9 +338,10 @@
       workout.focus = w.focus || ''
       workout.rest_interval = w.rest_interval || ''
       workout.duration_min = String(w.duration_min || '')
-       // session-level RPE removed: no assignment to workout.rpe
-      workout.avg_hr = String(w.avg_hr || '')
-      workout.max_hr = String(w.max_hr || '')
+      // session-level RPE removed: no assignment to workout.rpe
+      // avg_hr/max_hr live under metadata in the API model
+      workout.avg_hr = w.metadata?.avg_hr ? String(w.metadata.avg_hr) : ''
+      workout.max_hr = w.metadata?.max_hr ? String(w.metadata.max_hr) : ''
       workout.calories_burned = String(w.calories_burned || '')
       workout.notes = w.raw_notes || ''
       workout.coach_notes = w.coach_notes || ''

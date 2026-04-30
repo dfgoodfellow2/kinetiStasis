@@ -76,7 +76,8 @@ func TodaySummary(date string, logs []models.NutritionLog, targets models.Target
 }
 
 // WeeklyStats summarizes last 7 days with 30-day logging streak data
-func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.BiometricLog, workouts []models.WorkoutEntry) models.WeeklyStats {
+// today is the client's local date in YYYY-MM-DD format (used to avoid UTC mismatch)
+func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.BiometricLog, workouts []models.WorkoutEntry, today string) models.WeeklyStats {
 	ws := models.WeeklyStats{}
 
 	// 7-day averages from nutrition
@@ -122,8 +123,10 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 
 	// 30-day logging streak calculation
 	// Check all data sources (biometrics, nutrition, workouts) for the last 30 days
-	today := time.Now().UTC()
-	thirtyDaysAgo := today.AddDate(0, 0, -30).Format("2006-01-02")
+	// Parse the caller-supplied today (YYYY-MM-DD) so streaks are computed relative to the
+	// same local date the front-end / handler is using.
+	todayTime, _ := time.Parse("2006-01-02", today)
+	thirtyDaysAgo := todayTime.AddDate(0, 0, -30).Format("2006-01-02")
 
 	// Build maps of dates that have data
 	bioDates := make(map[string]bool)
@@ -152,7 +155,7 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 	tempStreak := 0
 
 	for i := 0; i < 30; i++ {
-		day := today.AddDate(0, 0, -29+i) // -29 to get 30 days ending today
+		day := todayTime.AddDate(0, 0, -29+i) // -29 to get 30 days ending today
 		dateStr := day.Format("2006-01-02")
 
 		// Check if ANY data was logged that day
@@ -174,18 +177,29 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 		}
 	}
 
-	// Current streak (consecutive days with data ending today)
+	// Current streak (consecutive days with data, with 1-day grace)
+	// Allow counting yesterday if today has no data yet
+	currentStreak = 0
+	graceUsed := false
 	for i := 29; i >= 0; i-- {
 		if dailyLogged[i] == 1 {
 			currentStreak++
+		} else if !graceUsed && i < 29 {
+			// Allow one gap (grace day)
+			graceUsed = true
+			continue
 		} else {
 			break
 		}
 	}
 
+	// Track if today is logged for fire streak indicator
+	todayLogged := dailyLogged[29] == 1
+
 	ws.DailyLogged = dailyLogged
 	ws.CurrentStreak = currentStreak
 	ws.LongestStreak = longestStreak
+	ws.TodayLogged = todayLogged
 
 	return ws
 }

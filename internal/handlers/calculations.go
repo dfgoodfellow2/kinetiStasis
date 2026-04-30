@@ -260,6 +260,7 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	nut90, _ := fetchNutritionLogs(r.Context(), h.db, claims.UserID, since90)
 	bio30, _ := fetchBiometricLogs(r.Context(), h.db, claims.UserID, since30)
 	workouts7, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, since7)
+	workouts30, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, since30)
 
 	targets, terr := fetchTargets(r.Context(), h.db, claims.UserID)
 	if terr != nil {
@@ -286,6 +287,13 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			nut7 = append(nut7, n)
 		}
 	}
+	// Filter to last 30 days for streak calculation
+	var nut30 []models.NutritionLog
+	for _, n := range nut90 {
+		if n.Date >= since30 {
+			nut30 = append(nut30, n)
+		}
+	}
 	var bio7 []models.BiometricLog
 	for _, b := range bio30 {
 		if b.Date >= since7 {
@@ -298,7 +306,7 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			workouts7filtered = append(workouts7filtered, w)
 		}
 	}
-	weekly := metrics.WeeklyStats(nut7, bio7, workouts7filtered)
+	weekly := metrics.WeeklyStats(nut30, bio30, workouts30, today)
 	todaySummary := metrics.TodaySummary(today, nut90, targets)
 
 	// weight trend from bio30

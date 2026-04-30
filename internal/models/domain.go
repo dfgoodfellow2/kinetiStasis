@@ -97,6 +97,10 @@ type ExerciseEntry struct {
 	Tempo string `json:"tempo,omitempty"`
 	// Bias is the bilateral/unilateral indicator for this exercise
 	Bias string `json:"bias,omitempty"` // "bilateral" | "unilateral" | ""
+	// IntensityRelMax is the estimated % of 1RM (0.0-1.0)
+	IntensityRelMax float64 `json:"intensity_rel_max,omitempty"`
+	// IntensitySource indicates where intensity was derived from: "1rm", "rpe", "hr", or "default"
+	IntensitySource string `json:"intensity_source,omitempty"`
 }
 
 // WorkoutMetadata holds session-level fields not tracked in individual columns.
@@ -268,6 +272,7 @@ type WeeklyStats struct {
 	DailyLogged   []int   `json:"daily_logged"`   // 30-day array: 1 if any data logged, 0 if not
 	CurrentStreak int     `json:"current_streak"` // Consecutive days logged ending today
 	LongestStreak int     `json:"longest_streak"` // Longest consecutive logging streak in 30 days
+	TodayLogged   bool    `json:"today_logged"`   // Whether today has any logged data (for fire indicator)
 }
 
 type DashboardData struct {

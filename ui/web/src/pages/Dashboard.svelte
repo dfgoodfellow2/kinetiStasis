@@ -97,7 +97,12 @@ let checklist = $derived(data ? [
               <div class="text-gray-500 text-xs">Fat</div>
             </div>
             <div>
-              <div class="text-cyan-400 font-semibold">{data.weekly_stats?.current_streak ?? 0}</div>
+              <div class="text-cyan-400 font-semibold flex items-center gap-1">
+                {data.weekly_stats?.current_streak ?? 0}
+                {#if data.weekly_stats?.today_logged}
+                  <span class="text-orange-400">🔥</span>
+                {/if}
+              </div>
               <div class="text-gray-500 text-xs">Streak</div>
             </div>
           </div>
