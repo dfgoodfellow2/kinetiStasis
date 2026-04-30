@@ -82,7 +82,13 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 			rx.metValue, _ = strconv.ParseFloat(v, 64)
 		case "distance_km":
 			rx.distanceKm, _ = strconv.ParseFloat(v, 64)
+		case "distance":
+			// Accept both `distance_km` and `distance` in source YAML
+			rx.distanceKm, _ = strconv.ParseFloat(v, 64)
 		case "elevation_m":
+			rx.elevationM, _ = strconv.ParseFloat(v, 64)
+		case "elevation":
+			// Accept both `elevation_m` and `elevation` in source YAML
 			rx.elevationM, _ = strconv.ParseFloat(v, 64)
 		case "pace":
 			rx.pace = v
