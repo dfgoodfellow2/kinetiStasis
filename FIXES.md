@@ -489,3 +489,61 @@ CONTACT / NOTES
 If any change requires further clarification (for example, exact SQL strings in profile upsert, or which model ID to use when instantiating the Gemini API model), ask before making assumptions. This document intentionally avoids guessing those small implementation details.
 
 Keep each commit focused: one fix per commit. When committing, include file list in the commit message (e.g., "FIX-004: export unit-aware output; update handlers and export service").
+
+------------------------------------------------------------
+
+FIX-035: Distance Lost in Workout Edit (BUG-DISTANCE)
+
+Date: 2026-04-30
+Severity: High
+Status: Fixed
+
+### Root Cause
+
+Two separate bugs caused the distance field (`distance_km`) to be lost when saving and re-loading a workout in the edit flow.
+
+**Bug 1 — `mapExercise` (YAML/AI → simple tab path):**
+The `mapExercise` function read from `ex.distance_km` (snake_case) when mapping a server response to the UI form:
+```js
+distance_km: e.distanceKm ?? e.distance_km ?? '',
+```
+The Go model serialises `ExerciseEntry.DistanceKm` as `distanceKm` (camelCase). So `e.distanceKm` was the correct key, but the fallback to `e.distance_` was wrong — it tried a non-existent snake_case key. More critically, the fallback value was `''` (empty string), which evaluates as falsy in the ternary used when building the save payload:
+```js
+distance_km:  ex.distance_km !== '' ? inputDist(2.0) : 0,
+```
+When `ex.distance_2` is `''` (empty string, falsy), this falls to `inputDist('')` which returns `+0 = 0`. The fix: `mapExercise` should return the actual numeric value, not an empty string.
+
+**Bug 2 — `onMount` (edit flow path):**
+The edit flow used a logical-OR with `0` as the fallback:
+```js
+distance_2km: ex.distanceKm || ex.distance_2km || 0,
+elevation_m: ex.elevationM || ex.elevation_2m || 0,
+```
+The `|| 0` fallback triggered when the field was `0` (e.g., a non-running exercise had `0` stored). This is correct for non-running exercises but wrong for running exercises with an actual distance. The fix: use nullish coalescing (`?? ''`) so that empty/zero distances are preserved as empty strings in the form.
+
+### Files Changed
+- ui/ web/ src/ pages/ WorkoutLog. svelte
+
+### Fix
+1. `mapExercise`: Return `distance_2km: e.distanceKm ?? 0` (numeric, not empty string)
+2. `onMount` edit mapping: Changed `|| 0` to `?? ''` for both `distance_2km` and `elevation_m`
+
+---
+
+FIX-036: YAML Parser Silent Failure on Distance/Elevation with Unit Suffixes
+Date: 2026-04-30
+Severity: High
+Status: Fixed
+### Root Cause
+The Go YAML parser (`internal/services/workout/parser.go`) passed distance and elevation values directly to `strconv.ParseFloat` without stripping unit suffixes. The YAML source contained `distance: "3.2 km"` and `elevation: 50`. Since `strconv.ParseFloat("3.2 km", 64)` fails with a syntax error (silently discarded), `distanceKm` was set to `0`. Meanwhile, `elevation: 50` worked because it's a bare number — no unit suffix to strip.
+Note the asymmetry: `parseLoad()` DID strip "lbs"/"lb" suffixes, but `applyExField()` did NOT strip "km"/"m"/"ft" for distance/elevation.
+This is why elevation showed 50 in the parsed preview but distance showed 0.
+### Fix
+Replaced `stripUnit()` with two typed conversion functions:
+1. `parseDistanceKm(s string) float64` — detects `mi`/`km`/bare and converts miles to km (×1.60934). Bare numbers assumed km.
+2. `parseElevationM(s string) float64` — detects `ft`/`m`/bare and converts feet to metres (×0.3048). Bare numbers assumed m.
+Also applied FIX-035 fixes to WorkoutLog.svelte: `mapExercise` uses numeric default (`?? 0`) and `onMount` edit uses nullish coalescing (`?? ''`).
+### Files Changed
+- internal/services/workout/parser.go (stripUnit + applyExField)
+- ui/web/src/pages/WorkoutLog.svelte (mapExercise + onMount fixes)
+---

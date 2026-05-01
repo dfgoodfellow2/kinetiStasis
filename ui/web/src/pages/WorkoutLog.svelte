@@ -90,6 +90,7 @@
   // ── Apply parsed result ───────────────────────────────────
   // res is a ParsedWorkout — all session metadata at the top level
   function applyParsed(res) {
+    console.log('APPLYPARSED res.exercises[4]:', res.exercises ? JSON.stringify(res.exercises[4]) : 'NO EXERCISES')
     // Normalise focus: may be array or JSON string
     let focusStr = ''
     if (Array.isArray(res.focus) && res.focus.length > 0) {
@@ -126,6 +127,7 @@
 
   // mapExercise converts a server ExerciseEntry (with nested sets[]) to flat UI form fields.
   function mapExercise(e) {
+  console.log('MAPEXERCISE e:', e.name, '| distance_km:', e.distance_km, '| elevation_m:', e.elevation_m, '| ALL keys:', Object.keys(e).join(', '))
   // e.sets is []ExerciseSet = [{reps, load_kg, tut_seconds, rest_seconds}]
     const setsArr = Array.isArray(e.sets) ? e.sets : []
     const setCount = setsArr.length || ''
@@ -147,8 +149,8 @@
       rpe:         e.rpe          ?? '',
       pattern:     e.category     || '',
       bias:        e.bias         || '',
-      distance_km: e.distanceKm ?? e.distance_km ?? '',
-      elevation_m: e.elevationM ?? e.elevation_m ?? '',
+      distance_km: e.distance_km ?? 0,
+      elevation_m: e.elevation_m ?? '',
       pace:        e.pace         || '',
       // preserve nested sets for save round-trip
       _sets:       setsArr,
@@ -177,6 +179,7 @@
     success = ''
     loading = true
     try {
+      console.log('SAVE workout.exercises:', workout.exercises.map(ex => ({name: ex.name, distance_km: ex.distance_km, elevation_m: ex.elevation_m})))
       const payload = {
         date:            workout.date,
         slot:            String(workout.slot || '1'),
@@ -368,9 +371,9 @@
           reps: firstExerciseSet.reps ? String(firstExerciseSet.reps) : '',
           weight_lbs: firstExerciseSet.load_lbs ? String(Math.round(firstExerciseSet.load_lbs)) : '',
           
-          // Conditioning: distance/elevation/pace/duration (JSON uses camelCase)
-          distance_km: ex.distanceKm || ex.distance_km || 0,
-          elevation_m: ex.elevationM || ex.elevation_m || 0,
+          // Conditioning: distance/elevation/pace/duration (JSON uses snake_case)
+          distance_km: ex.distance_km ?? '',
+          elevation_m: ex.elevation_m ?? '',
           pace: ex.pace || '',
           duration: ex.durationRaw || ex.duration_raw || '',
           
