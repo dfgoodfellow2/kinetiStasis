@@ -69,9 +69,9 @@ let checklist = $derived(data ? [
 {:else}
   <div class="max-w-screen-xl mx-auto space-y-4">
 
-    <!-- Top row: Vitals ring + Checklist -->
-    <div class="grid md:grid-cols-2 gap-4">
-
+    <!-- Row 1: Vitals + Checklist + (Targets/Readiness stacked) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Vitals Card (same as before) -->
       <Card title="Vitals">
         <div class="flex flex-col items-center gap-3">
           <VitalsRing
@@ -109,6 +109,7 @@ let checklist = $derived(data ? [
         </div>
       </Card>
 
+      <!-- Checklist Card (same as before) -->
       <Card title="Checklist — Today">
         <ul class="space-y-2">
           {#each checklist as item}
@@ -123,73 +124,70 @@ let checklist = $derived(data ? [
         </ul>
       </Card>
 
+      <!-- Targets + Readiness stacked vertically -->
+      <div class="space-y-4">
+        <Card title="Targets">
+          <div class="space-y-3 text-sm">
+            <!-- Calories -->
+            <div class="flex justify-between items-center">
+              <span class="text-gray-400">Calories</span>
+              <span class="font-tabular-nums font-semibold">
+                {fmt0(data.today?.consumed?.calories ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.calories != null}<span class="text-orange-400">{fmt0(data.today.targets.calories)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">kcal</span>
+              </span>
+            </div>
+            <!-- Protein (emerald-400 like Vitals) -->
+            <div class="flex justify-between items-center">
+              <span class="text-gray-400">Protein</span>
+              <span class="font-tabular-nums font-semibold">
+                {fmt1(data.today?.consumed?.protein_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.protein_g != null}<span class="text-emerald-400">{fmt1(data.today.targets.protein_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
+              </span>
+            </div>
+            <!-- Carbs (blue-400 like Vitals) -->
+            <div class="flex justify-between items-center">
+              <span class="text-gray-400">Carbs</span>
+              <span class="font-tabular-nums font-semibold">
+                {fmt1(data.today?.consumed?.carbs_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.carbs_g != null}<span class="text-blue-400">{fmt1(data.today.targets.carbs_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
+              </span>
+            </div>
+            <!-- Fat (yellow-400 like Vitals) -->
+            <div class="flex justify-between items-center">
+              <span class="text-gray-400">Fat</span>
+              <span class="font-tabular-nums font-semibold">
+                {fmt1(data.today?.consumed?.fat_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.fat_g != null}<span class="text-yellow-400">{fmt1(data.today.targets.fat_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Readiness">
+          {@const level = data.readiness?.level ?? 'green'}
+          {@const velocity = data.readiness?.velocity_trend ?? 'stable'}
+          {@const bulbColor = level === 'green' ? 'bg-green-500' : level === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'}
+          {@const arrowIcon = velocity === 'improving' ? '↑' : velocity === 'declining' ? '↓' : '→'}
+          {@const arrowColor = velocity === 'improving' ? 'text-green-400' : velocity === 'declining' ? 'text-red-400' : 'text-gray-400'}
+          <div class="flex items-center justify-center gap-4">
+            <div class="flex flex-col items-center">
+              <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
+              <span class="text-xs text-gray-400 mt-1">Rz: {(data.readiness?.rz ?? 0).toFixed(2)}</span>
+            </div>
+            <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
+          </div>
+          <div class="text-xs text-gray-400 mt-2 text-center">Trend: <span class="font-semibold">{velocity}</span></div>
+        </Card>
+      </div>
     </div>
 
-    <!-- Stats row: Targets, Readiness, Weekly -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-      <Card title="Targets">
-        <div class="space-y-3 text-sm">
-          <!-- Calories -->
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Calories</span>
-            <span class="font-tabular-nums font-semibold">
-              {fmt0(data.today?.consumed?.calories ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.calories != null}<span class="text-orange-400">{fmt0(data.today.targets.calories)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">kcal</span>
-            </span>
-          </div>
-          <!-- Protein (emerald-400 like Vitals) -->
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Protein</span>
-            <span class="font-tabular-nums font-semibold">
-              {fmt1(data.today?.consumed?.protein_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.protein_g != null}<span class="text-emerald-400">{fmt1(data.today.targets.protein_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
-            </span>
-          </div>
-          <!-- Carbs (blue-400 like Vitals) -->
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Carbs</span>
-            <span class="font-tabular-nums font-semibold">
-              {fmt1(data.today?.consumed?.carbs_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.carbs_g != null}<span class="text-blue-400">{fmt1(data.today.targets.carbs_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
-            </span>
-          </div>
-          <!-- Fat (yellow-400 like Vitals) -->
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Fat</span>
-            <span class="font-tabular-nums font-semibold">
-              {fmt1(data.today?.consumed?.fat_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.fat_g != null}<span class="text-yellow-400">{fmt1(data.today.targets.fat_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
-            </span>
-          </div>
-        </div>
+    <!-- Row 2: Weight Trend + Weekly Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card title="Weight Trend (30 days)">
+        <WeightSparkline points={data.weight_trend ?? []} units={store.units} />
       </Card>
-      <Card title="Readiness">
-        {@const level = data.readiness?.level ?? 'green'}
-        {@const velocity = data.readiness?.velocity_trend ?? 'stable'}
-        {@const bulbColor = level === 'green' ? 'bg-green-500' : level === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'}
-        {@const arrowIcon = velocity === 'improving' ? '↑' : velocity === 'declining' ? '↓' : '→'}
-        {@const arrowColor = velocity === 'improving' ? 'text-green-400' : velocity === 'declining' ? 'text-red-400' : 'text-gray-400'}
-        <div class="flex items-center justify-center gap-4">
-          <!-- Colored bulb indicator -->
-          <div class="flex flex-col items-center">
-            <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
-            <span class="text-xs text-gray-400 mt-1">Rz: {(data.readiness?.rz ?? 0).toFixed(2)}</span>
-          </div>
-          <!-- Direction arrow -->
-          <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
-        </div>
-        <div class="text-xs text-gray-400 mt-2 text-center">Trend: <span class="font-semibold">{velocity}</span></div>
-      </Card>
+
       <Card title="Weekly Stats">
         <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weekly_stats?.avg_calories ?? 0)}</span></div>
         <div class="text-sm text-gray-300 mt-1">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weekly_stats?.avg_protein_g ?? 0)}g</span></div>
         <div class="text-sm text-gray-300 mt-1">Avg Weight: <span class="font-semibold text-gray-100">{dispWeight(data.weekly_stats?.avg_weight_kg ?? 0, store.units)} {weightUnit(store.units)}</span></div>
         <div class="text-sm text-gray-300 mt-1">Workouts: <span class="font-semibold text-gray-100">{data.weekly_stats?.total_workouts ?? 0}</span></div>
-        
-      </Card>
-      
-    </div>
-
-    <!-- Weight Trend row -->
-    <div class="grid gap-4">
-      <Card title="Weight Trend (30 days)">
-        <WeightSparkline points={data.weight_trend ?? []} units={store.units} />
       </Card>
     </div>
 
