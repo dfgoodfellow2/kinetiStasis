@@ -174,10 +174,10 @@
 {#if profileError}<Alert type="error" message={profileError} />{/if}
 {#if profileSuccess}<Alert type="success" message={profileSuccess} />{/if}
 
-<div class="max-w-2xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+<div class="max-w-screen-xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
   <h2 class="text-emerald-400 font-bold text-lg">Profile</h2>
 
-  <div class="grid grid-cols-2 gap-3">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
     <div>
       <label class="text-xs text-gray-400" for="pf-name">Name</label>
       <input class="input" id="pf-name" placeholder="Name" bind:value={profile.name} />

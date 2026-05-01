@@ -67,7 +67,7 @@ let checklist = $derived(data ? [
 {:else if !data}
   <p class="text-gray-400 text-center mt-8">Failed to load dashboard. Try refreshing.</p>
 {:else}
-  <div class="space-y-4">
+  <div class="max-w-screen-xl mx-auto space-y-4">
 
     <!-- Top row: Vitals ring + Checklist -->
     <div class="grid md:grid-cols-2 gap-4">

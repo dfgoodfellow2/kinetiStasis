@@ -263,7 +263,7 @@
   })
 </script>
 
-<div class="max-w-2xl mx-auto">
+  <div class="max-w-screen-xl mx-auto">
   <!-- Tab bar — same style as LogMeal -->
   <div class="flex space-x-2 mb-4">
     <button class={tab === 'daily' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'daily'}>Daily</button>

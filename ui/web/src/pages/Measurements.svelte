@@ -50,7 +50,7 @@
 {#if error}<Alert type="error" message={error} />{/if}
 {#if success}<Alert type="success" message={success} />{/if}
 
-<div class="max-w-2xl mx-auto space-y-4">
+  <div class="max-w-screen-xl mx-auto space-y-4">
   <div class="bg-gray-800 p-3 rounded border border-gray-700">
     <h3 class="text-emerald-400 font-bold mb-2">Log Measurement</h3>
     <div class="space-y-2">

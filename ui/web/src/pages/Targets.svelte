@@ -45,7 +45,7 @@
 {#if error}<Alert type="error" message={error} />{/if}
 {#if success}<Alert type="success" message={success} />{/if}
 
-<div class="max-w-2xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+  <div class="max-w-screen-xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
 
   {#if tdee}
     <div class="bg-gray-700 p-3 rounded text-sm space-y-1">

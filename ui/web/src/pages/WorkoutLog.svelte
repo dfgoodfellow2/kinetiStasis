@@ -405,7 +405,7 @@
   })
 </script>
 
-<div class="max-w-2xl mx-auto">
+    <div class="max-w-screen-xl mx-auto">
   <!-- Tab bar -->
   <div class="flex space-x-2 mb-4">
     <button class={tab === 'ai'     ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'ai'}>AI</button>
