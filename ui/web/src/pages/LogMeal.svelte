@@ -89,7 +89,7 @@
   }
 </script>
 
-<div class="max-w-2xl mx-auto">
+<div class="max-w-screen-xl mx-auto">
   <div class="flex space-x-2 mb-4">
     <button class={mode==='manual' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => mode = 'manual'}>Manual</button>
     <button class={mode==='ai' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => mode = 'ai'}>AI Parse</button>
@@ -100,7 +100,7 @@
 
   {#if mode === 'manual'}
     <Card title="Manual Entry">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <!-- Date Field -->
         <div class="md:col-span-2">
           <label class="text-xs text-gray-400" for="lm-date">Date</label>

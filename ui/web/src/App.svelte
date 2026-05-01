@@ -38,7 +38,7 @@
   <Login />
 {:else}
   <Nav />
-  <main class="max-w-2xl mx-auto px-4 py-6">
+  <main class="max-w-screen-xl mx-auto px-4 py-6">
     {#if store.currentPage === 'dashboard'}
       <Dashboard />
     {:else if store.currentPage === 'logmeal'}
