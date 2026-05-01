@@ -547,3 +547,41 @@ Also applied FIX-035 fixes to WorkoutLog.svelte: `mapExercise` uses numeric defa
 - internal/services/workout/parser.go (stripUnit + applyExField)
 - ui/web/src/pages/WorkoutLog.svelte (mapExercise + onMount fixes)
 ---
+
+FIX-037: distance_km/elevation_m Typo in WorkoutLog.svelte
+Date: 2026-04-30
+Severity: High
+Status: Fixed
+
+### Root Cause
+
+A typo in `ui/web/src/pages/WorkoutLog.svelte` caused the distance and elevation fields to always be zero or empty when parsing YAML workouts.
+
+The code incorrectly referenced `distance_2km` and `elevation_2m` (with a stray "2") instead of the correct `distance_km` and `elevation_m` field names. These incorrect field names came from a typo during an earlier edit or merge.
+
+**Impact:**
+- `mapExercise()` function (line 152-153): Read `e.distance_2km` and `e.elevation_2m` which are always `undefined`
+- `onMount` edit flow (line 375-376): Read `ex.distance_2km` and `ex.elevation_2m` which are always `undefined`
+- Fallback values (`?? 0` or `?? ''`) were used instead of the actual parsed values
+- Result: `distance_km: 3.2` in API response became `distance_km: 0` in save payload
+
+### Files Changed
+- `ui/web/src/pages/WorkoutLog.svelte` (lines 152, 153, 375, 376)
+
+### Fix
+Replaced all occurrences of the typo fields with correct field names:
+
+1. **Line 152** (mapExercise): `e.distance_2km ?? 0` → `e.distance_km ?? 0`
+2. **Line 153** (mapExercise): `e.elevation_2m ?? ''` → `e.elevation_m ?? ''`
+3. **Line 375** (onMount): `ex.distance_2km ?? ''` → `ex.distance_km ?? ''`
+4. **Line 376** (onMount): `ex.elevation_2m ?? ''` → `ex.elevation_m ?? ''`
+
+Also rebuilt the Svelte frontend (`make pwa-build`) to propagate the source fix to `internal/web/dist/`.
+
+### Verification
+- Parse YAML with `distance: "3.2 km"` for Treadmill Run
+- Console log `MAPEXERCISE e: Treadmill Run | distance_km: 3.2` ✅ (was `undefined`)
+- Save payload shows `"distance_km": 3.2` ✅ (was `0`)
+- Server response confirms `distance_km: 3.2` stored correctly ✅
+
+---
