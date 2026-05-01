@@ -89,9 +89,7 @@ let checklist = $derived(data ? [
               <div class="text-gray-500 text-xs">Protein</div>
             </div>
             <div>
-                <div class="text-blue-400 font-semibold">
-                {fmt1(data.today?.consumed?.carbs_g ?? 0)} / {#if data.today?.targets?.carbs_g != null}{fmt1(data.today.targets.carbs_g)}{:else}—{/if}g
-              </div>
+              <div class="text-blue-400 font-semibold">{fmt1(data.today?.consumed?.carbs_g ?? 0)}g</div>
               <div class="text-gray-500 text-xs">Carbs</div>
             </div>
             <div>
@@ -128,31 +126,35 @@ let checklist = $derived(data ? [
     </div>
 
     <!-- Stats row: Targets, Readiness, Weekly -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
       <Card title="Targets">
-        <div class="grid grid-cols-2 gap-2 text-sm">
+        <div class="space-y-3 text-sm">
+          <!-- Calories -->
           <div class="flex justify-between items-center">
-            <span class="text-gray-300">Calories</span>
-              <span class="font-tabular-nums">
-              {fmt0(data.today?.consumed?.calories ?? 0)} / {#if data.today?.targets?.calories != null}{fmt0(data.today.targets.calories)}{:else}—{/if} <span class="text-gray-500">kcal</span>
+            <span class="text-gray-400">Calories</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt0(data.today?.consumed?.calories ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.calories != null}<span class="text-orange-400">{fmt0(data.today.targets.calories)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">kcal</span>
             </span>
           </div>
+          <!-- Protein (emerald-400 like Vitals) -->
           <div class="flex justify-between items-center">
-            <span class="text-gray-300">Protein</span>
-              <span class="font-tabular-nums">
-              {fmt1(data.today?.consumed?.protein_g ?? 0)} / {#if data.today?.targets?.protein_g != null}{fmt1(data.today.targets.protein_g)}{:else}—{/if} <span class="text-gray-500">g</span>
+            <span class="text-gray-400">Protein</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt1(data.today?.consumed?.protein_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.protein_g != null}<span class="text-emerald-400">{fmt1(data.today.targets.protein_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
             </span>
           </div>
+          <!-- Carbs (blue-400 like Vitals) -->
           <div class="flex justify-between items-center">
-            <span class="text-gray-300">Carbs</span>
-              <span class="font-tabular-nums">
-              {fmt1(data.today?.consumed?.carbs_g ?? 0)} / {#if data.today?.targets?.carbs_g != null}{fmt1(data.today.targets.carbs_g)}{:else}—{/if} <span class="text-gray-500">g</span>
+            <span class="text-gray-400">Carbs</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt1(data.today?.consumed?.carbs_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.carbs_g != null}<span class="text-blue-400">{fmt1(data.today.targets.carbs_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
             </span>
           </div>
+          <!-- Fat (yellow-400 like Vitals) -->
           <div class="flex justify-between items-center">
-            <span class="text-gray-300">Fat</span>
-              <span class="font-tabular-nums">
-              {fmt1(data.today?.consumed?.fat_g ?? 0)} / {#if data.today?.targets?.fat_g != null}{fmt1(data.today.targets.fat_g)}{:else}—{/if} <span class="text-gray-500">g</span>
+            <span class="text-gray-400">Fat</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt1(data.today?.consumed?.fat_g ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.fat_g != null}<span class="text-yellow-400">{fmt1(data.today.targets.fat_g)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
             </span>
           </div>
         </div>
