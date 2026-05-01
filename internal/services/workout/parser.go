@@ -81,15 +81,15 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 		case "met":
 			rx.metValue, _ = strconv.ParseFloat(v, 64)
 		case "distance_km":
-			rx.distanceKm, _ = strconv.ParseFloat(v, 64)
+			rx.distanceKm = parseDistanceKm(v)
 		case "distance":
 			// Accept both `distance_km` and `distance` in source YAML
-			rx.distanceKm, _ = strconv.ParseFloat(v, 64)
+			rx.distanceKm = parseDistanceKm(v)
 		case "elevation_m":
-			rx.elevationM, _ = strconv.ParseFloat(v, 64)
+			rx.elevationM = parseElevationM(v)
 		case "elevation":
 			// Accept both `elevation_m` and `elevation` in source YAML
-			rx.elevationM, _ = strconv.ParseFloat(v, 64)
+			rx.elevationM = parseElevationM(v)
 		case "pace":
 			rx.pace = v
 		case "notes":
@@ -373,6 +373,44 @@ func parseTUTPerRep(tempo string) float64 {
 		total += n
 	}
 	return total
+}
+
+// parseDistanceKm converts a distance string to km for storage.
+// Accepts: bare numbers (assumed km), "3.2 km", "2 mi", "1.5mi", "500m".
+// 1 mile = 1.60934 km.
+func parseDistanceKm(s string) float64 {
+	s = strings.TrimSpace(s)
+	s = strings.ToLower(s)
+	if strings.HasSuffix(s, "mi") {
+		s = strings.TrimSuffix(s, "mi")
+		s = strings.TrimSpace(s)
+		n, _ := strconv.ParseFloat(s, 64)
+		return n * 1.60934
+	}
+	// km or bare number (assume km per schema)
+	s = strings.TrimSuffix(s, "km")
+	s = strings.TrimSpace(s)
+	n, _ := strconv.ParseFloat(s, 64)
+	return n
+}
+
+// parseElevationM converts an elevation string to metres for storage.
+// Accepts: bare numbers (assumed m), "50m", "100 ft", "500ft".
+// 1 foot = 0.3048 m.
+func parseElevationM(s string) float64 {
+	s = strings.TrimSpace(s)
+	s = strings.ToLower(s)
+	if strings.HasSuffix(s, "ft") {
+		s = strings.TrimSuffix(s, "ft")
+		s = strings.TrimSpace(s)
+		n, _ := strconv.ParseFloat(s, 64)
+		return n * 0.3048
+	}
+	// m or bare number (assume m per schema)
+	s = strings.TrimSuffix(s, "m")
+	s = strings.TrimSpace(s)
+	n, _ := strconv.ParseFloat(s, 64)
+	return n
 }
 
 // parsePatternBias splits a pattern string into movement pattern and bilateral/unilateral bias.

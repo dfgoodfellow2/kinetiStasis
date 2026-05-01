@@ -23,7 +23,10 @@ build: pwa-build
 	CGO_ENABLED=0 go build -tags pwa -ldflags="-s -w" \
 		-o bin/diet-tracker-server ./cmd/server
 
-run: build
+run: pwa-build
+	mkdir -p data
+	CGO_ENABLED=0 go build -a -tags pwa -ldflags="-s -w" \
+		-o bin/diet-tracker-server ./cmd/server
 	DB_PATH=$(DB_PATH) ./bin/diet-tracker-server
 
 tidy:
