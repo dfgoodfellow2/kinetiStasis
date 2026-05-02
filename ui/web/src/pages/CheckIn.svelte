@@ -31,7 +31,7 @@
       weeklySuccess = ''
       weeklyLoading = true
       try {
-      await api.postCheckin({ caloriesAfter: checkinPreview.recommendedCalories ?? checkinPreview.recommended_calories })
+      await api.postCheckin({ caloriesAfter: checkinPreview.recommendedCalories })
       weeklySuccess = 'Check-in accepted'
       checkinSaved = true
       await loadCheckinPreview()
@@ -108,14 +108,14 @@
     try {
       await api.postMeasurement({
         date:         measForm.date,
-        neck_cm:      inputLength(measForm.neckCm ?? measForm.neck_cm, store.units),
-        chest_cm:     inputLength(measForm.chestCm ?? measForm.chest_cm, store.units),
-        waist_cm:     inputLength(measForm.waistCm ?? measForm.waist_cm, store.units),
-        hips_cm:      inputLength(measForm.hipsCm ?? measForm.hips_cm, store.units),
-        thigh_cm:     inputLength(measForm.thighCm ?? measForm.thigh_cm, store.units),
-        bicep_cm:     inputLength(measForm.bicepCm ?? measForm.bicep_cm, store.units),
-        shoulders_cm: inputLength(measForm.shouldersCm ?? measForm.shoulders_cm, store.units),
-        calves_cm:    inputLength(measForm.calvesCm ?? measForm.calves_cm, store.units),
+        neckCm:      inputLength(measForm.neckCm, store.units),
+        chestCm:     inputLength(measForm.chestCm, store.units),
+        waistCm:     inputLength(measForm.waistCm, store.units),
+        hipsCm:      inputLength(measForm.hipsCm, store.units),
+        thighCm:     inputLength(measForm.thighCm, store.units),
+        bicepCm:     inputLength(measForm.bicepCm, store.units),
+        shouldersCm: inputLength(measForm.shouldersCm, store.units),
+        calvesCm:    inputLength(measForm.calvesCm, store.units),
         notes:        measForm.notes || '',
       })
       measSuccess = 'Measurement saved'
@@ -205,9 +205,9 @@
       // Save measurements first
       await api.postMeasurement({
         date: bfForm.date,
-        neck_cm: inputLength(bfCalcForm.neckCm ?? bfCalcForm.neck_cm, store.units),
-        waist_cm: inputLength(bfCalcForm.waistCm ?? bfCalcForm.waist_cm, store.units),
-        hips_cm: inputLength(bfCalcForm.hipsCm ?? bfCalcForm.hips_cm, store.units),
+        neckCm: inputLength(bfCalcForm.neckCm, store.units),
+        waistCm: inputLength(bfCalcForm.waistCm, store.units),
+        hipsCm: inputLength(bfCalcForm.hipsCm, store.units),
       })
       // Refresh measurements list (optional) and fetch calculated body fat
       await loadMeasurements()
@@ -226,12 +226,12 @@
         const row = store.editData.data
         dailyForm = { 
           date: row.date, 
-          weightKg: String(row.weightKg ?? row.weight_kg ?? ''),
-          gripKg: String(row.gripKg ?? row.grip_kg ?? ''),
-          boltScore: String(row.boltScore ?? row.bolt_score ?? ''),
-          sleepHours: String(row.sleepHours ?? row.sleep_hours ?? ''),
-          sleepQuality: String(row.sleepQuality ?? row.sleep_quality ?? ''),
-          subjective: String(row.subjective ?? row.subjective_feel ?? ''),
+          weightKg: String(row.weightKg ?? ''),
+          gripKg: String(row.gripKg ?? ''),
+          boltScore: String(row.boltScore ?? ''),
+          sleepHours: String(row.sleepHours ?? ''),
+          sleepQuality: String(row.sleepQuality ?? ''),
+          subjective: String(row.subjective ?? ''),
           notes: row.notes ?? ''
         }
         tab = 'daily'
@@ -239,14 +239,14 @@
         const row = store.editData.data
         measForm = {
           date: row.date,
-          neckCm: String(row.neckCm ?? row.neck_cm ?? ''),
-          chestCm: String(row.chestCm ?? row.chest_cm ?? ''),
-          waistCm: String(row.waistCm ?? row.waist_cm ?? ''),
-          hipsCm: String(row.hipsCm ?? row.hips_cm ?? ''),
-          thighCm: String(row.thighCm ?? row.thigh_cm ?? ''),
-          bicepCm: String(row.bicepCm ?? row.bicep_cm ?? ''),
-          shouldersCm: String(row.shouldersCm ?? row.shoulders_cm ?? ''),
-          calvesCm: String(row.calvesCm ?? row.calves_cm ?? ''),
+          neckCm: String(row.neckCm ?? ''),
+          chestCm: String(row.chestCm ?? ''),
+          waistCm: String(row.waistCm ?? ''),
+          hipsCm: String(row.hipsCm ?? ''),
+          thighCm: String(row.thighCm ?? ''),
+          bicepCm: String(row.bicepCm ?? ''),
+          shouldersCm: String(row.shouldersCm ?? ''),
+          calvesCm: String(row.calvesCm ?? ''),
           notes: row.notes ?? ''
         }
         tab = 'measurements'
@@ -411,7 +411,7 @@
                 {#each bfHistory as h}
                   <tr class="border-t border-gray-800">
                     <td>{h.date}</td>
-                    <td class="text-emerald-400 font-semibold">{((h.bodyFatPct ?? h.body_fat_pct) ?? 0).toFixed(1)}%</td>
+                    <td class="text-emerald-400 font-semibold">{((h.bodyFatPct ?? 0).toFixed(1))}%</td>
                   </tr>
                 {/each}
               </tbody>
@@ -447,7 +447,7 @@
         <Card title="Last Measured">
           <div class="flex items-center justify-between">
             <div>
-              <div class="text-2xl font-bold text-emerald-400">{((lastMeasuredBF.bodyFatPct ?? lastMeasuredBF.body_fat_pct) ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
+              <div class="text-2xl font-bold text-emerald-400">{((lastMeasuredBF.bodyFatPct ?? 0).toFixed(1))}<span class="text-lg text-gray-400 ml-1">%</span></div>
               <div class="text-xs text-gray-400">{lastMeasuredBF.date}</div>
             </div>
             <button class="text-sm text-cyan-400 hover:text-cyan-300" onclick={() => bfForm.date = lastMeasuredBF.date}>Use this date</button>
@@ -498,11 +498,11 @@
             <div class="grid grid-cols-2 gap-3 text-sm">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Lean Mass</div>
-                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.leanMassKg ?? bfData.lean_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
+                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.leanMassKg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Fat Mass</div>
-                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.fatMassKg ?? bfData.fat_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
+                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.fatMassKg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
               </div>
             </div>
             <p class="text-xs text-gray-500">Calculated using the U.S. Navy circumference method. Uses {(profile?.sex ?? '').toLowerCase() === 'female' ? 'neck + waist + hips' : 'neck + waist'} measurements.</p>
@@ -557,16 +557,16 @@
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Expected vs Actual</div>
-                 <div class="text-sm">Expected: {(checkinPreview.expectedWeightChange ?? checkinPreview.expected_weight_change ?? 0).toFixed(2) ?? '—'} kg</div>
-                 <div class="text-sm">Diff: {(checkinPreview.weightDiff ?? checkinPreview.weight_diff ?? 0).toFixed(2) ?? '—'} kg</div>
+                 <div class="text-sm">Expected: {(checkinPreview.expectedWeightChange ?? 0).toFixed(2)} kg</div>
+                  <div class="text-sm">Diff: {(checkinPreview.weightDiff ?? 0).toFixed(2)} kg</div>
               </div>
             </div>
 
             <div class="bg-gray-700 rounded-lg p-3">
               <div class="text-xs text-gray-400">Recommendation</div>
                <div class="text-sm">Reason: {checkinPreview.reason ?? '—'}</div>
-               <div class="text-sm">Current Calories: {checkinPreview.caloriesBefore ?? (checkinPreview.calories_before ?? '—')}</div>
-               <div class="text-sm">Recommended: {checkinPreview.recommendedCalories ?? (checkinPreview.recommended_calories ?? '—')}</div>
+                <div class="text-sm">Current Calories: {checkinPreview.caloriesBefore ?? '—'}</div>
+                <div class="text-sm">Recommended: {checkinPreview.recommendedCalories ?? '—'}</div>
                <div class="text-sm">Adjustment: {checkinPreview.calorieAdjustment ? Math.round(checkinPreview.calorieAdjustment) : (checkinPreview.calorie_adjustment ? Math.round(checkinPreview.calorie_adjustment) : '—')}</div>
             </div>
 
