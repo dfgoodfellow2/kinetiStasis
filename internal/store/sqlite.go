@@ -190,6 +190,15 @@ func (s *SQLiteStore) FetchWorkouts(ctx context.Context, userID, since string) (
 		if exercisesJSON != "" && exercisesJSON != "[]" {
 			if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
 				slog.Warn("failed to unmarshal exercises_json", "err", err)
+			} else {
+				// Backwards-compat: some DB rows used snake_case `duration_raw`.
+				// If the new camelCase DurationRaw is empty, populate it from
+				// the legacy field so API responses include durationRaw.
+				for i := range w.Exercises {
+					if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+						w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
+					}
+				}
 			}
 		}
 		if metadataJSON != "" && metadataJSON != "{}" {
@@ -428,6 +437,12 @@ func (s *SQLiteStore) FetchWorkoutsRange(ctx context.Context, userID, from, to s
 		if exercisesJSON != "" && exercisesJSON != "[]" {
 			if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
 				slog.Warn("failed to unmarshal exercises_json", "err", err)
+			} else {
+				for i := range w.Exercises {
+					if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+						w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
+					}
+				}
 			}
 		}
 		if metadataJSON != "" && metadataJSON != "{}" {
@@ -448,7 +463,15 @@ func (s *SQLiteStore) GetWorkout(ctx context.Context, userID, date, slot string)
 		return w, err
 	}
 	if exercisesJSON != "" {
-		_ = json.Unmarshal([]byte(exercisesJSON), &w.Exercises)
+		if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
+			slog.Warn("failed to unmarshal exercises_json", "err", err)
+		} else {
+			for i := range w.Exercises {
+				if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+					w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
+				}
+			}
+		}
 	}
 	if metadataJSON != "" {
 		_ = json.Unmarshal([]byte(metadataJSON), &w.Metadata)
