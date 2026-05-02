@@ -542,18 +542,18 @@
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight Start</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightStart ? checkinPreview.weightStart.toFixed(1) : (checkinPreview.weight_start ? checkinPreview.weight_start.toFixed(1) : '—')} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightStart != null ? checkinPreview.weightStart.toFixed(1) : '—'} kg</div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight End</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightEnd ? checkinPreview.weightEnd.toFixed(1) : (checkinPreview.weight_end ? checkinPreview.weight_end.toFixed(1) : '—')} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightEnd != null ? checkinPreview.weightEnd.toFixed(1) : '—'} kg</div>
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight Change</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightChange ? checkinPreview.weightChange.toFixed(2) : (checkinPreview.weight_change ? checkinPreview.weight_change.toFixed(2) : '—')} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightChange != null ? checkinPreview.weightChange.toFixed(2) : '—'} kg</div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Expected vs Actual</div>
@@ -567,7 +567,7 @@
                <div class="text-sm">Reason: {checkinPreview.reason ?? '—'}</div>
                 <div class="text-sm">Current Calories: {checkinPreview.caloriesBefore ?? '—'}</div>
                 <div class="text-sm">Recommended: {checkinPreview.recommendedCalories ?? '—'}</div>
-               <div class="text-sm">Adjustment: {checkinPreview.calorieAdjustment ? Math.round(checkinPreview.calorieAdjustment) : (checkinPreview.calorie_adjustment ? Math.round(checkinPreview.calorie_adjustment) : '—')}</div>
+               <div class="text-sm">Adjustment: {checkinPreview.calorieAdjustment != null ? Math.round(checkinPreview.calorieAdjustment) : '—'}</div>
             </div>
 
             <div class="flex space-x-2">
