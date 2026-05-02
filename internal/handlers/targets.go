@@ -2,12 +2,16 @@ package handlers
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/calculator"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/nutrition"
 	"github.com/google/uuid"
 )
 
@@ -21,7 +25,49 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var t models.Targets
 	err := h.db.QueryRowContext(r.Context(), `SELECT user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at FROM targets WHERE user_id = ?`, claims.UserID).Scan(&t.UserID, &t.Calories, &t.ProteinG, &t.CarbsG, &t.FatG, &t.FiberG, &t.WaterMl, &t.EatBackExercise, &t.UpdatedAt)
 	if err == sql.ErrNoRows {
-		respond.Error(w, http.StatusNotFound, "targets not found")
+		// Compute fallback targets when no stored targets exist for the user.
+		profile, err := fetchProfile(r.Context(), h.db, claims.UserID)
+		if err == sql.ErrNoRows {
+			// No profile — cannot compute targets
+			respond.Error(w, http.StatusNotFound, "profile not found")
+			return
+		}
+		if err != nil {
+			respond.Error(w, http.StatusInternalServerError, "database error")
+			return
+		}
+
+		// latest weight
+		weight := fetchLatestWeight(r.Context(), h.db, claims.UserID)
+
+		// determine lookback days
+		lookback := profile.TDEELookbackDays
+		if lookback <= 0 {
+			lookback = constants.DefaultTDEELookbackDays
+		}
+		since := time.Now().UTC().AddDate(0, 0, -lookback).Format(constants.DateFormat)
+
+		nutLogs, _ := fetchNutritionLogs(r.Context(), h.db, claims.UserID, since)
+		bioLogs, _ := fetchBiometricLogs(r.Context(), h.db, claims.UserID, since)
+
+		observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile)
+		plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
+
+		// map MacroResult -> Targets
+		computed := models.Targets{
+			UserID:          claims.UserID,
+			Calories:        plan.Calories,
+			ProteinG:        plan.ProteinG,
+			CarbsG:          plan.CarbsG,
+			FatG:            plan.FatG,
+			FiberG:          plan.FiberG,
+			WaterMl:         plan.WaterMl,
+			EatBackExercise: false,
+			UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+		}
+		log.Printf("returning computed fallback targets for user=%s (observed_days=%d)", claims.UserID, observed.DaysOfData)
+		w.Header().Set("X-Computed-Targets", "true")
+		respond.JSON(w, http.StatusOK, computed)
 		return
 	}
 	if err != nil {
