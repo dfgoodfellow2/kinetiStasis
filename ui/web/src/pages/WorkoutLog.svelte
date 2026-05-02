@@ -183,9 +183,15 @@
     const load = ex.weight_lbs || ''
     const loadNum = parseLoad(load)
 
-    const hasDuration = ex.duration && ex.duration.toString().trim() !== ''
+    // Build duration fallback chain similar to History view:
+    // 1. Prefer exercise-level duration if present
+    // 2. If reps <= 0 (timed exercise) and workout has only 1 exercise, fall back to workout.duration_min
+    const exerciseDuration = ex.duration || ex.durationRaw || ex.duration_raw || ''
+    const workoutHasOneExercise = workout.exercises && workout.exercises.length === 1
+    const shouldUseWorkoutDuration = reps <= 0 && !exerciseDuration && workoutHasOneExercise && workout.duration_min
+    const hasDuration = exerciseDuration || (shouldUseWorkoutDuration ? `${workout.duration_min} min` : '')
     // Priority: duration if reps <= 0, else reps
-    const displayValue = (reps <= 0 && hasDuration) ? ex.duration : reps
+    const displayValue = (reps <= 0 && hasDuration) ? hasDuration : reps
     let base = `${ex.name || 'Exercise'}: ${sets}×${displayValue}`
     if (load) base += ` @ ${load}`
 
