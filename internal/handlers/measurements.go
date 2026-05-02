@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
 
@@ -9,13 +8,14 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-type MeasurementsHandler struct{ db *sql.DB }
+type MeasurementsHandler struct{ s store.Store }
 
-func NewMeasurementsHandler(db *sql.DB) *MeasurementsHandler { return &MeasurementsHandler{db: db} }
+func NewMeasurementsHandler(s store.Store) *MeasurementsHandler { return &MeasurementsHandler{s: s} }
 
 // GET /v1/measurements
 func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +29,8 @@ func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if to == "" {
 		to = today
 	}
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, claims.UserID, from, to)
+	db := h.s.DB()
+	rows, err := db.QueryContext(r.Context(), `SELECT id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, claims.UserID, from, to)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -60,7 +61,8 @@ func (h *MeasurementsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	// UPSERT: insert or replace if date already exists for this user
-	_, err := h.db.ExecContext(r.Context(), `INSERT INTO body_measurements (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,date) DO UPDATE SET neck_cm=excluded.neck_cm,chest_cm=excluded.chest_cm,waist_cm=excluded.waist_cm,hips_cm=excluded.hips_cm,thigh_cm=excluded.thigh_cm,bicep_cm=excluded.bicep_cm,notes=excluded.notes,shoulders_cm=excluded.shoulders_cm,calves_cm=excluded.calves_cm`, in.ID, in.UserID, in.Date, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.Notes, now, in.ShouldersCm, in.CalvesCm)
+	db := h.s.DB()
+	_, err := db.ExecContext(r.Context(), `INSERT INTO body_measurements (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,date) DO UPDATE SET neck_cm=excluded.neck_cm,chest_cm=excluded.chest_cm,waist_cm=excluded.waist_cm,hips_cm=excluded.hips_cm,thigh_cm=excluded.thigh_cm,bicep_cm=excluded.bicep_cm,notes=excluded.notes,shoulders_cm=excluded.shoulders_cm,calves_cm=excluded.calves_cm`, in.ID, in.UserID, in.Date, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.Notes, now, in.ShouldersCm, in.CalvesCm)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -79,7 +81,8 @@ func (h *MeasurementsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	in.UserID = claims.UserID
 	in.Date = date
-	res, err := h.db.ExecContext(r.Context(), `UPDATE body_measurements SET neck_cm=?,chest_cm=?,waist_cm=?,hips_cm=?,thigh_cm=?,bicep_cm=?,notes=?,shoulders_cm=?,calves_cm=? WHERE user_id=? AND date=?`, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.Notes, in.ShouldersCm, in.CalvesCm, claims.UserID, date)
+	db := h.s.DB()
+	res, err := db.ExecContext(r.Context(), `UPDATE body_measurements SET neck_cm=?,chest_cm=?,waist_cm=?,hips_cm=?,thigh_cm=?,bicep_cm=?,notes=?,shoulders_cm=?,calves_cm=? WHERE user_id=? AND date=?`, in.NeckCm, in.ChestCm, in.WaistCm, in.HipsCm, in.ThighCm, in.BicepCm, in.Notes, in.ShouldersCm, in.CalvesCm, claims.UserID, date)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -95,7 +98,8 @@ func (h *MeasurementsHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *MeasurementsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
-	result, err := h.db.ExecContext(r.Context(), `DELETE FROM body_measurements WHERE user_id = ? AND date = ?`, claims.UserID, date)
+	db := h.s.DB()
+	result, err := db.ExecContext(r.Context(), `DELETE FROM body_measurements WHERE user_id = ? AND date = ?`, claims.UserID, date)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return

@@ -215,7 +215,7 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 		if rx.metValue > 0 {
 			entry.METValue = rx.metValue
 		} else if entry.RPE > 0 {
-			entry.METValue = EstimateMETFromRPE(entry.RPE)
+			entry.METValue = met.EstimateMETFromRPE(entry.RPE)
 		} else {
 			entry.METValue = met.LookupMET(rx.name)
 		}
@@ -503,51 +503,4 @@ func inferPattern(name string) string {
 	return ""
 }
 
-// EstimateMETFromRPE estimates MET from RPE (0-10) when no explicit MET provided.
-// Maps RPE to typical MET values for strength work:
-// RPE 9-10: 8 METs (high intensity)
-// RPE 7-8: 6 METs (moderate-high)
-// RPE 5-6: 5 METs (moderate)
-// RPE <5: 3-4 METs (light)
-func EstimateMETFromRPE(rpe float64) float64 {
-	switch {
-	case rpe >= 9:
-		return 8.0
-	case rpe >= 7:
-		return 6.0
-	case rpe >= 5:
-		return 5.0
-	case rpe > 0:
-		return 4.0
-	default:
-		return 4.0 // default for strength
-	}
-}
-
-// CalculateCaloriesBurned computes calories burned from MET values.
-// Formula: calories = MET × weight_kg × duration_hours
-// If no MET provided, returns 0 so caller can use user-reported value.
-func CalculateCaloriesBurned(exercises []models.ExerciseEntry, weightKg, durationMin float64) float64 {
-	if len(exercises) == 0 || weightKg <= 0 || durationMin <= 0 {
-		return 0
-	}
-
-	// Use average MET if we have exercises with MET values
-	var totalMET float64
-	var metCount int
-	for _, ex := range exercises {
-		if ex.METValue > 0 {
-			totalMET += ex.METValue
-			metCount++
-		}
-	}
-
-	avgMET := 4.0 // default for strength work
-	if metCount > 0 {
-		avgMET = totalMET / float64(metCount)
-	}
-
-	durationHours := durationMin / 60.0
-	calories := avgMET * weightKg * durationHours
-	return calories
-}
+// NOTE: MET helper functions moved to internal/services/met/met.go

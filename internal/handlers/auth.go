@@ -13,18 +13,19 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/config"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	respond "github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/google/uuid"
 )
 
 // AuthHandler holds dependencies for auth endpoints.
 type AuthHandler struct {
-	db  *sql.DB
+	s   store.Store
 	cfg *config.Config
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{db: db, cfg: cfg}
+func NewAuthHandler(s store.Store, cfg *config.Config) *AuthHandler {
+	return &AuthHandler{s: s, cfg: cfg}
 }
 
 // Register handles POST /v1/auth/register
@@ -49,7 +50,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Determine if this is the first user (auto-admin)
 	var count int
-	if err := h.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+	db := h.s.(*store.SQLiteStore).DB()
+	if err := db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -67,7 +69,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	userID := uuid.New().String()
 
-	_, err = h.db.ExecContext(r.Context(),
+	_, err = db.ExecContext(r.Context(),
 		`INSERT INTO users (id, username, email, password, is_admin, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		userID, req.Username, req.Email, hash, isAdmin, now, now,
@@ -78,10 +80,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create empty profile row — non-fatal if it fails (user can set profile on first login)
-	if _, err := h.db.ExecContext(r.Context(),
-		`INSERT INTO profiles (user_id, updated_at) VALUES (?, ?)`,
-		userID, now,
-	); err != nil {
+	if _, err := db.ExecContext(r.Context(), `INSERT INTO profiles (user_id, updated_at) VALUES (?, ?)`, userID, now); err != nil {
 		slog.Error("create empty profile on register", "user_id", userID, "err", err)
 	}
 
@@ -118,11 +117,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		hash     string
 		isAdmin  int
 	)
-	err := h.db.QueryRowContext(r.Context(),
-		`SELECT id, username, password, is_admin FROM users
-         WHERE username = ? OR email = ? LIMIT 1`,
-		req.Login, req.Login,
-	).Scan(&userID, &username, &hash, &isAdmin)
+	db := h.s.(*store.SQLiteStore).DB()
+	err := db.QueryRowContext(r.Context(), `SELECT id, username, password, is_admin FROM users WHERE username = ? OR email = ? LIMIT 1`, req.Login, req.Login).Scan(&userID, &username, &hash, &isAdmin)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -165,7 +161,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		isAdmin   int
 		expiresAt string
 	)
-	err = h.db.QueryRowContext(r.Context(),
+	db := h.s.(*store.SQLiteStore).DB()
+	err = db.QueryRowContext(r.Context(),
 		`SELECT u.id, u.is_admin, rt.expires_at
          FROM refresh_tokens rt
          JOIN users u ON u.id = rt.user_id
@@ -184,7 +181,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	exp, err := time.Parse(constants.TimeFormat, expiresAt)
 	if err != nil || time.Now().After(exp) {
 		// Clean up expired token
-		_, _ = h.db.ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash)
+		if _, err := h.s.(*store.SQLiteStore).DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
+			slog.Warn("failed to delete expired refresh token", "err", err)
+		}
 		respond.Error(w, http.StatusUnauthorized, "refresh token expired")
 		return
 	}
@@ -204,8 +203,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.RefreshCookieName); err == nil {
 		tokenHash := hashToken(cookie.Value)
-		_, _ = h.db.ExecContext(r.Context(),
-			`DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash)
+		if _, err := h.s.(*store.SQLiteStore).DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
+			slog.Warn("failed to delete refresh token on logout", "err", err)
+		}
 	}
 	auth.ClearAuthCookies(w)
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "logged out"})
@@ -220,9 +220,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var username, email string
-	err := h.db.QueryRowContext(r.Context(),
-		`SELECT username, email FROM users WHERE id = ?`, claims.UserID,
-	).Scan(&username, &email)
+	db := h.s.(*store.SQLiteStore).DB()
+	err := db.QueryRowContext(r.Context(), `SELECT username, email FROM users WHERE id = ?`, claims.UserID).Scan(&username, &email)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -252,7 +251,8 @@ func (h *AuthHandler) issueTokenPair(w http.ResponseWriter, r *http.Request, use
 	now := time.Now().UTC()
 	expires := now.Add(auth.RefreshTokenDuration)
 
-	_, err = h.db.ExecContext(r.Context(),
+	db := h.s.(*store.SQLiteStore).DB()
+	_, err = db.ExecContext(r.Context(),
 		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
          VALUES (?, ?, ?, ?, ?)`,
 		uuid.New().String(), userID, tokenHash,

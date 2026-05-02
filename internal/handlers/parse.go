@@ -1,21 +1,21 @@
 package handlers
 
 import (
-	"database/sql"
 	"net/http"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/gemini"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/workout"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 )
 
 type ParseHandler struct {
-	db     *sql.DB
+	s      store.Store
 	gemini *gemini.Client
 }
 
-func NewParseHandler(db *sql.DB, geminiClient *gemini.Client) *ParseHandler {
-	return &ParseHandler{db: db, gemini: geminiClient}
+func NewParseHandler(s store.Store, geminiClient *gemini.Client) *ParseHandler {
+	return &ParseHandler{s: s, gemini: geminiClient}
 }
 
 // POST /v1/parse/meal

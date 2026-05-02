@@ -9,13 +9,14 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-type BiometricHandler struct{ db *sql.DB }
+type BiometricHandler struct{ s store.Store }
 
-func NewBiometricHandler(db *sql.DB) *BiometricHandler { return &BiometricHandler{db: db} }
+func NewBiometricHandler(s store.Store) *BiometricHandler { return &BiometricHandler{s: s} }
 
 // GET /v1/biometric/logs
 func (h *BiometricHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +30,8 @@ func (h *BiometricHandler) List(w http.ResponseWriter, r *http.Request) {
 	if to == "" {
 		to = today
 	}
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, claims.UserID, from, to)
+	db := h.s.DB()
+	rows, err := db.QueryContext(r.Context(), `SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, claims.UserID, from, to)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -52,7 +54,8 @@ func (h *BiometricHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	var b models.BiometricLog
-	err := h.db.QueryRowContext(r.Context(), `SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date = ?`, claims.UserID, date).Scan(&b.ID, &b.UserID, &b.Date, &b.WeightKg, &b.WaistCm, &b.GripKg, &b.BoltScore, &b.SleepHours, &b.SleepQuality, &b.SubjectiveFeel, &b.BodyFatPct, &b.Notes, &b.UpdatedAt)
+	db := h.s.DB()
+	err := db.QueryRowContext(r.Context(), `SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date = ?`, claims.UserID, date).Scan(&b.ID, &b.UserID, &b.Date, &b.WeightKg, &b.WaistCm, &b.GripKg, &b.BoltScore, &b.SleepHours, &b.SleepQuality, &b.SubjectiveFeel, &b.BodyFatPct, &b.Notes, &b.UpdatedAt)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
 		return
@@ -76,7 +79,8 @@ func (h *BiometricHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if in.ID == "" {
 		in.ID = uuid.New().String()
 	}
-	_, err := h.db.ExecContext(r.Context(), `
+	db := h.s.DB()
+	_, err := db.ExecContext(r.Context(), `
         INSERT INTO biometric_logs
           (id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -105,13 +109,14 @@ func (h *BiometricHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
+	db := h.s.DB()
 	var in models.BiometricLog
 	if !respond.Decode(w, r, &in) {
 		return
 	}
 	// ensure exists
 	var id string
-	if err := h.db.QueryRowContext(r.Context(), `SELECT id FROM biometric_logs WHERE user_id = ? AND date = ?`, claims.UserID, date).Scan(&id); err == sql.ErrNoRows {
+	if err := db.QueryRowContext(r.Context(), `SELECT id FROM biometric_logs WHERE user_id = ? AND date = ?`, claims.UserID, date).Scan(&id); err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
 		return
 	} else if err != nil {
@@ -119,13 +124,13 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := h.db.ExecContext(r.Context(), `UPDATE biometric_logs SET weight_kg=?,waist_cm=?,grip_kg=?,bolt_score=?,sleep_hours=?,sleep_quality=?,subjective_feel=?,body_fat_pct=?,notes=?,updated_at=? WHERE user_id=? AND date=?`, in.WeightKg, in.WaistCm, in.GripKg, in.BoltScore, in.SleepHours, in.SleepQuality, in.SubjectiveFeel, in.BodyFatPct, in.Notes, now, claims.UserID, date)
+	_, err := db.ExecContext(r.Context(), `UPDATE biometric_logs SET weight_kg=?,waist_cm=?,grip_kg=?,bolt_score=?,sleep_hours=?,sleep_quality=?,subjective_feel=?,body_fat_pct=?,notes=?,updated_at=? WHERE user_id=? AND date=?`, in.WeightKg, in.WaistCm, in.GripKg, in.BoltScore, in.SleepHours, in.SleepQuality, in.SubjectiveFeel, in.BodyFatPct, in.Notes, now, claims.UserID, date)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	var out models.BiometricLog
-	if err := h.db.QueryRowContext(r.Context(),
+	if err := db.QueryRowContext(r.Context(),
 		`SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date = ?`,
 		claims.UserID, date,
 	).Scan(&out.ID, &out.UserID, &out.Date, &out.WeightKg, &out.WaistCm, &out.GripKg, &out.BoltScore, &out.SleepHours, &out.SleepQuality, &out.SubjectiveFeel, &out.BodyFatPct, &out.Notes, &out.UpdatedAt); err != nil {
@@ -139,7 +144,8 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *BiometricHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
-	result, err := h.db.ExecContext(r.Context(), `DELETE FROM biometric_logs WHERE user_id = ? AND date = ?`, claims.UserID, date)
+	db := h.s.DB()
+	result, err := db.ExecContext(r.Context(), `DELETE FROM biometric_logs WHERE user_id = ? AND date = ?`, claims.UserID, date)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return

@@ -1,0 +1,13 @@
+HTTP/1.1 404 Not Found
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+Access-Control-Max-Age: 86400
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:*
+Content-Type: application/json
+Referrer-Policy: strict-origin-when-cross-origin
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Date: Fri, 01 May 2026 16:27:47 GMT
+Content-Length: 30
+

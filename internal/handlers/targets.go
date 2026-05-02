@@ -12,21 +12,23 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/calculator"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/nutrition"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/google/uuid"
 )
 
-type TargetsHandler struct{ db *sql.DB }
+type TargetsHandler struct{ s store.Store }
 
-func NewTargetsHandler(db *sql.DB) *TargetsHandler { return &TargetsHandler{db: db} }
+func NewTargetsHandler(s store.Store) *TargetsHandler { return &TargetsHandler{s: s} }
 
 // GET /v1/targets
 func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	var t models.Targets
-	err := h.db.QueryRowContext(r.Context(), `SELECT user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at FROM targets WHERE user_id = ?`, claims.UserID).Scan(&t.UserID, &t.Calories, &t.ProteinG, &t.CarbsG, &t.FatG, &t.FiberG, &t.WaterMl, &t.EatBackExercise, &t.UpdatedAt)
+	db := h.s.DB()
+	err := db.QueryRowContext(r.Context(), `SELECT user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at FROM targets WHERE user_id = ?`, claims.UserID).Scan(&t.UserID, &t.Calories, &t.ProteinG, &t.CarbsG, &t.FatG, &t.FiberG, &t.WaterMl, &t.EatBackExercise, &t.UpdatedAt)
 	if err == sql.ErrNoRows {
 		// Compute fallback targets when no stored targets exist for the user.
-		profile, err := fetchProfile(r.Context(), h.db, claims.UserID)
+		profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
 		if err == sql.ErrNoRows {
 			// No profile — cannot compute targets
 			respond.Error(w, http.StatusNotFound, "profile not found")
@@ -38,7 +40,7 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// latest weight
-		weight := fetchLatestWeight(r.Context(), h.db, claims.UserID)
+		weight, _ := h.s.FetchLatestWeight(r.Context(), claims.UserID)
 
 		// determine lookback days
 		lookback := profile.TDEELookbackDays
@@ -47,8 +49,16 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		since := time.Now().UTC().AddDate(0, 0, -lookback).Format(constants.DateFormat)
 
-		nutLogs, _ := fetchNutritionLogs(r.Context(), h.db, claims.UserID, since)
-		bioLogs, _ := fetchBiometricLogs(r.Context(), h.db, claims.UserID, since)
+		nutLogs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since)
+		if err != nil {
+			respond.Error(w, http.StatusInternalServerError, "database error")
+			return
+		}
+		bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since)
+		if err != nil {
+			respond.Error(w, http.StatusInternalServerError, "database error")
+			return
+		}
 
 		observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile)
 		plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
@@ -89,7 +99,8 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// load existing
 	var existing models.Targets
-	err := h.db.QueryRowContext(r.Context(), `SELECT user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at FROM targets WHERE user_id = ?`, claims.UserID).Scan(&existing.UserID, &existing.Calories, &existing.ProteinG, &existing.CarbsG, &existing.FatG, &existing.FiberG, &existing.WaterMl, &existing.EatBackExercise, &existing.UpdatedAt)
+	db := h.s.DB()
+	err := db.QueryRowContext(r.Context(), `SELECT user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at FROM targets WHERE user_id = ?`, claims.UserID).Scan(&existing.UserID, &existing.Calories, &existing.ProteinG, &existing.CarbsG, &existing.FatG, &existing.FiberG, &existing.WaterMl, &existing.EatBackExercise, &existing.UpdatedAt)
 	if err != nil && err != sql.ErrNoRows {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -102,7 +113,7 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 			changed = true
 		}
 	}
-	tx, err := h.db.BeginTx(r.Context(), nil)
+	tx, err := db.BeginTx(r.Context(), nil)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -135,7 +146,8 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 // GET /v1/targets/history
 func (h *TargetsHandler) History(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,created_at FROM target_history WHERE user_id = ? ORDER BY effective_date DESC`, claims.UserID)
+	db := h.s.DB()
+	rows, err := db.QueryContext(r.Context(), `SELECT id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,created_at FROM target_history WHERE user_id = ? ORDER BY effective_date DESC`, claims.UserID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
