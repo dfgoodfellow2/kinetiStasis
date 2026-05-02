@@ -209,7 +209,7 @@
                 <th class="pr-4">Sleep h</th>
                 <th class="pr-4">Sleep Q</th>
                 <th class="pr-4">Feel</th>
-                <th class="pr-4">Grip (kg)</th>
+                <th class="pr-4">Grip ({loadUnit(store.units)})</th>
                 <th class="pr-4">BOLT</th>
                 <th>Notes</th>
               </tr>
@@ -223,7 +223,7 @@
                 <td class="pr-4">{row.sleepHours ?? '—'}</td>
                 <td class="pr-4">{row.sleepQuality ?? '—'}</td>
                 <td class="pr-4">{row.subjectiveFeel ?? '—'}</td>
-                <td class="pr-4">{row.gripKg ?? '—'}</td>
+                <td class="pr-4">{row.gripKg ? dispLoad(row.gripKg, store.units) : '—'}</td>
                 <td class="pr-4">{row.boltScore ?? '—'}</td>
                 <td class="text-gray-400 text-xs">{row.notes ?? ''}</td>
                 <td class="py-2">
