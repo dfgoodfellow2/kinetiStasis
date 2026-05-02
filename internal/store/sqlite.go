@@ -94,6 +94,9 @@ func (s *SQLiteStore) FetchBodyMeasurements(ctx context.Context, userID string) 
 func (s *SQLiteStore) FetchLastCheckin(ctx context.Context, userID string) (lastCheckinDate string, err error) {
 	row := s.db.QueryRowContext(ctx, `SELECT check_in_date FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, userID)
 	if err := row.Scan(&lastCheckinDate); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // No check-in yet — not an error
+		}
 		return "", err
 	}
 	return lastCheckinDate, nil

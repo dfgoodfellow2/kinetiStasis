@@ -333,7 +333,6 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// include check-in readiness (last checkin)
 	if lastCheckInDate, err := h.s.FetchLastCheckin(r.Context(), claims.UserID); err == nil {
 		if lastCheckInDate != "" {
-			// compute days since
 			t, _ := time.Parse(constants.DateFormat, lastCheckInDate)
 			days := int(time.Since(t).Hours() / 24)
 			can := days >= 5
@@ -344,11 +343,9 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		} else {
 			dash.CanChangeTargets = true
 		}
-	} else if err == sql.ErrNoRows {
-		dash.CanChangeTargets = true
 	} else {
-		respond.Error(w, http.StatusInternalServerError, "database error")
-		return
+		slog.Warn("failed to fetch last checkin", "err", err)
+		dash.CanChangeTargets = true
 	}
 	respond.JSON(w, http.StatusOK, dash)
 }
