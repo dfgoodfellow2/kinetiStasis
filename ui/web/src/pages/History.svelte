@@ -317,10 +317,11 @@
                         const reps = e.sets?.[0]?.reps || 0
 
                         // Build duration fallback chain:
-                        // 1. Check exercise-level duration first (e.durationRaw or e.duration)
+                        // 1. Check exercise-level duration first (e.durationRaw (camelCase) or e.duration_raw (snake_case) or e.duration)
                         // 2. If reps <= 0 (duration-based exercise) and workout has only 1 exercise,
                         //    fall back to workout duration (since it's the same as exercise duration)
-                        const exerciseDuration = e.durationRaw || e.duration
+                        // Check both camelCase (new) and snake_case (old DB format)
+                        const exerciseDuration = e.durationRaw || e.duration_raw || e.duration
                         const workoutHasOneExercise = w.exercises && w.exercises.length === 1
                         const shouldUseWorkoutDuration = reps <= 0 && !exerciseDuration && workoutHasOneExercise && w.durationMin
                         const hasDuration = exerciseDuration || (shouldUseWorkoutDuration ? `${w.durationMin} min` : '')
