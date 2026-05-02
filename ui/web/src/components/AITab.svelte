@@ -51,12 +51,12 @@
       style:           res.style          || workout.style,
       surface:         res.surface        || workout.surface,
       focus:           focusStr           || workout.focus,
-      rest_interval:   res.restInterval  || res.rest_interval || workout.rest_interval,
-      duration_min:    res.durationMin   || res.duration_min   || workout.duration_min,
-      avg_hr:          res.avgHr         || res.avg_hr         || workout.avg_hr,
-      max_hr:          res.maxHr         || res.max_hr         || workout.max_hr,
-      calories_burned: res.caloriesBurned || res.calories_burned || workout.calories_burned,
-      notes:           res.notes || res.raw_notes || workout.notes,
+      rest_interval:   res.restInterval  || workout.restInterval,
+      duration_min:    res.durationMin   || workout.durationMin,
+      avg_hr:          res.avgHr         || workout.avgHr,
+      max_hr:          res.maxHr         || workout.maxHr,
+      calories_burned: res.caloriesBurned || workout.caloriesBurned,
+      notes:           res.notes || res.rawNotes || workout.notes,
       exercises:       (res.exercises || []).map(mapExercise),
     }
 
@@ -68,9 +68,9 @@
     const setCount = setsArr.length || ''
     const firstSet = setsArr[0] ?? {}
 
-    let weightDisplay = e.loadRaw || e.load_raw || ''
-    if (!weightDisplay && (firstSet.loadKg > 0 || firstSet.load_kg > 0)) {
-      const kg = firstSet.loadKg ?? firstSet.load_kg
+    let weightDisplay = e.loadRaw || ''
+    if (!weightDisplay && (firstSet.loadKg > 0)) {
+      const kg = firstSet.loadKg
       weightDisplay = String(kg) + ' kg'
     }
 
@@ -78,16 +78,16 @@
       name:        e.name        || '',
       sets:        setCount,
       reps:        firstSet.reps ?? '',
-      duration:    e.durationRaw || e.duration_raw || '',
+      duration:    e.durationRaw || '',
       weight_lbs:  weightDisplay,
       tempo:       e.tempo        || '',
       rpe:         e.rpe          ?? '',
       pattern:     e.category     || '',
       bias:        e.bias         || '',
-      distance:    (e.distanceKm ?? e.distance_km) || '',
-      elevation:   (e.elevationM ?? e.elevation_m) || '',
+      distance:    (e.distanceKm ?? '') || '',
+      elevation:   (e.elevationM ?? '') || '',
       pace:        e.pace         || '',
-      met:         (e.metValue ?? e.met_value) ?? '',
+      met:         e.metValue ?? '',
       notes:       e.notes        || '',
     }
   }

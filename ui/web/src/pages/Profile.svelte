@@ -7,10 +7,10 @@
 
   // ── Profile ─────────────────────────────────────────────
   let profile = $state({
-    name: '', age: '', sex: 'male', height_cm: '', activity: 'sedentary',
-    exercise_freq: '', running_km: '', is_lifter: false, goal: 'maintenance',
-    prioritize_carbs: false, bf_pct: '', hr_rest: '', hr_max: '',
-    grip_weight: 0.5, tdeeLookbackDays: 90, sleepQualityMax: 10, units: 'imperial',
+    name: '', age: '', sex: 'male', heightCm: '', activity: 'sedentary',
+    exerciseFreq: '', runningKm: '', isLifter: false, goal: 'maintenance',
+    prioritizeCarbs: false, bfPct: '', hrRest: '', hrMax: '',
+    gripWeight: 0.5, tdeeLookbackDays: 90, sleepQualityMax: 10, units: 'imperial',
   })
   let profileLoading = $state(false)
   let profileError = $state('')
@@ -21,8 +21,8 @@
   let heightIn = $state('')
   // When profile loads, split height_cm into ft+in for imperial display
   $effect(() => {
-    if (profile.units === 'imperial' && profile.height_cm) {
-      const totalIn = Number(profile.height_cm) / 2.54
+    if (profile.units === 'imperial' && profile.heightCm) {
+      const totalIn = Number(profile.heightCm) / 2.54
       heightFt = String(Math.floor(totalIn / 12))
       heightIn = String(Math.round(totalIn % 12))
     }
@@ -37,24 +37,24 @@
           name: p.name || '',
           age: p.age || '',
           sex: p.sex || 'male',
-          height_cm: p.heightCm || '',  // Map camelCase to local snake_case
+          heightCm: p.heightCm ?? '',
           activity: p.activity || 'sedentary',
-          exercise_freq: p.exerciseFreq || '',
-          running_km: p.runningKm || '',
-          is_lifter: p.isLifter || false,
+          exerciseFreq: p.exerciseFreq ?? '',
+          runningKm: p.runningKm ?? '',
+          isLifter: p.isLifter ?? false,
           goal: p.goal || 'maintenance',
-          prioritize_carbs: p.prioritizeCarbs || false,
-          bf_pct: p.bfPct || '',
-          hr_rest: p.hrRest || '',
-          hr_max: p.hrMax || '',
-          grip_weight: p.gripWeight || 0.5,
-          tdeeLookbackDays: p.tdeeLookbackDays || 90,
-          sleepQualityMax: p.sleepQualityMax || 10,
+          prioritizeCarbs: p.prioritizeCarbs ?? false,
+          bfPct: p.bfPct ?? '',
+          hrRest: p.hrRest ?? '',
+          hrMax: p.hrMax ?? '',
+          gripWeight: p.gripWeight ?? 0.5,
+          tdeeLookbackDays: p.tdeeLookbackDays ?? 90,
+          sleepQualityMax: p.sleepQualityMax ?? 10,
           units: p.units || 'imperial',
         }
             // Convert running_km to display units for the input
-            if (profile.units === 'imperial' && p.runningKm) {
-                profile.running_km = String(kmToMi(p.runningKm))
+                if (profile.units === 'imperial' && p.runningKm) {
+                profile.runningKm = String(kmToMi(p.runningKm))
             }
       }
     } catch {}
@@ -72,19 +72,19 @@
             sex: profile.sex,
             heightCm: profile.units === 'imperial'
                 ? heightFtInToCm(heightFt, heightIn)
-                : Number(profile.height_cm) || 0,
+                : Number(profile.heightCm) || 0,
             activity: profile.activity,
-            exerciseFreq: Number(profile.exercise_freq) || 0,
+            exerciseFreq: Number(profile.exerciseFreq) || 0,
             runningKm: profile.units === 'imperial'
-                ? miToKm(Number(profile.running_km) || 0)
-                : Number(profile.running_km) || 0,
-            isLifter: profile.is_lifter || false,
+                ? miToKm(Number(profile.runningKm) || 0)
+                : Number(profile.runningKm) || 0,
+            isLifter: profile.isLifter || false,
             goal: profile.goal,
-            prioritizeCarbs: profile.prioritize_carbs || false,
-            bfPct: Number(profile.bf_pct) || 0,
-            hrRest: Number(profile.hr_rest) || 0,
-            hrMax: Number(profile.hr_max) || 0,
-            gripWeight: Number(profile.grip_weight) || 0.5,
+            prioritizeCarbs: profile.prioritizeCarbs || false,
+            bfPct: Number(profile.bfPct) || 0,
+            hrRest: Number(profile.hrRest) || 0,
+            hrMax: Number(profile.hrMax) || 0,
+            gripWeight: Number(profile.gripWeight) || 0.5,
             tdeeLookbackDays: Number(profile.tdeeLookbackDays) || 90,
             sleepQualityMax: Number(profile.sleepQualityMax) || 10,
             units: profile.units,
@@ -202,7 +202,7 @@
 <div class="max-w-screen-xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
   <h2 class="text-emerald-400 font-bold text-lg">Profile</h2>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
     <div>
       <label class="text-xs text-gray-400" for="pf-name">Name</label>
       <input class="input" id="pf-name" placeholder="Name" bind:value={profile.name} />
@@ -225,8 +225,8 @@
           <input class="input" id="pf-height" type="number" placeholder="ft" bind:value={heightFt} />
           <input class="input" id="pf-height-in" type="number" placeholder="in" bind:value={heightIn} />
         </div>
-      {:else}
-        <input class="input" id="pf-height" type="number" placeholder="Height (cm)" bind:value={profile.height_cm} />
+        {:else}
+        <input class="input" id="pf-height" type="number" placeholder="Height (cm)" bind:value={profile.heightCm} />
       {/if}
     </div>
     <div>
@@ -258,23 +258,23 @@
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-exercise-freq">Exercise Days/Week</label>
-      <input class="input" id="pf-exercise-freq" type="number" placeholder="0–7" bind:value={profile.exercise_freq} />
+      <input class="input" id="pf-exercise-freq" type="number" placeholder="0–7" bind:value={profile.exerciseFreq} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-running">Running {distUnit(profile.units)}/Week</label>
-      <input class="input" id="pf-running" type="number" placeholder="0" bind:value={profile.running_km} />
+      <input class="input" id="pf-running" type="number" placeholder="0" bind:value={profile.runningKm} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-bf">Body Fat %</label>
-      <input class="input" id="pf-bf" type="number" placeholder="e.g. 18" bind:value={profile.bf_pct} />
+      <input class="input" id="pf-bf" type="number" placeholder="e.g. 18" bind:value={profile.bfPct} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-hr-rest">Resting HR</label>
-      <input class="input" id="pf-hr-rest" type="number" placeholder="bpm" bind:value={profile.hr_rest} />
+      <input class="input" id="pf-hr-rest" type="number" placeholder="bpm" bind:value={profile.hrRest} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-hr-max">Max HR</label>
-      <input class="input" id="pf-hr-max" type="number" placeholder="bpm" bind:value={profile.hr_max} />
+      <input class="input" id="pf-hr-max" type="number" placeholder="bpm" bind:value={profile.hrMax} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-tdee-days">TDEE Lookback Days</label>
@@ -290,26 +290,26 @@
     <label class="text-xs text-gray-400 block mb-1" for="pf-grip-weight">
       Readiness Weighting — BOLT vs Grip
       <span class="text-white font-mono ml-2">
-        {#if Number(profile.grip_weight) === 0}BOLT only
-        {:else if Number(profile.grip_weight) === 1}Grip only
-        {:else}Grip {Math.round(Number(profile.grip_weight) * 100)}% · BOLT {Math.round((1 - Number(profile.grip_weight)) * 100)}%
+      {#if Number(profile.gripWeight) === 0}BOLT only
+        {:else if Number(profile.gripWeight) === 1}Grip only
+        {:else}Grip {Math.round(Number(profile.gripWeight) * 100)}% · BOLT {Math.round((1 - Number(profile.gripWeight)) * 100)}%
         {/if}
       </span>
     </label>
     <div class="flex items-center space-x-3">
       <span class="text-xs text-gray-500">BOLT</span>
-      <input id="pf-grip-weight" type="range" min="0" max="1" step="0.05" bind:value={profile.grip_weight} class="w-full accent-emerald-500" />
+      <input id="pf-grip-weight" type="range" min="0" max="1" step="0.05" bind:value={profile.gripWeight} class="w-full accent-emerald-500" />
       <span class="text-xs text-gray-500">Grip</span>
     </div>
   </div>
 
   <div class="flex items-center space-x-4 pt-1">
     <label class="flex items-center space-x-2 text-sm">
-      <input type="checkbox" bind:checked={profile.is_lifter} />
+      <input type="checkbox" bind:checked={profile.isLifter} />
       <span>I am a lifter</span>
     </label>
     <label class="flex items-center space-x-2 text-sm">
-      <input type="checkbox" bind:checked={profile.prioritize_carbs} />
+      <input type="checkbox" bind:checked={profile.prioritizeCarbs} />
       <span>Prioritize carbs</span>
     </label>
   </div>
@@ -355,12 +355,12 @@
       {#if tdee}
         <div class="bg-gray-700 p-3 rounded text-sm space-y-1 mb-4">
           <div class="text-emerald-400 font-semibold">Suggested from your data</div>
-          <div>Observed TDEE: <span class="text-white font-mono">{Math.round(tdee.observed_tdee ?? 0)} kcal</span></div>
-          <div>Estimated TDEE: <span class="text-white font-mono">{Math.round(tdee.estimated_tdee ?? 0)} kcal</span></div>
-          <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.days_of_data ?? 0} days of data</div>
+          <div>Observed TDEE: <span class="text-white font-mono">{Math.round(tdee.observedTdee ?? tdee.observed_tdee ?? 0)} kcal</span></div>
+          <div>Estimated TDEE: <span class="text-white font-mono">{Math.round(tdee.estimatedTdee ?? tdee.estimated_tdee ?? 0)} kcal</span></div>
+          <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.daysOfData ?? 0} days of data</div>
           <button
             class="mt-2 text-xs text-emerald-400 underline"
-            onclick={() => { targets.calories = String(Math.round(tdee.observed_tdee ?? tdee.estimated_tdee ?? 0)) }}
+            onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
           >Use observed TDEE as calorie target</button>
         </div>
       {/if}
