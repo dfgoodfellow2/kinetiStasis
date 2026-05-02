@@ -36,16 +36,29 @@ func (c *Client) ParseMeal(ctx context.Context, text string) (models.ParsedMeal,
 		return out, errors.New("api key not provided")
 	}
 
-	prompt := fmt.Sprintf(`Parse this meal description and return ONLY a JSON object with these exact keys:
-- calories (number)
-- protein_g (number)
-- carbs_g (number)
-- fat_g (number)
-- fiber_g (number)
-- water_ml (number)
-- meal_notes (string)
+	prompt := fmt.Sprintf(`You are a nutrition expert. Parse this meal description and return ONLY a JSON object.
 
-If you cannot determine exact values, make reasonable estimates. Return ONLY the JSON object, no other text.
+Required JSON keys (use EXACTLY these names):
+- calories (number) - total calories
+- proteinG (number) - protein in grams  
+- carbsG (number) - carbohydrates in grams
+- fatG (number) - fat in grams
+- fiberG (number) - fiber in grams
+- waterMl (number) - water in milliliters
+- mealNotes (string) - brief description of the meal
+
+CALCULATION RULES:
+1. For each food item, estimate calories and macros based on standard nutrition data
+2. Banana (1 medium, ~120g): ~105 cal, 1g protein, 27g carbs, 0g fat, 3g fiber
+3. Protein powder (1 scoop, ~30g): ~120 cal, 24g protein, 3g carbs, 1g fat, 0g fiber
+4. Sum up all ingredients
+5. If uncertain, provide reasonable estimates based on typical portions
+
+EXAMPLE:
+Input: "1 banana, 1 scoop protein"
+Output: {"calories": 225, "proteinG": 25, "carbsG": 30, "fatG": 1, "fiberG": 3, "waterMl": 0, "mealNotes": "1 banana, 1 scoop protein"}
+
+Return ONLY the JSON object, no other text.
 
 Meal: %s`, text)
 	respText, err := callGemini(ctx, c.apiKey, prompt)
@@ -82,12 +95,12 @@ func (c *Client) ParseWorkout(ctx context.Context, text string) (models.ParsedWo
   "style": "circuit|emom|amrap|for-time|hiit|cardio|\"\"",
   "surface": "string",
   "focus": ["string"],
-  "rest_interval": "string",
-  "duration_min": number,
+  "restInterval": "string",
+  "durationMin": number,
   "rpe": number,
-  "avg_hr": number,
-  "max_hr": number,
-  "calories_burned": number,
+  "avgHr": number,
+  "maxHr": number,
+  "caloriesBurned": number,
   "recovers": "string",
   "exercises": [
     {
@@ -95,22 +108,22 @@ func (c *Client) ParseWorkout(ctx context.Context, text string) (models.ParsedWo
       "category": "squat|hinge|push|pull|conditioning|core|carry",
       "bias": "bilateral|unilateral|\"\"",
       "tempo": "string e.g. 2-0-2-0 or \"\"",
-      "sets": [{"reps": number, "load_lbs": number, "tut_seconds": number, "rest_seconds": number}],
-      "met_value": number,
-      "distance_km": number,
-      "elevation_m": number,
+      "sets": [{"reps": number, "loadLbs": number, "tutSeconds": number, "restSeconds": number}],
+      "metValue": number,
+      "distanceKm": number,
+      "elevationM": number,
       "pace": "string",
       "rpe": number,
-      "load_raw": "string",
-      "duration_raw": "string"
+      "loadRaw": "string",
+      "durationRaw": "string"
     }
   ]
 }
 
 Rules:
 - sets is an ARRAY of set objects, one element per set (repeat identical sets)
-- load_raw: preserve the original load string ("BW", "35+35 lbs", "50 lbs")
-- tut_seconds per set: sum tempo phases × reps, OR duration in seconds for timed sets
+- loadRaw: preserve the original load string ("BW", "35+35 lbs", "50 lbs")
+- tutSeconds per set: sum tempo phases × reps, OR duration in seconds for timed sets
 - focus: array of movement patterns with bilateral/unilateral bias e.g. ["Hinge(B)", "Push(U)"]
 - bias: "bilateral" for two-limb movements (B), "unilateral" for single-limb (U), "" if unknown
 - tempo: preserve as string e.g. "3-1-2-1" (eccentric-pause-concentric-pause), "" if not specified
