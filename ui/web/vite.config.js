@@ -33,7 +33,12 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/v1': 'http://localhost:8080'
+      '/v1': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        // Optional rewrite if backend expects different base path
+        // rewrite: (path) => path.replace(/^\/v1/, '/v1')
+      }
     }
   }
 })

@@ -5,8 +5,9 @@
   export let points = []
   export let units = 'imperial'
 
-  // Ensure points are sorted by date (oldest -> newest)
-  $: sorted = [...points].sort((a, b) => new Date(a.date) - new Date(b.date))
+  // Filter out points with invalid weightKg and ensure sorted by date (oldest -> newest)
+  $: validPoints = points.filter(p => p.weightKg !== undefined && p.weightKg !== null && isFinite(p.weightKg))
+  $: sorted = [...validPoints].sort((a, b) => a.date.localeCompare(b.date))
 
   // Convert points to display units but keep raw (kg) for scaling
   $: displayPoints = sorted.map(p => ({

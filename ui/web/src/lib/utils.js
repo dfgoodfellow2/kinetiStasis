@@ -47,11 +47,26 @@ export const ftToM    = ft  => +(ft  * 0.3048).toFixed(1)
 
 // Display helpers (backend value → display value, number)
 // units param = store.units ('metric' | 'imperial')
-export const dispWeight  = (kg,  units) => units === 'imperial' ? kgToLbs(kg)  : +kg.toFixed(1)
-export const dispLength  = (cm,  units) => units === 'imperial' ? cmToIn(cm)   : +cm.toFixed(1)
-export const dispDist    = (km,  units) => units === 'imperial' ? kmToMi(km)   : +km.toFixed(2)
-export const dispElev    = (m,   units) => units === 'imperial' ? mToFt(m)     : +m.toFixed(0)
-export const dispLoad    = (kg,  units) => units === 'imperial' ? kgToLbs(kg)  : +kg.toFixed(1)
+export const dispWeight  = (kg,  units) => {
+    if (kg === undefined || kg === null || !isFinite(kg)) return '—'
+    return units === 'imperial' ? kgToLbs(kg)  : +kg.toFixed(1)
+}
+export const dispLength  = (cm,  units) => {
+    if (cm === undefined || cm === null || !isFinite(cm)) return '—'
+    return units === 'imperial' ? cmToIn(cm)   : +cm.toFixed(1)
+}
+export const dispDist    = (km,  units) => {
+    if (km === undefined || km === null || !isFinite(km)) return '—'
+    return units === 'imperial' ? kmToMi(km)   : +km.toFixed(2)
+}
+export const dispElev    = (m,   units) => {
+    if (m === undefined || m === null || !isFinite(m)) return '—'
+    return units === 'imperial' ? mToFt(m)     : +m.toFixed(0)
+}
+export const dispLoad    = (kg,  units) => {
+    if (kg === undefined || kg === null || !isFinite(kg)) return '—'
+    return units === 'imperial' ? kgToLbs(kg)  : +kg.toFixed(1)
+}
 
 // Unit label helpers
 export const weightUnit  = units => units === 'imperial' ? 'lbs' : 'kg'
