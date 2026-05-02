@@ -76,32 +76,32 @@
         date:            workout.date,
         slot:            String(workout.slot || '1'),
         title:           workout.title,
-        duration_min:    Number(workout.duration_min)    || 0,
-        calories_burned: Number(calVal) || 0,
-        raw_notes:       [workout.notes, workout.coach_notes].filter(Boolean).join('\n\n'),
+        durationMin:     Number(workout.duration_min)    || 0,
+        caloriesBurned:  Number(calVal) || 0,
+        rawNotes:        [workout.notes, workout.coach_notes].filter(Boolean).join('\n\n'),
         metadata: {
           type:          workout.type         || '',
           style:         workout.style        || '',
           surface:       workout.surface      || '',
           focus:         workout.focus ? workout.focus.split(',').map(s => s.trim()).filter(Boolean) : [],
-          rest_interval: workout.rest_interval || '',
-          avg_hr:        Number(workout.avg_hr) || 0,
-          max_hr:        Number(workout.max_hr) || 0,
+          restInterval:  workout.rest_interval || '',
+          avgHr:         Number(workout.avg_hr) || 0,
+          maxHr:         Number(workout.max_hr) || 0,
         },
         exercises: workout.exercises.map(ex => {
           // If we have preserved _sets from a parse result, use them directly
           // Otherwise build sets array from flat form fields
           let sets
-          if (Array.isArray(ex._sets) && ex._sets.length > 0) {
+            if (Array.isArray(ex._sets) && ex._sets.length > 0) {
             // sanitize preserved _sets to match Go ExerciseSet model (no RPE)
             sets = ex._sets.map(s => ({
               reps: s.reps || 0,
-              load_kg: s.load_kg || 0,
-              load_lbs: s.load_lbs || 0,
-              tut_seconds: s.tut_seconds || s.tutSeconds || 0,
-              rest_seconds: s.rest_seconds || s.restSeconds || 0,
+              loadKg: s.load_kg || s.loadKg || 0,
+              loadLbs: s.load_lbs || s.loadLbs || 0,
+              tutSeconds: s.tut_seconds || s.tutSeconds || 0,
+              restSeconds: s.rest_seconds || s.restSeconds || 0,
             }))
-          } else {
+            } else {
             const n = Number(ex.sets) || 1
             const reps = Number(ex.reps) || 0
             const loadNum = parseLoad(ex.weight_lbs)
@@ -117,19 +117,19 @@
               rest_seconds: 0,
             }))
           }
-          return {
-            name:         ex.name     || '',
-            category:     ex.pattern  || '',
-            bias:         ex.bias     || '',
-            tempo:        ex.tempo    || '',
-            sets,
-            rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
-            load_raw:     ex.weight_lbs || '',
-            duration_raw: ex.duration || '',
-            distance_km:  ex.distance_km !== '' ? inputDist(ex.distance_km, store.units) : 0,
-            elevation_m:  ex.elevation_m !== '' ? inputElev(ex.elevation_m, store.units) : 0,
-            pace:         ex.pace || '',
-          }
+           return {
+             name:         ex.name     || '',
+             category:     ex.pattern  || '',
+             bias:         ex.bias     || '',
+             tempo:        ex.tempo    || '',
+             sets,
+             rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
+             loadRaw:      ex.weight_lbs || '',
+             durationRaw:  ex.duration || '',
+             distanceKm:   ex.distance_km !== '' ? inputDist(ex.distance_km, store.units) : 0,
+             elevationM:   ex.elevation_m !== '' ? inputElev(ex.elevation_m, store.units) : 0,
+             pace:         ex.pace || '',
+           }
         }),
       }
       await api.postWorkout(payload)
