@@ -13,13 +13,13 @@
 
   async function loadNutrition() {
     nutLoading = true
-    try {
-      nutLogs = await api.listNutrition(daysAgo(30), today())
-    } catch {
-      nutLogs = []
-    } finally {
-      nutLoading = false
-    }
+      try {
+        nutLogs = (await api.listNutrition(daysAgo(30), today())).reverse()
+      } catch {
+        nutLogs = []
+      } finally {
+        nutLoading = false
+      }
   }
 
   // --- Biometrics ---
@@ -28,13 +28,13 @@
 
   async function loadBiometrics() {
     bioLoading = true
-    try {
-      bioLogs = await api.listBiometrics(daysAgo(30), today())
-    } catch {
-      bioLogs = []
-    } finally {
-      bioLoading = false
-    }
+      try {
+        bioLogs = (await api.listBiometrics(daysAgo(30), today())).reverse()
+      } catch {
+        bioLogs = []
+      } finally {
+        bioLoading = false
+      }
   }
 
   // --- Workouts ---
@@ -48,16 +48,16 @@
       const flat = await api.listWorkouts(daysAgo(30), today())
       // Group flat entries by date, preserving date-ascending order
       const map = new Map()
-      for (const entry of (flat ?? [])) {
-        if (!map.has(entry.date)) map.set(entry.date, [])
-        map.get(entry.date).push(entry)
+        for (const entry of (flat ?? [])) {
+          if (!map.has(entry.date)) map.set(entry.date, [])
+          map.get(entry.date).push(entry)
+        }
+        wrkData = Array.from(map.entries()).map(([date, workouts]) => ({ date, workouts })).reverse()
+      } catch {
+        wrkData = []
+      } finally {
+        wrkLoading = false
       }
-      wrkData = Array.from(map.entries()).map(([date, workouts]) => ({ date, workouts }))
-    } catch {
-      wrkData = []
-    } finally {
-      wrkLoading = false
-    }
   }
 
   // --- Measurements ---
@@ -66,13 +66,13 @@
 
   async function loadMeasurements() {
     measLoading = true
-    try {
-      measData = await api.listMeasurements(daysAgo(30), today())
-    } catch {
-      measData = []
-    } finally {
-      measLoading = false
-    }
+      try {
+        measData = (await api.listMeasurements(daysAgo(30), today())).reverse()
+      } catch {
+        measData = []
+      } finally {
+        measLoading = false
+      }
   }
 
   onMount(() => {
