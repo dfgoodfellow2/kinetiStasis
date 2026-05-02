@@ -12,7 +12,7 @@
   onMount(async () => {
     try {
       const t = await api.getTargets()
-      if (t) targets = { ...targets, ...t }
+    if (t) targets = { ...targets, ...t }
     } catch {}
     try {
       const res = await api.getTDEE(30)
@@ -55,7 +55,7 @@
         <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.daysOfData ?? 0} days of data</div>
       <button
         class="mt-2 text-xs text-emerald-400 underline"
-        onclick={() => { targets.calories = String(Math.round(tdee.observed_tdee ?? tdee.estimated_tdee ?? 0)) }}
+        onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
       >Use observed TDEE as calorie target</button>
     </div>
   {/if}

@@ -21,15 +21,15 @@
     // Check if we're editing an existing nutrition log
     if (store.editData && store.editData.type === 'nutrition') {
       const row = store.editData.data
-      form = { 
+        form = { 
         date: row.date, 
         calories: String(row.calories ?? ''), 
-        proteinG: String(row.proteinG ?? row.protein_g ?? ''), 
-        carbsG: String(row.carbsG ?? row.carbs_g ?? ''), 
-        fatG: String(row.fatG ?? row.fat_g ?? ''), 
-        fiberG: String(row.fiberG ?? row.fiber_g ?? ''), 
-        waterMl: String(row.waterMl ?? row.water_ml ?? ''), 
-        mealNotes: row.mealNotes ?? row.meal_notes ?? '' 
+        proteinG: String(row.proteinG ?? ''), 
+        carbsG: String(row.carbsG ?? ''), 
+        fatG: String(row.fatG ?? ''), 
+        fiberG: String(row.fiberG ?? ''), 
+        waterMl: String(row.waterMl ?? ''), 
+        mealNotes: row.mealNotes ?? '' 
       }
       mode = 'manual'
       clearEditData()
@@ -79,31 +79,12 @@
       // Fix: use rawInput (camelCase) not raw_input
     const { rawInput, ...payload } = aiResult
     if (!payload.date) payload.date = today()
-    // Normalize to camelCase keys expected by backend and remove old snake_case keys
-    if (payload.protein_g !== undefined && payload.proteinG === undefined) {
-      payload.proteinG = payload.protein_g
-      delete payload.protein_g
-    }
-    if (payload.carbs_g !== undefined && payload.carbsG === undefined) {
-      payload.carbsG = payload.carbs_g
-      delete payload.carbs_g
-    }
-    if (payload.fat_g !== undefined && payload.fatG === undefined) {
-      payload.fatG = payload.fat_g
-      delete payload.fat_g
-    }
-    if (payload.fiber_g !== undefined && payload.fiberG === undefined) {
-      payload.fiberG = payload.fiber_g
-      delete payload.fiber_g
-    }
-    if (payload.water_ml !== undefined && payload.waterMl === undefined) {
-      payload.waterMl = payload.water_ml
-      delete payload.water_ml
-    }
-    if (payload.meal_notes !== undefined && payload.mealNotes === undefined) {
-      payload.mealNotes = payload.meal_notes
-      delete payload.meal_notes
-    }
+    // payload should already be camelCase; trust camelCase fields only
+    payload.proteinG = payload.proteinG ?? 0
+    payload.carbsG = payload.carbsG ?? 0
+    payload.fatG = payload.fatG ?? 0
+    payload.fiberG = payload.fiberG ?? 0
+    payload.waterMl = payload.waterMl ?? 0
     payload.mealNotes = rawInput || payload.mealNotes || ''
     await api.postNutrition(payload)
       success = 'Saved parsed meal'

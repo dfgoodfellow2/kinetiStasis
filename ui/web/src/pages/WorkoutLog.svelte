@@ -26,14 +26,14 @@
     style: '',
     surface: '',
     focus: '',
-    rest_interval: '',
-    duration_min: '',
-    
-    avg_hr: '',
-    max_hr: '',
-    calories_burned: '',
+    restInterval: '',
+    durationMin: '',
+
+    avgHr: '',
+    maxHr: '',
+    caloriesBurned: '',
     notes: '',
-    coach_notes: '',
+    coachNotes: '',
     exercises: [],
   })
 
@@ -50,8 +50,9 @@
 
   function blankExercise() {
     return {
-      name: '', sets: '', reps: '', duration: '', weight_lbs: '',
-      tempo: '', rpe: '', pattern: '', bias: '', distance_km: '', elevation_m: '', pace: '',
+      name: '', sets: '', reps: '', duration: '', weightLbs: '',
+    tempo: '', rpe: '', pattern: '', bias: '', pace: '',
+    distanceKm: '', elevationM: '',
       _sets: [],
     }
   }
@@ -71,40 +72,40 @@
     loading = true
     try {
       // save in progress
-      const calVal = workout.caloriesBurned ?? workout.calories_burned
+      const calVal = workout.caloriesBurned
       const payload = {
         date:            workout.date,
         slot:            String(workout.slot || '1'),
         title:           workout.title,
-        durationMin:     Number(workout.duration_min)    || 0,
+        durationMin:     Number(workout.durationMin)    || 0,
         caloriesBurned:  Number(calVal) || 0,
-        rawNotes:        [workout.notes, workout.coach_notes].filter(Boolean).join('\n\n'),
+        rawNotes:        [workout.notes, workout.coachNotes].filter(Boolean).join('\n\n'),
         metadata: {
           type:          workout.type         || '',
           style:         workout.style        || '',
           surface:       workout.surface      || '',
           focus:         workout.focus ? workout.focus.split(',').map(s => s.trim()).filter(Boolean) : [],
-          restInterval:  workout.rest_interval || '',
-          avgHr:         Number(workout.avg_hr) || 0,
-          maxHr:         Number(workout.max_hr) || 0,
+          restInterval:  workout.restInterval || '',
+          avgHr:         Number(workout.avgHr) || 0,
+          maxHr:         Number(workout.maxHr) || 0,
         },
         exercises: workout.exercises.map(ex => {
           // If we have preserved _sets from a parse result, use them directly
           // Otherwise build sets array from flat form fields
           let sets
-            if (Array.isArray(ex._sets) && ex._sets.length > 0) {
-            // sanitize preserved _sets to match Go ExerciseSet model (no RPE)
+           if (Array.isArray(ex._sets) && ex._sets.length > 0) {
+            // sanitize preserved _sets to match ExerciseSet model (camelCase)
             sets = ex._sets.map(s => ({
               reps: s.reps || 0,
-              loadKg: s.load_kg || s.loadKg || 0,
-              loadLbs: s.load_lbs || s.loadLbs || 0,
-              tutSeconds: s.tut_seconds || s.tutSeconds || 0,
-              restSeconds: s.rest_seconds || s.restSeconds || 0,
+              loadKg: s.loadKg || 0,
+              loadLbs: s.loadLbs || 0,
+              tutSeconds: s.tutSeconds || 0,
+              restSeconds: s.restSeconds || 0,
             }))
             } else {
             const n = Number(ex.sets) || 1
             const reps = Number(ex.reps) || 0
-            const loadNum = parseLoad(ex.weight_lbs)
+            const loadNum = parseLoad(ex.weightLbs)
             // Re-compute TUT from tempo if user typed it in the form
             let tutSeconds = 0
             if (ex.tempo && reps > 0) {
@@ -112,32 +113,32 @@
             }
             sets = Array.from({ length: n }, () => ({
               reps,
-              load_kg: inputLoad(loadNum, store.units),
-              tut_seconds: tutSeconds,
-              rest_seconds: 0,
+              loadKg: inputLoad(loadNum, store.units),
+              tutSeconds: tutSeconds,
+              restSeconds: 0,
             }))
           }
            return {
-             name:         ex.name     || '',
-             category:     ex.pattern  || '',
-             bias:         ex.bias     || '',
-             tempo:        ex.tempo    || '',
-             sets,
-             rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
-             loadRaw:      ex.weight_lbs || '',
-             durationRaw:  ex.duration || '',
-             distanceKm:   ex.distance_km !== '' ? inputDist(ex.distance_km, store.units) : 0,
-             elevationM:   ex.elevation_m !== '' ? inputElev(ex.elevation_m, store.units) : 0,
-             pace:         ex.pace || '',
-           }
-        }),
+              name:         ex.name     || '',
+              category:     ex.pattern  || '',
+              bias:         ex.bias     || '',
+              tempo:        ex.tempo    || '',
+              sets,
+              rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
+              loadRaw:      ex.weightLbs || '',
+              durationRaw:  ex.duration || '',
+              distanceKm:   ex.distanceKm !== '' ? inputDist(ex.distanceKm, store.units) : 0,
+              elevationM:   ex.elevationM !== '' ? inputElev(ex.elevationM, store.units) : 0,
+              pace:         ex.pace || '',
+            }
+         }),
       }
       await api.postWorkout(payload)
       success = 'Workout saved!'
        workout = {
          date: today(), slot: '1', title: '', type: 'strength', style: '', surface: '',
-         focus: '', rest_interval: '', duration_min: '', avg_hr: '', max_hr: '',
-         calories_burned: '', notes: '', coach_notes: '', exercises: [],
+         focus: '', restInterval: '', durationMin: '', avgHr: '', maxHr: '',
+         caloriesBurned: '', notes: '', coachNotes: '', exercises: [],
        }
       // reset parse states in parent — child components manage their own raw/parsed state
     } catch (e) {
@@ -180,17 +181,17 @@
     const reps = (Array.isArray(ex._sets) && ex._sets[0])
       ? ex._sets[0].reps
       : (Number(ex.reps) || 0)
-    const load = ex.weight_lbs || ''
+    const load = ex.weightLbs || ''
     const loadNum = parseLoad(load)
 
     // Build duration fallback chain similar to History view:
     // 1. Prefer exercise-level duration if present (check camelCase and snake_case)
     // 2. If reps <= 0 (timed exercise) and workout has only 1 exercise, fall back to workout.duration_min
     // Check both camelCase (new) and snake_case (old DB format)
-    const durationValue = ex.durationRaw || ex.duration_raw || ex.duration || ''
+    const durationValue = ex.durationRaw || ex.duration || ''
     const workoutHasOneExercise = workout.exercises && workout.exercises.length === 1
-    const shouldUseWorkoutDuration = reps <= 0 && !durationValue && workoutHasOneExercise && workout.duration_min
-    const hasDuration = durationValue || (shouldUseWorkoutDuration ? `${workout.duration_min} min` : '')
+    const shouldUseWorkoutDuration = reps <= 0 && !durationValue && workoutHasOneExercise && workout.durationMin
+    const hasDuration = durationValue || (shouldUseWorkoutDuration ? `${workout.durationMin} min` : '')
     // Priority: duration if reps <= 0, else reps
     const displayValue = (reps <= 0 && hasDuration) ? durationValue : reps
     let base = `${ex.name || 'Exercise'}: ${sets}×${displayValue}`
@@ -218,10 +219,10 @@
     // Use _sets if available for accurate volume
     if (Array.isArray(ex._sets) && ex._sets.length > 0) {
       return acc + ex._sets.reduce((s, set) => {
-        return s + (set.load_kg > 0 && set.reps > 0 ? Math.round(set.load_kg * set.reps) : 0)
+        return s + (set.loadKg > 0 && set.reps > 0 ? Math.round(set.loadKg * set.reps) : 0)
       }, 0)
     }
-    const l = parseLoad(ex.weight_lbs)
+    const l = parseLoad(ex.weightLbs)
     const r = Number(ex.reps) || 0
     const s = Number(ex.sets) || 0
     return acc + (l > 0 ? Math.round(l * r * s) : 0)
@@ -243,15 +244,15 @@
       workout.focus = Array.isArray(w.metadata?.focus)
         ? w.metadata.focus.join(', ')
         : (w.metadata?.focus ?? w.focus ?? '')
-      workout.rest_interval = w.rest_interval || ''
-      workout.duration_min = String(w.duration_min || '')
+      workout.restInterval = w.metadata?.restInterval ?? w.restInterval ?? ''
+      workout.durationMin = String(w.durationMin ?? '')
       // session-level RPE removed: no assignment to workout.rpe
       // avg_hr/max_hr live under metadata in the API model
-      workout.avg_hr = w.metadata?.avg_hr ? String(w.metadata.avg_hr) : ''
-      workout.max_hr = w.metadata?.max_hr ? String(w.metadata.max_hr) : ''
-      workout.calories_burned = String(w.calories_burned || '')
-      workout.notes = w.raw_notes || ''
-      workout.coach_notes = w.coach_notes || ''
+      workout.avgHr = w.metadata?.avgHr ? String(w.metadata.avgHr) : (w.metadata?.avgHr ? String(w.metadata.avgHr) : '')
+      workout.maxHr = w.metadata?.maxHr ? String(w.metadata.maxHr) : (w.metadata?.maxHr ? String(w.metadata.maxHr) : '')
+      workout.caloriesBurned = String(w.caloriesBurned ?? '')
+      workout.notes = w.rawNotes ?? ''
+      workout.coachNotes = w.coachNotes ?? ''
 
       // Map ALL exercise fields from API to simple tab format
       workout.exercises = (w.exercises || []).map(ex => {
@@ -270,16 +271,16 @@
           // Strength: sets/reps/weight
           sets: exerciseSets.length > 0 ? String(exerciseSets.length) : '',
           reps: firstExerciseSet.reps ? String(firstExerciseSet.reps) : '',
-          weight_lbs: firstExerciseSet.load_lbs ? String(Math.round(firstExerciseSet.load_lbs)) : '',
+          weightLbs: firstExerciseSet.load_lbs ? String(Math.round(firstExerciseSet.load_lbs)) : '',
           
           // Conditioning: distance/elevation/pace/duration (JSON uses snake_case)
-          distance_km: ex.distance_km ?? '',
-          elevation_m: ex.elevation_m ?? '',
+          distanceKm: ex.distanceKm ?? '',
+          elevationM: ex.elevationM ?? '',
           pace: ex.pace || '',
-          duration: ex.durationRaw || ex.duration_raw || '',
+          duration: ex.durationRaw || ex.duration || '',
           
           // Load info
-          load: ex.load_raw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
+          load: ex.loadRaw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
 
           // RPE and Tempo
           rpe: String(ex.rpe || ''),
@@ -290,12 +291,12 @@
           
           // _sets array preserves all set data for save
            _sets: exerciseSets.map(s => ({
-            load_kg: s.load_kg || 0,
-            load_lbs: s.load_lbs || 0,
+            loadKg: s.loadKg ?? 0,
+            loadLbs: s.loadLbs ?? 0,
             reps: s.reps || 0,
             // strip any set-level RPE (ExerciseSet model does not include RPE)
             tempo: s.tempo || '',
-            duration: s.duration_raw || s.DurationRaw || '',
+            duration: s.duration ?? '',
           }))
         }
       })
@@ -343,9 +344,9 @@
   {:else if tab === 'yaml'}
     <div>
       <YAMLTab bind:workout={workout} onParsed={onParsed} />
-      <div class="mt-2">
+        <div class="mt-2">
         <label class="text-xs text-gray-400 block mb-1" for="wo-yaml-coach-notes">Coach's Note</label>
-        <textarea class="input" id="wo-yaml-coach-notes" rows="2" placeholder="Context, feedback, how it felt…" bind:value={workout.coach_notes}></textarea>
+        <textarea class="input" id="wo-yaml-coach-notes" rows="2" placeholder="Context, feedback, how it felt…" bind:value={workout.coachNotes}></textarea>
       </div>
       {#if parseReady}
         <div class="border-t border-gray-700 pt-3 space-y-3">
@@ -359,7 +360,7 @@
   {/if}
 
   <!-- ═══════════════════════ LIVE SUMMARY ══════════════════ -->
-  {#if summaryLines.length > 0 || workout.duration_min || workout.calories_burned}
+  {#if summaryLines.length > 0 || workout.durationMin || workout.caloriesBurned}
     <div class="mt-4 bg-gray-800 p-4 rounded-lg border border-gray-700">
       <p class="text-sm font-semibold text-gray-300 mb-2">Summary</p>
       {#if summaryLines.length > 0}
@@ -372,11 +373,11 @@
       <div class="flex flex-wrap gap-4 text-sm text-gray-400">
         {#if workout.type}<span>Type: <span class="text-white">{workout.type}</span></span>{/if}
         {#if workout.style}<span>Style: <span class="text-white">{workout.style}</span></span>{/if}
-        {#if workout.duration_min}<span>Duration: <span class="text-white">{workout.duration_min} min</span></span>{/if}
+        {#if workout.durationMin}<span>Duration: <span class="text-white">{workout.durationMin} min</span></span>{/if}
         {#if totalVol > 0}<span>Total Vol: <span class="text-white">{dispLoad(totalVol, store.units)} {loadUnit(store.units)}</span></span>{/if}
-        {#if workout.calories_burned}<span>Cal: <span class="text-white">{workout.calories_burned} kcal</span></span>{/if}
+        {#if workout.caloriesBurned}<span>Cal: <span class="text-white">{workout.caloriesBurned} kcal</span></span>{/if}
         <!-- session-level RPE removed -->
-        {#if workout.avg_hr}<span>Avg HR: <span class="text-white">{workout.avg_hr} bpm</span></span>{/if}
+        {#if workout.avgHr}<span>Avg HR: <span class="text-white">{workout.avgHr} bpm</span></span>{/if}
         {#if workout.focus}<span>Focus: <span class="text-white">{workout.focus}</span></span>{/if}
       </div>
     </div>
@@ -414,26 +415,26 @@
       <label class="text-xs text-gray-400" for="wo-surface">Surface</label>
       <input class="input" id="wo-surface" placeholder="gym / outdoor / home" bind:value={workout.surface} />
     </div>
-    <div>
+      <div>
       <label class="text-xs text-gray-400" for="wo-rest">Rest Interval</label>
-      <input class="input" id="wo-rest" placeholder="e.g. 1 min" bind:value={workout.rest_interval} />
+      <input class="input" id="wo-rest" placeholder="e.g. 1 min" bind:value={workout.restInterval} />
     </div>
-    <div>
+      <div>
       <label class="text-xs text-gray-400" for="wo-duration">Duration (min)</label>
-      <input class="input" id="wo-duration" type="number" bind:value={workout.duration_min} />
+      <input class="input" id="wo-duration" type="number" bind:value={workout.durationMin} />
     </div>
     <!-- session-level RPE removed -->
     <div>
       <label class="text-xs text-gray-400" for="wo-avg-hr">Avg HR (bpm)</label>
-      <input class="input" id="wo-avg-hr" type="number" bind:value={workout.avg_hr} />
+      <input class="input" id="wo-avg-hr" type="number" bind:value={workout.avgHr} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="wo-max-hr">Max HR (bpm)</label>
-      <input class="input" id="wo-max-hr" type="number" bind:value={workout.max_hr} />
+      <input class="input" id="wo-max-hr" type="number" bind:value={workout.maxHr} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="wo-cal">Calories burned</label>
-      <input class="input" id="wo-cal" type="number" bind:value={workout.calories_burned} />
+      <input class="input" id="wo-cal" type="number" bind:value={workout.caloriesBurned} />
     </div>
     <div class="col-span-2">
       <label class="text-xs text-gray-400" for="wo-focus">Focus (movement patterns)</label>
@@ -445,7 +446,7 @@
     </div>
     <div class="col-span-2">
       <label class="text-xs text-gray-400" for="wo-coach-notes">Coach's Note</label>
-      <textarea class="input" id="wo-coach-notes" rows="2" placeholder="Context, feedback, how it felt…" bind:value={workout.coach_notes}></textarea>
+      <textarea class="input" id="wo-coach-notes" rows="2" placeholder="Context, feedback, how it felt…" bind:value={workout.coachNotes}></textarea>
     </div>
   </div>
 {/snippet}
@@ -478,7 +479,7 @@
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-load">Load ({loadUnit(store.units)})</label>
-            <input class="input" id="ex-{idx}-load" bind:value={ex.weight_lbs} placeholder="BW / 85 lbs" oninput={() => ex._sets = []} />
+            <input class="input" id="ex-{idx}-load" bind:value={ex.weightLbs} placeholder="BW / 85 lbs" oninput={() => ex._sets = []} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-tempo">Tempo</label>
@@ -515,11 +516,11 @@
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-distance">Distance ({distUnit(store.units)})</label>
-            <input class="input" id="ex-{idx}-distance" type="number" step="0.1" bind:value={ex.distance_km} />
+            <input class="input" id="ex-{idx}-distance" type="number" step="0.1" bind:value={ex.distanceKm} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-elevation">Elevation ({elevUnit(store.units)})</label>
-            <input class="input" id="ex-{idx}-elevation" type="number" bind:value={ex.elevation_m} />
+            <input class="input" id="ex-{idx}-elevation" type="number" bind:value={ex.elevationM} />
           </div>
         </div>
       </div>
