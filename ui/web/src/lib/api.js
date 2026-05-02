@@ -21,13 +21,30 @@ async function req(method, path, body, extraHeaders = {}) {
       const err = await res2.json().catch(() => ({}))
       throw new Error(err.error || `HTTP ${res2.status}`)
     }
-    return res2.status === 204 ? null : res2.json()
+    return res2.status === 204 ? null : toCamel(await res2.json().catch(() => ({})))
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `HTTP ${res.status}`)
   }
-  return res.status === 204 ? null : res.json()
+  if (res.status === 204) return null
+  const json = await res.json().catch(() => ({}))
+  return toCamel(json)
+}
+
+function toCamel(v) {
+  if (v === null || v === undefined) return v
+  if (Array.isArray(v)) return v.map(toCamel)
+  if (typeof v === 'object') {
+    const out = {}
+    for (const k of Object.keys(v)) {
+      const val = v[k]
+      const camel = k.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+      out[camel] = toCamel(val)
+    }
+    return out
+  }
+  return v
 }
 
 export const api = {
@@ -54,22 +71,12 @@ export const api = {
   // Biometrics
   listBiometrics: (from, to) => req('GET', `/biometrics?from=${from}&to=${to}`),
   postBiometric: (b) => {
-    // include optional body_fat_pct if present on the object
-    const payload = Object.assign({}, b)
-    if (payload.body_fat_pct === undefined && payload.bodyFatPct !== undefined) {
-      // accept camelCase from some callers
-      payload.body_fat_pct = payload.bodyFatPct
-      delete payload.bodyFatPct
-    }
-    return req('POST', '/biometrics', payload)
+    // Backend now uses camelCase consistently — send payload as-is
+    return req('POST', '/biometrics', b)
   },
   putBiometric: (date, b) => {
-    const payload = Object.assign({}, b)
-    if (payload.body_fat_pct === undefined && payload.bodyFatPct !== undefined) {
-      payload.body_fat_pct = payload.bodyFatPct
-      delete payload.bodyFatPct
-    }
-    return req('PUT', `/biometrics/${date}`, payload)
+    // Backend now uses camelCase consistently — send payload as-is
+    return req('PUT', `/biometrics/${date}`, b)
   },
   deleteBiometric: (date) => req('DELETE', `/biometrics/${date}`),
 

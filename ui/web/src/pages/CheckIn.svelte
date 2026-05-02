@@ -46,7 +46,7 @@
   let tab = $state('daily')
 
   // --- Daily tab ---
-  let dailyForm = $state({ date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleepQuality: '', subjective: '', notes: '' })
+  let dailyForm = $state({ date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '' })
   let dailyLoading = $state(false)
   let dailyError = $state('')
   let dailySuccess = $state('')
@@ -58,17 +58,17 @@
     try {
       await api.postBiometric({
         date: dailyForm.date,
-        weight_kg:       inputWeight(dailyForm.weight_kg, store.units),
+        weightKg:       inputWeight(dailyForm.weightKg ?? dailyForm.weight_kg, store.units),
         // waist removed
-        grip_kg:         inputLoad(dailyForm.grip_kg, store.units),
-        bolt_score:      Number(dailyForm.bolt_score)    || 0,
-        sleep_hours:     Number(dailyForm.sleep_hours)   || 0,
-        sleep_quality:   Number(dailyForm.sleepQuality) || Number(dailyForm.sleep_quality) || 0,
-        subjective_feel: Number(dailyForm.subjective)    || 0,
+        gripKg:         inputLoad(dailyForm.gripKg ?? dailyForm.grip_kg, store.units),
+        boltScore:      Number(dailyForm.boltScore ?? dailyForm.bolt_score)    || 0,
+        sleepHours:     Number(dailyForm.sleepHours ?? dailyForm.sleep_hours)   || 0,
+        sleepQuality:   Number(dailyForm.sleepQuality) || Number(dailyForm.sleep_quality) || 0,
+        subjectiveFeel: Number(dailyForm.subjective)    || 0,
         notes:           dailyForm.notes || '',
       })
       dailySuccess = 'Check-in saved'
-      dailyForm = { date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleepQuality: '', subjective: '', notes: '' }
+      dailyForm = { date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '' }
     } catch (e) {
       dailyError = e.message
     } finally {
@@ -77,7 +77,7 @@
   }
 
   // --- Measurements tab ---
-  let measForm = $state({ date: today(), neck_cm: '', chest_cm: '', waist_cm: '', hips_cm: '', thigh_cm: '', bicep_cm: '', shoulders_cm: '', calves_cm: '', notes: '' })
+  let measForm = $state({ date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', shouldersCm: '', calvesCm: '', notes: '' })
   let measLoading = $state(false)
   let measError = $state('')
   let measSuccess = $state('')
@@ -108,18 +108,18 @@
     try {
       await api.postMeasurement({
         date:         measForm.date,
-        neck_cm:      inputLength(measForm.neck_cm, store.units),
-        chest_cm:     inputLength(measForm.chest_cm, store.units),
-        waist_cm:     inputLength(measForm.waist_cm, store.units),
-        hips_cm:      inputLength(measForm.hips_cm, store.units),
-        thigh_cm:     inputLength(measForm.thigh_cm, store.units),
-        bicep_cm:     inputLength(measForm.bicep_cm, store.units),
-        shoulders_cm: inputLength(measForm.shoulders_cm, store.units),
-        calves_cm:    inputLength(measForm.calves_cm, store.units),
+        neck_cm:      inputLength(measForm.neckCm ?? measForm.neck_cm, store.units),
+        chest_cm:     inputLength(measForm.chestCm ?? measForm.chest_cm, store.units),
+        waist_cm:     inputLength(measForm.waistCm ?? measForm.waist_cm, store.units),
+        hips_cm:      inputLength(measForm.hipsCm ?? measForm.hips_cm, store.units),
+        thigh_cm:     inputLength(measForm.thighCm ?? measForm.thigh_cm, store.units),
+        bicep_cm:     inputLength(measForm.bicepCm ?? measForm.bicep_cm, store.units),
+        shoulders_cm: inputLength(measForm.shouldersCm ?? measForm.shoulders_cm, store.units),
+        calves_cm:    inputLength(measForm.calvesCm ?? measForm.calves_cm, store.units),
         notes:        measForm.notes || '',
       })
       measSuccess = 'Measurement saved'
-      measForm = { date: today(), neck_cm: '', chest_cm: '', waist_cm: '', hips_cm: '', thigh_cm: '', bicep_cm: '', shoulders_cm: '', calves_cm: '', notes: '' }
+      measForm = { date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', shouldersCm: '', calvesCm: '', notes: '' }
       await loadMeasurements()
     } catch (e) {
       measError = e.message
@@ -139,7 +139,7 @@
   let bfData = $state(null)
 
   // Body fat calculation inputs (Navy method)
-  let bfCalcForm = $state({ neck_cm: '', waist_cm: '', hips_cm: '' })
+  let bfCalcForm = $state({ neckCm: '', waistCm: '', hipsCm: '' })
   let calcLoading = $state(false)
 
   // Profile (used to determine sex-specific measurement requirements)
@@ -205,9 +205,9 @@
       // Save measurements first
       await api.postMeasurement({
         date: bfForm.date,
-        neck_cm: inputLength(bfCalcForm.neck_cm, store.units),
-        waist_cm: inputLength(bfCalcForm.waist_cm, store.units),
-        hips_cm: inputLength(bfCalcForm.hips_cm, store.units),
+        neck_cm: inputLength(bfCalcForm.neckCm ?? bfCalcForm.neck_cm, store.units),
+        waist_cm: inputLength(bfCalcForm.waistCm ?? bfCalcForm.waist_cm, store.units),
+        hips_cm: inputLength(bfCalcForm.hipsCm ?? bfCalcForm.hips_cm, store.units),
       })
       // Refresh measurements list (optional) and fetch calculated body fat
       await loadMeasurements()
@@ -226,12 +226,12 @@
         const row = store.editData.data
         dailyForm = { 
           date: row.date, 
-          weight_kg: String(row.weight_kg ?? ''),
-          grip_kg: String(row.grip_kg ?? ''),
-          bolt_score: String(row.bolt_score ?? ''),
-          sleep_hours: String(row.sleep_hours ?? ''),
-          sleepQuality: String(row.sleep_quality ?? ''),
-          subjective: String(row.subjective_feel ?? ''),
+          weightKg: String(row.weightKg ?? row.weight_kg ?? ''),
+          gripKg: String(row.gripKg ?? row.grip_kg ?? ''),
+          boltScore: String(row.boltScore ?? row.bolt_score ?? ''),
+          sleepHours: String(row.sleepHours ?? row.sleep_hours ?? ''),
+          sleepQuality: String(row.sleepQuality ?? row.sleep_quality ?? ''),
+          subjective: String(row.subjective ?? row.subjective_feel ?? ''),
           notes: row.notes ?? ''
         }
         tab = 'daily'
@@ -239,14 +239,14 @@
         const row = store.editData.data
         measForm = {
           date: row.date,
-          neck_cm: String(row.neck_cm ?? ''),
-          chest_cm: String(row.chest_cm ?? ''),
-          waist_cm: String(row.waist_cm ?? ''),
-          hips_cm: String(row.hips_cm ?? ''),
-          thigh_cm: String(row.thigh_cm ?? ''),
-          bicep_cm: String(row.bicep_cm ?? ''),
-          shoulders_cm: String(row.shoulders_cm ?? ''),
-          calves_cm: String(row.calves_cm ?? ''),
+          neckCm: String(row.neckCm ?? row.neck_cm ?? ''),
+          chestCm: String(row.chestCm ?? row.chest_cm ?? ''),
+          waistCm: String(row.waistCm ?? row.waist_cm ?? ''),
+          hipsCm: String(row.hipsCm ?? row.hips_cm ?? ''),
+          thighCm: String(row.thighCm ?? row.thigh_cm ?? ''),
+          bicepCm: String(row.bicepCm ?? row.bicep_cm ?? ''),
+          shouldersCm: String(row.shouldersCm ?? row.shoulders_cm ?? ''),
+          calvesCm: String(row.calvesCm ?? row.calves_cm ?? ''),
           notes: row.notes ?? ''
         }
         tab = 'measurements'
@@ -411,7 +411,7 @@
                 {#each bfHistory as h}
                   <tr class="border-t border-gray-800">
                     <td>{h.date}</td>
-                    <td class="text-emerald-400 font-semibold">{(h.bodyFatPct ?? h.body_fat_pct ?? 0).toFixed(1)}%</td>
+                    <td class="text-emerald-400 font-semibold">{((h.bodyFatPct ?? h.body_fat_pct) ?? 0).toFixed(1)}%</td>
                   </tr>
                 {/each}
               </tbody>
@@ -447,7 +447,7 @@
         <Card title="Last Measured">
           <div class="flex items-center justify-between">
             <div>
-              <div class="text-2xl font-bold text-emerald-400">{(lastMeasuredBF.bodyFatPct ?? lastMeasuredBF.body_fat_pct ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
+              <div class="text-2xl font-bold text-emerald-400">{((lastMeasuredBF.bodyFatPct ?? lastMeasuredBF.body_fat_pct) ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
               <div class="text-xs text-gray-400">{lastMeasuredBF.date}</div>
             </div>
             <button class="text-sm text-cyan-400 hover:text-cyan-300" onclick={() => bfForm.date = lastMeasuredBF.date}>Use this date</button>
@@ -494,7 +494,7 @@
       {:else if bfData && bfData.bf_pct > 0}
         <Card title="Calculated — Navy Method">
           <div class="space-y-3">
-            <div class="text-4xl font-bold text-cyan-400">{bfData.bf_pct.toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
+            <div class="text-4xl font-bold text-cyan-400">{(bfData.bf_pct ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
             <div class="grid grid-cols-2 gap-3 text-sm">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Lean Mass</div>
@@ -557,8 +557,8 @@
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Expected vs Actual</div>
-                 <div class="text-sm">Expected: {checkinPreview.expectedWeightChange?.toFixed(2) ?? (checkinPreview.expected_weight_change?.toFixed(2) ?? '—')} kg</div>
-                 <div class="text-sm">Diff: {checkinPreview.weightDiff?.toFixed(2) ?? (checkinPreview.weight_diff?.toFixed(2) ?? '—')} kg</div>
+                 <div class="text-sm">Expected: {(checkinPreview.expectedWeightChange ?? checkinPreview.expected_weight_change ?? 0).toFixed(2) ?? '—'} kg</div>
+                 <div class="text-sm">Diff: {(checkinPreview.weightDiff ?? checkinPreview.weight_diff ?? 0).toFixed(2) ?? '—'} kg</div>
               </div>
             </div>
 

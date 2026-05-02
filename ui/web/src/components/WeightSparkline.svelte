@@ -11,8 +11,8 @@
   // Convert points to display units but keep raw (kg) for scaling
   $: displayPoints = sorted.map(p => ({
     date: p.date,
-    weight: dispWeight(p.weight_kg, units),
-    raw: p.weight_kg
+    weight: dispWeight(p.weightKg, units),
+    raw: p.weightKg
   }))
 
   // Calculate min/max for scaling (use raw kg values then convert for display labels)

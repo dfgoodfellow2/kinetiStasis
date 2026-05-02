@@ -229,12 +229,12 @@ type TDEEResult struct {
 
 type MacroResult struct {
 	Calories  float64 `json:"calories"`
-	ProteinG  float64 `json:"protein_g"`
-	CarbsG    float64 `json:"carbs_g"`
-	FatG      float64 `json:"fat_g"`
-	FiberG    float64 `json:"fiber_g"`
-	WaterMl   float64 `json:"water_ml"`
-	GoalLabel string  `json:"goal_label"`
+	ProteinG  float64 `json:"proteinG"`
+	CarbsG    float64 `json:"carbsG"`
+	FatG      float64 `json:"fatG"`
+	FiberG    float64 `json:"fiberG"`
+	WaterMl   float64 `json:"waterMl"`
+	GoalLabel string  `json:"goalLabel"`
 }
 
 type ReadinessResult struct {
@@ -270,9 +270,9 @@ type TodaySummary struct {
 	Date         string       `json:"date"`
 	Consumed     NutritionLog `json:"consumed"`
 	Targets      Targets      `json:"targets"`
-	CaloriesLeft float64      `json:"calories_left"`
-	ProteinLeft  float64      `json:"protein_left"`
-	ProgressPct  float64      `json:"progress_pct"`
+	CaloriesLeft float64      `json:"caloriesLeft"`
+	ProteinLeft  float64      `json:"proteinLeft"`
+	ProgressPct  float64      `json:"progressPct"`
 }
 
 type WeeklyStats struct {
@@ -297,7 +297,7 @@ type DashboardData struct {
 	WeightTrend []struct {
 		Date     string  `json:"date"`
 		WeightKg float64 `json:"weightKg"`
-	} `json:"weight_trend"`
+	} `json:"weightTrend"`
 	TodayBio         *BiometricLog `json:"todayBio"`
 	GripPersonalBest float64       `json:"gripPersonalBest"`
 	WorkoutToday     bool          `json:"workoutToday"`
@@ -308,11 +308,11 @@ type DashboardData struct {
 
 type ParsedMeal struct {
 	Calories  float64 `json:"calories"`
-	ProteinG  float64 `json:"protein_g"`
-	CarbsG    float64 `json:"carbs_g"`
-	FatG      float64 `json:"fat_g"`
-	FiberG    float64 `json:"fiber_g"`
-	WaterMl   float64 `json:"water_ml"`
+	ProteinG  float64 `json:"proteinG"`
+	CarbsG    float64 `json:"carbsG"`
+	FatG      float64 `json:"fatG"`
+	FiberG    float64 `json:"fiberG"`
+	WaterMl   float64 `json:"waterMl"`
 	MealNotes string  `json:"mealNotes"`
 	RawInput  string  `json:"rawInput"`
 }

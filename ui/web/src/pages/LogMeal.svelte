@@ -8,7 +8,7 @@
   import Alert from '../components/Alert.svelte'
 
   let mode = $state('ai')
-  let form = $state({ date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', meal_notes: '' })
+  let form = $state({ date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' })
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
@@ -24,12 +24,12 @@
       form = { 
         date: row.date, 
         calories: String(row.calories ?? ''), 
-        proteinG: String(row.protein_g ?? ''), 
-        carbsG: String(row.carbs_g ?? ''), 
-        fatG: String(row.fat_g ?? ''), 
-        fiberG: String(row.fiber_g ?? ''), 
-        waterMl: String(row.water_ml ?? ''), 
-        meal_notes: row.meal_notes ?? '' 
+        proteinG: String(row.proteinG ?? row.protein_g ?? ''), 
+        carbsG: String(row.carbsG ?? row.carbs_g ?? ''), 
+        fatG: String(row.fatG ?? row.fat_g ?? ''), 
+        fiberG: String(row.fiberG ?? row.fiber_g ?? ''), 
+        waterMl: String(row.waterMl ?? row.water_ml ?? ''), 
+        mealNotes: row.mealNotes ?? row.meal_notes ?? '' 
       }
       mode = 'manual'
       clearEditData()
@@ -44,16 +44,16 @@
       const payload = {
         date: form.date,
         calories: Number(form.calories) || 0,
-        protein_g: Number(form.proteinG) || 0,
-        carbs_g: Number(form.carbsG) || 0,
-        fat_g: Number(form.fatG) || 0,
-        fiber_g: Number(form.fiberG) || 0,
-        water_ml: Number(form.waterMl) || 0,
-        meal_notes: form.meal_notes || '',
+        proteinG: Number(form.proteinG) || 0,
+        carbsG: Number(form.carbsG) || 0,
+        fatG: Number(form.fatG) || 0,
+        fiberG: Number(form.fiberG) || 0,
+        waterMl: Number(form.waterMl) || 0,
+        mealNotes: form.mealNotes || '',
       }
       await api.postNutrition(payload)
       success = 'Saved'
-      form = { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', meal_notes: '' }
+      form = { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' }
     } catch (e) {
       error = e.message
     } finally {
@@ -78,7 +78,13 @@
     try {
     const { raw_input, ...payload } = aiResult
     if (!payload.date) payload.date = today()
-    payload.meal_notes = raw_input || ''
+    // Normalize to camelCase keys expected by backend
+    if (payload.protein_g !== undefined && payload.proteinG === undefined) payload.proteinG = payload.protein_g
+    if (payload.carbs_g !== undefined && payload.carbsG === undefined) payload.carbsG = payload.carbs_g
+    if (payload.fat_g !== undefined && payload.fatG === undefined) payload.fatG = payload.fat_g
+    if (payload.fiber_g !== undefined && payload.fiberG === undefined) payload.fiberG = payload.fiber_g
+    if (payload.water_ml !== undefined && payload.waterMl === undefined) payload.waterMl = payload.water_ml
+    payload.mealNotes = raw_input || payload.mealNotes || payload.meal_notes || ''
     await api.postNutrition(payload)
       success = 'Saved parsed meal'
       aiResult = null
@@ -148,7 +154,7 @@
         <!-- Notes Field -->
         <div class="md:col-span-2">
           <label class="text-xs text-gray-400" for="lm-notes">Notes</label>
-          <textarea class="input" id="lm-notes" placeholder="Notes" bind:value={form.meal_notes}></textarea>
+          <textarea class="input" id="lm-notes" placeholder="Notes" bind:value={form.mealNotes}></textarea>
         </div>
 
         <!-- Save Button -->
