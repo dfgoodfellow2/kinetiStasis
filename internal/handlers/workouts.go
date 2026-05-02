@@ -38,6 +38,13 @@ func scanWorkout(row interface {
 	if exercisesJSON != "" {
 		if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
 			slog.Warn("unmarshal exercises_json failed", "err", err)
+		} else {
+			// Backwards compat: copy legacy snake_case duration_raw into DurationRaw
+			for i := range w.Exercises {
+				if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+					w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
+				}
+			}
 		}
 	}
 	if metadataJSON != "" {

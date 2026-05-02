@@ -93,6 +93,11 @@ type ExerciseEntry struct {
 	LoadRaw string `json:"loadRaw,omitempty"`
 	// DurationRaw preserves the original duration string (e.g. "35 sec", "2:30 min")
 	DurationRaw string `json:"durationRaw,omitempty"`
+	// For backwards compatibility with older DB rows that used snake_case
+	// (duration_raw) when storing exercises_json. When decoding from the
+	// DB we capture that value here and copy it into DurationRaw if the
+	// camelCase field is empty.
+	DurationRawLegacy string `json:"duration_raw,omitempty"`
 	// Tempo preserves the original tempo string (e.g. "2-0-2-0") for form display
 	Tempo string `json:"tempo,omitempty"`
 	// Bias is the bilateral/unilateral indicator for this exercise
