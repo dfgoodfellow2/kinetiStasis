@@ -184,14 +184,15 @@
     const loadNum = parseLoad(load)
 
     // Build duration fallback chain similar to History view:
-    // 1. Prefer exercise-level duration if present
+    // 1. Prefer exercise-level duration if present (check camelCase and snake_case)
     // 2. If reps <= 0 (timed exercise) and workout has only 1 exercise, fall back to workout.duration_min
-    const exerciseDuration = ex.duration || ex.durationRaw || ex.duration_raw || ''
+    // Check both camelCase (new) and snake_case (old DB format)
+    const durationValue = ex.durationRaw || ex.duration_raw || ex.duration || ''
     const workoutHasOneExercise = workout.exercises && workout.exercises.length === 1
-    const shouldUseWorkoutDuration = reps <= 0 && !exerciseDuration && workoutHasOneExercise && workout.duration_min
-    const hasDuration = exerciseDuration || (shouldUseWorkoutDuration ? `${workout.duration_min} min` : '')
+    const shouldUseWorkoutDuration = reps <= 0 && !durationValue && workoutHasOneExercise && workout.duration_min
+    const hasDuration = durationValue || (shouldUseWorkoutDuration ? `${workout.duration_min} min` : '')
     // Priority: duration if reps <= 0, else reps
-    const displayValue = (reps <= 0 && hasDuration) ? hasDuration : reps
+    const displayValue = (reps <= 0 && hasDuration) ? durationValue : reps
     let base = `${ex.name || 'Exercise'}: ${sets}×${displayValue}`
     if (load) base += ` @ ${load}`
 
