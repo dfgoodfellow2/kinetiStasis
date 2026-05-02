@@ -127,7 +127,7 @@ func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	}
 	// body_measurements table stores circumference measurements (waist etc.)
 	// biometric_logs may not include waist; fetch body_measurements in range and merge waist values.
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	bmRows, err := db.QueryContext(r.Context(), `SELECT date, COALESCE(waist_cm,0) FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ?`, claims.UserID, from, to)
 	if err == nil {
 		defer bmRows.Close()
