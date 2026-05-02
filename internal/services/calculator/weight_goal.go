@@ -10,17 +10,17 @@ import (
 
 // WeightGoalAdjustment contains the computed adjustment from weight data
 type WeightGoalAdjustment struct {
-	DaysBetween          int     `json:"days_between"`
-	WeightStart          float64 `json:"weight_start"`
-	WeightEnd            float64 `json:"weight_end"`
-	WeightChange         float64 `json:"weight_change"`
-	ExpectedWeightChange float64 `json:"expected_weight_change"`
-	WeightDiff           float64 `json:"weight_diff"` // actual - expected
-	CalorieAdjustment    float64 `json:"calorie_adjustment"`
-	RecommendedCalories  int     `json:"recommended_calories"`
+	DaysBetween          int     `json:"daysBetween"`
+	WeightStart          float64 `json:"weightStart"`
+	WeightEnd            float64 `json:"weightEnd"`
+	WeightChange         float64 `json:"weightChange"`
+	ExpectedWeightChange float64 `json:"expectedWeightChange"`
+	WeightDiff           float64 `json:"weightDiff"` // actual - expected
+	CalorieAdjustment    float64 `json:"calorieAdjustment"`
+	RecommendedCalories  int     `json:"recommendedCalories"`
 	Reason               string  `json:"reason"`
-	CanCheckIn           bool    `json:"can_check_in"`
-	DaysSinceLastCheckIn int     `json:"days_since_last_check_in"`
+	CanCheckIn           bool    `json:"canCheckIn"`
+	DaysSinceLastCheckIn int     `json:"daysSinceLastCheckIn"`
 }
 
 // ComputeWeightGoalAdjustment calculates target adjustments based on weight change vs expected

@@ -59,7 +59,7 @@ let checklist = $derived(data ? [
     },
   ] : [])
 
-// (workout streak is now provided by the API in data.weekly_stats.current_streak)
+// (workout streak is provided by the API in data.weeklyStats.currentStreak)
 </script>
 
 {#if loading}

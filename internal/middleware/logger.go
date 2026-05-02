@@ -17,7 +17,7 @@ func Logger(next http.Handler) http.Handler {
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", ww.status,
-			"duration_ms", time.Since(start).Milliseconds(),
+			"durationMs", time.Since(start).Milliseconds(),
 			"remote", r.RemoteAddr,
 		)
 	})

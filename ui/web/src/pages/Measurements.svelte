@@ -5,7 +5,7 @@
   import { today, daysAgo, dispLength, lengthUnit, inputLength } from '../lib/utils.js'
   import Alert from '../components/Alert.svelte'
 
-  let form = $state({ date: today(), neck_cm: '', chest_cm: '', waist_cm: '', hips_cm: '', thigh_cm: '', bicep_cm: '', notes: '' })
+  let form = $state({ date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', notes: '' })
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
@@ -28,16 +28,16 @@
     try {
       await api.postMeasurement({
         date:     form.date,
-        neckCm:  inputLength(form.neck_cm, store.units),
-        chestCm: inputLength(form.chest_cm, store.units),
-        waistCm: inputLength(form.waist_cm, store.units),
-        hipsCm:  inputLength(form.hips_cm, store.units),
-        thighCm: inputLength(form.thigh_cm, store.units),
-        bicepCm: inputLength(form.bicep_cm, store.units),
+      neckCm:  inputLength(form.neckCm, store.units),
+      chestCm: inputLength(form.chestCm, store.units),
+      waistCm: inputLength(form.waistCm, store.units),
+      hipsCm:  inputLength(form.hipsCm, store.units),
+      thighCm: inputLength(form.thighCm, store.units),
+      bicepCm: inputLength(form.bicepCm, store.units),
         notes:    form.notes || '',
       })
       success = 'Measurement saved'
-      form = { date: today(), neck_cm: '', chest_cm: '', waist_cm: '', hips_cm: '', thigh_cm: '', bicep_cm: '', notes: '' }
+      form = { date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', notes: '' }
       await load()
     } catch (e) {
       error = e.message
@@ -55,12 +55,12 @@
     <h3 class="text-emerald-400 font-bold mb-2">Log Measurement</h3>
     <div class="space-y-2">
       <input class="input" bind:value={form.date} />
-      <input class="input" placeholder="Neck ({lengthUnit(store.units)})" bind:value={form.neck_cm} />
-      <input class="input" placeholder="Chest ({lengthUnit(store.units)})" bind:value={form.chest_cm} />
-      <input class="input" placeholder="Waist ({lengthUnit(store.units)})" bind:value={form.waist_cm} />
-      <input class="input" placeholder="Hips ({lengthUnit(store.units)})" bind:value={form.hips_cm} />
-      <input class="input" placeholder="Thigh ({lengthUnit(store.units)})" bind:value={form.thigh_cm} />
-      <input class="input" placeholder="Bicep ({lengthUnit(store.units)})" bind:value={form.bicep_cm} />
+      <input class="input" placeholder="Neck ({lengthUnit(store.units)})" bind:value={form.neckCm} />
+      <input class="input" placeholder="Chest ({lengthUnit(store.units)})" bind:value={form.chestCm} />
+      <input class="input" placeholder="Waist ({lengthUnit(store.units)})" bind:value={form.waistCm} />
+      <input class="input" placeholder="Hips ({lengthUnit(store.units)})" bind:value={form.hipsCm} />
+      <input class="input" placeholder="Thigh ({lengthUnit(store.units)})" bind:value={form.thighCm} />
+      <input class="input" placeholder="Bicep ({lengthUnit(store.units)})" bind:value={form.bicepCm} />
       <textarea class="input" placeholder="Notes" bind:value={form.notes}></textarea>
         <div>
         <button class="btn-primary" onclick={submit}>Save</button>
