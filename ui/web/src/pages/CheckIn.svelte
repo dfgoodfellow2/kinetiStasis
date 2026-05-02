@@ -341,42 +341,42 @@
 
           <div>
             <label class="text-xs text-gray-400" for="meas-neck">Neck ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-neck" type="number" step="0.1" bind:value={measForm.neck_cm} />
+            <input class="input" id="meas-neck" type="number" step="0.1" bind:value={measForm.neckCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-chest">Chest ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-chest" type="number" step="0.1" bind:value={measForm.chest_cm} />
+            <input class="input" id="meas-chest" type="number" step="0.1" bind:value={measForm.chestCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-waist">Waist ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-waist" type="number" step="0.1" bind:value={measForm.waist_cm} />
+            <input class="input" id="meas-waist" type="number" step="0.1" bind:value={measForm.waistCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-hips">Hips ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-hips" type="number" step="0.1" bind:value={measForm.hips_cm} />
+            <input class="input" id="meas-hips" type="number" step="0.1" bind:value={measForm.hipsCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-thigh">Thigh ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-thigh" type="number" step="0.1" bind:value={measForm.thigh_cm} />
+            <input class="input" id="meas-thigh" type="number" step="0.1" bind:value={measForm.thighCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-bicep">Bicep ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-bicep" type="number" step="0.1" bind:value={measForm.bicep_cm} />
+            <input class="input" id="meas-bicep" type="number" step="0.1" bind:value={measForm.bicepCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-shoulders">Shoulders ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-shoulders" type="number" step="0.1" bind:value={measForm.shoulders_cm} />
+            <input class="input" id="meas-shoulders" type="number" step="0.1" bind:value={measForm.shouldersCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-calves">Calves ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-calves" type="number" step="0.1" bind:value={measForm.calves_cm} />
+            <input class="input" id="meas-calves" type="number" step="0.1" bind:value={measForm.calvesCm} />
           </div>
 
           <div class="col-span-2">
@@ -470,16 +470,16 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-gray-400" for="bf-neck">Neck ({lengthUnit(store.units)})</label>
-              <input class="input" id="bf-neck" type="number" step="0.1" bind:value={bfCalcForm.neck_cm} />
+              <input class="input" id="bf-neck" type="number" step="0.1" bind:value={bfCalcForm.neckCm} />
             </div>
             <div>
               <label class="text-xs text-gray-400" for="bf-waist">Waist ({lengthUnit(store.units)})</label>
-              <input class="input" id="bf-waist" type="number" step="0.1" bind:value={bfCalcForm.waist_cm} />
+               <input class="input" id="bf-waist" type="number" step="0.1" bind:value={bfCalcForm.waistCm} />
             </div>
             {#if profile?.sex?.toLowerCase() === 'female'}
               <div class="col-span-2">
                 <label class="text-xs text-gray-400" for="bf-hips">Hips ({lengthUnit(store.units)})</label>
-                <input class="input" id="bf-hips" type="number" step="0.1" bind:value={bfCalcForm.hips_cm} />
+                <input class="input" id="bf-hips" type="number" step="0.1" bind:value={bfCalcForm.hipsCm} />
               </div>
             {/if}
           </div>
