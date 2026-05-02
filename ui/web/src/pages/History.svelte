@@ -315,7 +315,17 @@
                       {w.exercises.map(e => {
                         const sets = e.sets?.length || 0
                         const reps = e.sets?.[0]?.reps || 0
-                        return sets > 0 ? `${sets}×${reps} ${e.name}` : e.name
+                        const hasDuration = e.durationRaw || e.duration
+
+                        if (sets > 0) {
+                          if (reps <= 0 && hasDuration) {
+                            return `${sets}×${hasDuration} ${e.name}`
+                          } else {
+                            return `${sets}×${reps} ${e.name}`
+                          }
+                        } else {
+                          return e.name
+                        }
                       }).join(', ')}
                     {:else}
                       —

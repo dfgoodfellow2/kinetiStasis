@@ -183,7 +183,10 @@
     const load = ex.weight_lbs || ''
     const loadNum = parseLoad(load)
 
-    let base = `${ex.name || 'Exercise'}: ${sets}×${ex.duration || reps}`
+    const hasDuration = ex.duration && ex.duration.toString().trim() !== ''
+    // Priority: duration if reps <= 0, else reps
+    const displayValue = (reps <= 0 && hasDuration) ? ex.duration : reps
+    let base = `${ex.name || 'Exercise'}: ${sets}×${displayValue}`
     if (load) base += ` @ ${load}`
 
     const extras = []
