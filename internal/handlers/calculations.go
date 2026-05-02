@@ -262,13 +262,25 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	workouts7, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, since7)
 	workouts30, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, since30)
 
-	targets, terr := fetchTargets(r.Context(), h.db, claims.UserID)
-	if terr != nil {
-		targets = models.Targets{}
-	}
-
 	tdeeRes := calculator.ComputeObservedTDEE(nut90, bio30, profile)
 	macros := nutrition.FullDietPlan(profile, weight, tdeeRes.ObservedTDEE)
+
+	targets, terr := fetchTargets(r.Context(), h.db, claims.UserID)
+	if terr != nil {
+		// If targets not found in DB (or any error), fall back to computed macros
+		// so the dashboard always returns consistent targets/macros.
+		targets = models.Targets{
+			UserID:   claims.UserID,
+			Calories: macros.Calories,
+			ProteinG: macros.ProteinG,
+			CarbsG:   macros.CarbsG,
+			FatG:     macros.FatG,
+			FiberG:   macros.FiberG,
+			WaterMl:  macros.WaterMl,
+			// EatBackExercise defaults to false when not stored
+			UpdatedAt: "",
+		}
+	}
 	readinessRes := readiness.ComputeReadiness(bio30, profile)
 	_, _, velDelta, velArrow := readiness.ComputeReadinessVelocity(bio30, profile)
 	velTrend := "stable"

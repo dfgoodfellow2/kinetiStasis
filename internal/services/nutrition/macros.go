@@ -1,8 +1,10 @@
 package nutrition
 
 import (
+	"log"
 	"math"
 
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 )
 
@@ -214,10 +216,21 @@ func FullDietPlan(p models.Profile, weightKg float64, observedTDEE float64) mode
 	// Combine static and observed: if observed provided (>0) average them
 	var tdee float64
 	if observedTDEE > 0 {
-		tdee = (static + observedTDEE) / 2
+		// Safety: if observed TDEE is implausibly low, prefer static estimate and log
+		if observedTDEE < 1000 {
+			log.Printf("observedTDEE is very low (%v) - using static TDEE (%v) instead", observedTDEE, static)
+			tdee = static
+		} else {
+			tdee = (static + observedTDEE) / 2
+		}
 	} else {
 		tdee = static
 	}
 	target := ComputeTargetCalories(tdee, p.Goal)
+	// Enforce absolute minimum calorie floor
+	if target < constants.MinCalorieFloor {
+		log.Printf("Computed calories %v below MinCalorieFloor %v - enforcing floor", target, constants.MinCalorieFloor)
+		target = constants.MinCalorieFloor
+	}
 	return ComputeMacros(p, target, weightKg)
 }
