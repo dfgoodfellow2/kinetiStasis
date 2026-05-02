@@ -58,12 +58,12 @@
     try {
       await api.postBiometric({
         date: dailyForm.date,
-        weightKg:       inputWeight(dailyForm.weightKg ?? dailyForm.weight_kg, store.units),
+        weightKg:       inputWeight(dailyForm.weightKg, store.units),
         // waist removed
-        gripKg:         inputLoad(dailyForm.gripKg ?? dailyForm.grip_kg, store.units),
-        boltScore:      Number(dailyForm.boltScore ?? dailyForm.bolt_score)    || 0,
-        sleepHours:     Number(dailyForm.sleepHours ?? dailyForm.sleep_hours)   || 0,
-        sleepQuality:   Number(dailyForm.sleepQuality) || Number(dailyForm.sleep_quality) || 0,
+        gripKg:         inputLoad(dailyForm.gripKg, store.units),
+        boltScore:      Number(dailyForm.boltScore)    || 0,
+        sleepHours:     Number(dailyForm.sleepHours)   || 0,
+        sleepQuality:   Number(dailyForm.sleepQuality) || 0,
         subjectiveFeel: Number(dailyForm.subjective)    || 0,
         notes:           dailyForm.notes || '',
       })
@@ -298,12 +298,12 @@
 
         <div>
           <label class="text-xs text-gray-400" for="ci-bolt">BOLT Score (s)</label>
-          <input class="input" id="ci-bolt" type="number" bind:value={dailyForm.bolt_score} />
+          <input class="input" id="ci-bolt" type="number" bind:value={dailyForm.boltScore} />
         </div>
 
         <div>
           <label class="text-xs text-gray-400" for="ci-sleep-hrs">Sleep (hrs)</label>
-          <input class="input" id="ci-sleep-hrs" type="number" step="0.1" bind:value={dailyForm.sleep_hours} />
+          <input class="input" id="ci-sleep-hrs" type="number" step="0.1" bind:value={dailyForm.sleepHours} />
         </div>
 
         <div>
