@@ -50,7 +50,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Determine if this is the first user (auto-admin)
 	var count int
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	if err := db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -117,7 +117,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		hash     string
 		isAdmin  int
 	)
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	err := db.QueryRowContext(r.Context(), `SELECT id, username, password, is_admin FROM users WHERE username = ? OR email = ? LIMIT 1`, req.Login, req.Login).Scan(&userID, &username, &hash, &isAdmin)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusUnauthorized, "invalid credentials")
@@ -161,7 +161,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		isAdmin   int
 		expiresAt string
 	)
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	err = db.QueryRowContext(r.Context(),
 		`SELECT u.id, u.is_admin, rt.expires_at
          FROM refresh_tokens rt
@@ -181,7 +181,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	exp, err := time.Parse(constants.TimeFormat, expiresAt)
 	if err != nil || time.Now().After(exp) {
 		// Clean up expired token
-		if _, err := h.s.(*store.SQLiteStore).DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
+		if _, err := h.s.DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
 			slog.Warn("failed to delete expired refresh token", "err", err)
 		}
 		respond.Error(w, http.StatusUnauthorized, "refresh token expired")
@@ -203,7 +203,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.RefreshCookieName); err == nil {
 		tokenHash := hashToken(cookie.Value)
-		if _, err := h.s.(*store.SQLiteStore).DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
+		if _, err := h.s.DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
 			slog.Warn("failed to delete refresh token on logout", "err", err)
 		}
 	}
@@ -220,7 +220,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var username, email string
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	err := db.QueryRowContext(r.Context(), `SELECT username, email FROM users WHERE id = ?`, claims.UserID).Scan(&username, &email)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
@@ -251,7 +251,7 @@ func (h *AuthHandler) issueTokenPair(w http.ResponseWriter, r *http.Request, use
 	now := time.Now().UTC()
 	expires := now.Add(auth.RefreshTokenDuration)
 
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	_, err = db.ExecContext(r.Context(),
 		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
          VALUES (?, ?, ?, ?, ?)`,

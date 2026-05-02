@@ -49,7 +49,7 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if p.PrioritizeCarbs {
 		prioritize = 1
 	}
-	db := h.s.(*store.SQLiteStore).DB()
+	db := h.s.DB()
 	_, err := db.ExecContext(r.Context(), `
         INSERT INTO profiles (user_id,name,age,sex,height_cm,activity,exercise_freq,running_km,
           is_lifter,goal,prioritize_carbs,bf_pct,hr_rest,hr_max,grip_weight,tdee_lookback_days,
