@@ -355,8 +355,8 @@
       {#if tdee}
         <div class="bg-gray-700 p-3 rounded text-sm space-y-1 mb-4">
           <div class="text-emerald-400 font-semibold">Suggested from your data</div>
-          <div>Observed TDEE: <span class="text-white font-mono">{Math.round(tdee.observedTdee ?? tdee.observed_tdee ?? 0)} kcal</span></div>
-          <div>Estimated TDEE: <span class="text-white font-mono">{Math.round(tdee.estimatedTdee ?? tdee.estimated_tdee ?? 0)} kcal</span></div>
+          <div>Observed TDEE: <span class="text-white font-mono">{Math.round(tdee.observedTdee ?? 0)} kcal</span></div>
+          <div>Estimated TDEE: <span class="text-white font-mono">{Math.round(tdee.estimatedTdee ?? 0)} kcal</span></div>
           <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.daysOfData ?? 0} days of data</div>
           <button
             class="mt-2 text-xs text-emerald-400 underline"
