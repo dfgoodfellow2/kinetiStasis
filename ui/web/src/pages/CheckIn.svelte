@@ -26,12 +26,12 @@
   }
 
   async function acceptCheckin() {
-    if (!checkinPreview || !checkinPreview.can_check_in) return
-    weeklyError = ''
-    weeklySuccess = ''
-    weeklyLoading = true
-    try {
-      await api.postCheckin({ calories_after: checkinPreview.recommended_calories })
+      if (!checkinPreview || !checkinPreview.canCheckIn) return
+      weeklyError = ''
+      weeklySuccess = ''
+      weeklyLoading = true
+      try {
+      await api.postCheckin({ caloriesAfter: checkinPreview.recommendedCalories ?? checkinPreview.recommended_calories })
       weeklySuccess = 'Check-in accepted'
       checkinSaved = true
       await loadCheckinPreview()
@@ -46,7 +46,7 @@
   let tab = $state('daily')
 
   // --- Daily tab ---
-  let dailyForm = $state({ date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleep_quality: '', subjective: '', notes: '' })
+  let dailyForm = $state({ date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleepQuality: '', subjective: '', notes: '' })
   let dailyLoading = $state(false)
   let dailyError = $state('')
   let dailySuccess = $state('')
@@ -63,12 +63,12 @@
         grip_kg:         inputLoad(dailyForm.grip_kg, store.units),
         bolt_score:      Number(dailyForm.bolt_score)    || 0,
         sleep_hours:     Number(dailyForm.sleep_hours)   || 0,
-        sleep_quality:   Number(dailyForm.sleep_quality) || 0,
+        sleep_quality:   Number(dailyForm.sleepQuality) || Number(dailyForm.sleep_quality) || 0,
         subjective_feel: Number(dailyForm.subjective)    || 0,
         notes:           dailyForm.notes || '',
       })
       dailySuccess = 'Check-in saved'
-      dailyForm = { date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleep_quality: '', subjective: '', notes: '' }
+      dailyForm = { date: today(), weight_kg: '', grip_kg: '', bolt_score: '', sleep_hours: '', sleepQuality: '', subjective: '', notes: '' }
     } catch (e) {
       dailyError = e.message
     } finally {
@@ -95,7 +95,7 @@
   async function loadBFHistory() {
     try {
       const bios = await api.listBiometrics(daysAgo(30), today())
-      bfHistory = bios.filter(b => b.body_fat_pct > 0).map(b => ({ date: b.date, body_fat_pct: b.body_fat_pct }))
+    bfHistory = bios.filter(b => b.bodyFatPct > 0).map(b => ({ date: b.date, bodyFatPct: b.bodyFatPct }))
     } catch {
       bfHistory = []
     }
@@ -129,7 +129,7 @@
   }
 
   // --- Body Fat tab ---
-  let bfForm = $state({ date: today(), body_fat_pct: '' })
+  let bfForm = $state({ date: today(), bodyFatPct: '' })
   let bfLoading = $state(false)
   let bfError = $state('')
   let bfSuccess = $state('')
@@ -167,9 +167,9 @@
   async function loadLastMeasuredBF() {
     try {
       const bios = await api.listBiometrics(daysAgo(90), today())
-      // Find most recent with body_fat_pct > 0
-      for (let i = bios.length - 1; i >= 0; i--) {
-        if (bios[i].body_fat_pct > 0) {
+      // Find most recent with bodyFatPct > 0
+    for (let i = bios.length - 1; i >= 0; i--) {
+        if (bios[i].bodyFatPct > 0) {
           lastMeasuredBF = bios[i]
           break
         }
@@ -186,10 +186,10 @@
     try {
       await api.postBiometric({
         date: bfForm.date,
-        body_fat_pct: Number(bfForm.body_fat_pct) || 0,
+        bodyFatPct: Number(bfForm.bodyFatPct) || 0,
       })
       bfSuccess = 'Body fat % saved'
-      bfForm = { date: today(), body_fat_pct: '' }
+        bfForm = { date: today(), bodyFatPct: '' }
       await loadLastMeasuredBF()
     } catch (e) {
       bfError = e.message
@@ -230,7 +230,7 @@
           grip_kg: String(row.grip_kg ?? ''),
           bolt_score: String(row.bolt_score ?? ''),
           sleep_hours: String(row.sleep_hours ?? ''),
-          sleep_quality: String(row.sleep_quality ?? ''),
+          sleepQuality: String(row.sleep_quality ?? ''),
           subjective: String(row.subjective_feel ?? ''),
           notes: row.notes ?? ''
         }
@@ -269,7 +269,7 @@
     <button class={tab === 'daily' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'daily'}>Daily</button>
     <button class={tab === 'measurements' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'measurements'}>Measurements</button>
     <button class={tab === 'bodyfat' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'bodyfat'}>Body Fat %</button>
-    <button class="px-3 py-2 rounded-lg {tab === 'weekly' ? 'btn-primary' : (checkinPreview?.can_check_in && !checkinSaved ? 'bg-emerald-600 text-white font-semibold' : 'bg-gray-700')}" onclick={() => tab = 'weekly'}>Weekly Target</button>
+    <button class="px-3 py-2 rounded-lg {tab === 'weekly' ? 'btn-primary' : (checkinPreview?.canCheckIn && !checkinSaved ? 'bg-emerald-600 text-white font-semibold' : 'bg-gray-700')}" onclick={() => tab = 'weekly'}>Weekly Target</button>
   </div>
 
   <!-- Daily tab -->
@@ -308,7 +308,7 @@
 
         <div>
           <label class="text-xs text-gray-400" for="ci-sleep-qual">Sleep Quality (1–{store.sleepQualityMax})</label>
-          <input class="input" id="ci-sleep-qual" type="number" min="1" max={store.sleepQualityMax} bind:value={dailyForm.sleep_quality} />
+           <input class="input" id="ci-sleep-qual" type="number" min="1" max={store.sleepQualityMax} bind:value={dailyForm.sleepQuality} />
         </div>
 
         <div>
@@ -411,7 +411,7 @@
                 {#each bfHistory as h}
                   <tr class="border-t border-gray-800">
                     <td>{h.date}</td>
-                    <td class="text-emerald-400 font-semibold">{h.body_fat_pct.toFixed(1)}%</td>
+                    <td class="text-emerald-400 font-semibold">{(h.bodyFatPct ?? h.body_fat_pct ?? 0).toFixed(1)}%</td>
                   </tr>
                 {/each}
               </tbody>
@@ -436,7 +436,7 @@
           </div>
           <div>
             <label class="text-xs text-gray-400" for="bf-pct">Body Fat %</label>
-            <input class="input" id="bf-pct" type="number" step="0.1" min="1" max="60" bind:value={bfForm.body_fat_pct} placeholder="e.g. 15.5" />
+            <input class="input" id="bf-pct" type="number" step="0.1" min="1" max="60" bind:value={bfForm.bodyFatPct} placeholder="e.g. 15.5" />
           </div>
           <button class="btn-primary" onclick={submitBodyFat} disabled={bfLoading}>{bfLoading ? 'Saving…' : 'Save'}</button>
         </div>
@@ -447,7 +447,7 @@
         <Card title="Last Measured">
           <div class="flex items-center justify-between">
             <div>
-              <div class="text-2xl font-bold text-emerald-400">{lastMeasuredBF.body_fat_pct.toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
+              <div class="text-2xl font-bold text-emerald-400">{(lastMeasuredBF.bodyFatPct ?? lastMeasuredBF.body_fat_pct ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
               <div class="text-xs text-gray-400">{lastMeasuredBF.date}</div>
             </div>
             <button class="text-sm text-cyan-400 hover:text-cyan-300" onclick={() => bfForm.date = lastMeasuredBF.date}>Use this date</button>
@@ -498,11 +498,11 @@
             <div class="grid grid-cols-2 gap-3 text-sm">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Lean Mass</div>
-                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.lean_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
+                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.leanMassKg ?? bfData.lean_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Fat Mass</div>
-                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.fat_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
+                <div class="text-lg font-semibold text-gray-100">{dispWeight(bfData.fatMassKg ?? bfData.fat_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
               </div>
             </div>
             <p class="text-xs text-gray-500">Calculated using the U.S. Navy circumference method. Uses {(profile?.sex ?? '').toLowerCase() === 'female' ? 'neck + waist + hips' : 'neck + waist'} measurements.</p>
@@ -532,47 +532,47 @@
         <Card title="Weekly Check-in Preview">
           <div class="space-y-3">
             <div>
-              {#if checkinPreview.can_check_in}
+            {#if checkinPreview.canCheckIn}
                 <div class="text-emerald-400 font-semibold">✅ Ready for check-in</div>
               {:else}
-                <div class="text-yellow-400 font-semibold">⏳ {checkinPreview.days_since_last_check_in ?? 0} days since last check-in</div>
+                <div class="text-yellow-400 font-semibold">⏳ {checkinPreview.daysSinceLastCheckIn ?? 0} days since last check-in</div>
               {/if}
             </div>
 
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight Start</div>
-                <div class="text-lg font-semibold">{checkinPreview.weight_start ? checkinPreview.weight_start.toFixed(1) : '—'} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightStart ? checkinPreview.weightStart.toFixed(1) : (checkinPreview.weight_start ? checkinPreview.weight_start.toFixed(1) : '—')} kg</div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight End</div>
-                <div class="text-lg font-semibold">{checkinPreview.weight_end ? checkinPreview.weight_end.toFixed(1) : '—'} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightEnd ? checkinPreview.weightEnd.toFixed(1) : (checkinPreview.weight_end ? checkinPreview.weight_end.toFixed(1) : '—')} kg</div>
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight Change</div>
-                <div class="text-lg font-semibold">{checkinPreview.weight_change ? checkinPreview.weight_change.toFixed(2) : '—'} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightChange ? checkinPreview.weightChange.toFixed(2) : (checkinPreview.weight_change ? checkinPreview.weight_change.toFixed(2) : '—')} kg</div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Expected vs Actual</div>
-                <div class="text-sm">Expected: {checkinPreview.expected_weight_change?.toFixed(2) ?? '—'} kg</div>
-                <div class="text-sm">Diff: {checkinPreview.weight_diff?.toFixed(2) ?? '—'} kg</div>
+                 <div class="text-sm">Expected: {checkinPreview.expectedWeightChange?.toFixed(2) ?? (checkinPreview.expected_weight_change?.toFixed(2) ?? '—')} kg</div>
+                 <div class="text-sm">Diff: {checkinPreview.weightDiff?.toFixed(2) ?? (checkinPreview.weight_diff?.toFixed(2) ?? '—')} kg</div>
               </div>
             </div>
 
             <div class="bg-gray-700 rounded-lg p-3">
               <div class="text-xs text-gray-400">Recommendation</div>
-              <div class="text-sm">Reason: {checkinPreview.reason ?? '—'}</div>
-              <div class="text-sm">Current Calories: {checkinPreview.calories_before ?? '—'}</div>
-              <div class="text-sm">Recommended: {checkinPreview.recommended_calories ?? '—'}</div>
-              <div class="text-sm">Adjustment: {checkinPreview.calorie_adjustment ? Math.round(checkinPreview.calorie_adjustment) : '—'}</div>
+               <div class="text-sm">Reason: {checkinPreview.reason ?? '—'}</div>
+               <div class="text-sm">Current Calories: {checkinPreview.caloriesBefore ?? (checkinPreview.calories_before ?? '—')}</div>
+               <div class="text-sm">Recommended: {checkinPreview.recommendedCalories ?? (checkinPreview.recommended_calories ?? '—')}</div>
+               <div class="text-sm">Adjustment: {checkinPreview.calorieAdjustment ? Math.round(checkinPreview.calorieAdjustment) : (checkinPreview.calorie_adjustment ? Math.round(checkinPreview.calorie_adjustment) : '—')}</div>
             </div>
 
             <div class="flex space-x-2">
-              <button class="btn-primary" onclick={acceptCheckin} disabled={!checkinPreview.can_check_in || weeklyLoading || checkinSaved}>{weeklyLoading ? 'Processing…' : (checkinSaved ? 'Saved' : 'Accept Changes')}</button>
-              <button class="bg-gray-700 px-3 py-2 rounded-lg" disabled={!checkinPreview.can_check_in}>Skip</button>
+              <button class="btn-primary" onclick={acceptCheckin} disabled={!checkinPreview.canCheckIn || weeklyLoading || checkinSaved}>{weeklyLoading ? 'Processing…' : (checkinSaved ? 'Saved' : 'Accept Changes')}</button>
+              <button class="bg-gray-700 px-3 py-2 rounded-lg" disabled={!checkinPreview.canCheckIn}>Skip</button>
             </div>
           </div>
         </Card>

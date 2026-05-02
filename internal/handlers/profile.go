@@ -41,33 +41,8 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	p.UserID = claims.UserID
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	isLifter := 0
-	if p.IsLifter {
-		isLifter = 1
-	}
-	prioritize := 0
-	if p.PrioritizeCarbs {
-		prioritize = 1
-	}
-	db := h.s.DB()
-	_, err := db.ExecContext(r.Context(), `
-        INSERT INTO profiles (user_id,name,age,sex,height_cm,activity,exercise_freq,running_km,
-          is_lifter,goal,prioritize_carbs,bf_pct,hr_rest,hr_max,grip_weight,tdee_lookback_days,
-          sleep_quality_max,units,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(user_id) DO UPDATE SET
-          name=excluded.name, age=excluded.age, sex=excluded.sex, height_cm=excluded.height_cm,
-          activity=excluded.activity, exercise_freq=excluded.exercise_freq,
-          running_km=excluded.running_km, is_lifter=excluded.is_lifter, goal=excluded.goal,
-          prioritize_carbs=excluded.prioritize_carbs, bf_pct=excluded.bf_pct, hr_rest=excluded.hr_rest,
-          hr_max=excluded.hr_max, grip_weight=excluded.grip_weight,
-          tdee_lookback_days=excluded.tdee_lookback_days, sleep_quality_max=excluded.sleep_quality_max,
-          units=excluded.units, updated_at=excluded.updated_at`,
-		p.UserID, p.Name, p.Age, p.Sex, p.HeightCm, p.Activity, p.ExerciseFreq, p.RunningKm,
-		isLifter, p.Goal, prioritize, p.BfPct, p.HRRest, p.HRMax, p.GripWeight,
-		p.TDEELookbackDays, p.SleepQualityMax, p.Units, p.UpdatedAt,
-	)
-	if err != nil {
+	// Upsert via store
+	if err := h.s.UpsertProfile(r.Context(), &p); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}

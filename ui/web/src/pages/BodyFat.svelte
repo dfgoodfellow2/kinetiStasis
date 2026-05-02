@@ -33,11 +33,11 @@
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div class="bg-gray-700 rounded-lg p-3">
             <div class="text-xs text-gray-400 mb-1">Lean Mass</div>
-            <div class="text-lg font-semibold text-gray-100">{dispWeight(data.lean_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
+            <div class="text-lg font-semibold text-gray-100">{dispWeight(data.leanMassKg ?? data.lean_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
           </div>
           <div class="bg-gray-700 rounded-lg p-3">
             <div class="text-xs text-gray-400 mb-1">Fat Mass</div>
-            <div class="text-lg font-semibold text-gray-100">{dispWeight(data.fat_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
+            <div class="text-lg font-semibold text-gray-100">{dispWeight(data.fatMassKg ?? data.fat_mass_kg, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span></div>
           </div>
         </div>
         <p class="text-xs text-gray-500">Calculated using the U.S. Navy circumference method from your most recent weight and body measurements.</p>

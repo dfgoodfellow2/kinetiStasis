@@ -71,12 +71,13 @@
     loading = true
     try {
       // save in progress
+      const calVal = workout.caloriesBurned ?? workout.calories_burned
       const payload = {
         date:            workout.date,
         slot:            String(workout.slot || '1'),
         title:           workout.title,
         duration_min:    Number(workout.duration_min)    || 0,
-        calories_burned: Number(workout.calories_burned) || 0,
+        calories_burned: Number(calVal) || 0,
         raw_notes:       [workout.notes, workout.coach_notes].filter(Boolean).join('\n\n'),
         metadata: {
           type:          workout.type         || '',

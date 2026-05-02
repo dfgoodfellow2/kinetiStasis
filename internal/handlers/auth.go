@@ -12,6 +12,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/config"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	respond "github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/google/uuid"
@@ -50,11 +51,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Determine if this is the first user (auto-admin)
 	var count int
-	db := h.s.DB()
-	if err := db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+	cnt, err := h.s.CountUsers(r.Context())
+	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	count = cnt
 	isAdmin := 0
 	if count == 0 {
 		isAdmin = 1
@@ -69,18 +71,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	userID := uuid.New().String()
 
-	_, err = db.ExecContext(r.Context(),
-		`INSERT INTO users (id, username, email, password, is_admin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		userID, req.Username, req.Email, hash, isAdmin, now, now,
-	)
-	if err != nil {
+	if err := h.s.CreateUser(r.Context(), userID, req.Username, req.Email, hash, isAdmin == 1, now, now); err != nil {
 		respond.Error(w, http.StatusConflict, "username or email already exists")
 		return
 	}
 
 	// Create empty profile row — non-fatal if it fails (user can set profile on first login)
-	if _, err := db.ExecContext(r.Context(), `INSERT INTO profiles (user_id, updated_at) VALUES (?, ?)`, userID, now); err != nil {
+	if err := h.s.UpsertProfile(r.Context(), &models.Profile{UserID: userID, UpdatedAt: now}); err != nil {
 		slog.Error("create empty profile on register", "user_id", userID, "err", err)
 	}
 
@@ -115,10 +112,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		userID   string
 		username string
 		hash     string
-		isAdmin  int
+		isAdmin  bool
+		err      error
 	)
-	db := h.s.DB()
-	err := db.QueryRowContext(r.Context(), `SELECT id, username, password, is_admin FROM users WHERE username = ? OR email = ? LIMIT 1`, req.Login, req.Login).Scan(&userID, &username, &hash, &isAdmin)
+	userID, username, hash, isAdmin, err = h.s.FindUserByLogin(r.Context(), req.Login)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -133,7 +130,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.issueTokenPair(w, r, userID, isAdmin == 1); err != nil {
+	if err := h.issueTokenPair(w, r, userID, isAdmin); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "could not issue tokens")
 		return
 	}
@@ -141,7 +138,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, map[string]any{
 		"user_id":  userID,
 		"username": username,
-		"is_admin": isAdmin == 1,
+		"is_admin": isAdmin,
 	})
 }
 
@@ -158,17 +155,10 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		userID    string
-		isAdmin   int
+		isAdmin   bool
 		expiresAt string
 	)
-	db := h.s.DB()
-	err = db.QueryRowContext(r.Context(),
-		`SELECT u.id, u.is_admin, rt.expires_at
-         FROM refresh_tokens rt
-         JOIN users u ON u.id = rt.user_id
-         WHERE rt.token_hash = ?`,
-		tokenHash,
-	).Scan(&userID, &isAdmin, &expiresAt)
+	userID, isAdmin, expiresAt, err = h.s.FindRefreshToken(r.Context(), tokenHash)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusUnauthorized, "invalid refresh token")
 		return
@@ -181,14 +171,14 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	exp, err := time.Parse(constants.TimeFormat, expiresAt)
 	if err != nil || time.Now().After(exp) {
 		// Clean up expired token
-		if _, err := h.s.DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
+		if err := h.s.DeleteRefreshToken(r.Context(), tokenHash); err != nil {
 			slog.Warn("failed to delete expired refresh token", "err", err)
 		}
 		respond.Error(w, http.StatusUnauthorized, "refresh token expired")
 		return
 	}
 
-	accessToken, err := auth.IssueAccessToken(h.cfg.JWTSecret, userID, isAdmin == 1)
+	accessToken, err := auth.IssueAccessToken(h.cfg.JWTSecret, userID, isAdmin)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "could not issue token")
 		return
@@ -203,7 +193,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.RefreshCookieName); err == nil {
 		tokenHash := hashToken(cookie.Value)
-		if _, err := h.s.DB().ExecContext(r.Context(), `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash); err != nil {
+		if err := h.s.DeleteRefreshToken(r.Context(), tokenHash); err != nil {
 			slog.Warn("failed to delete refresh token on logout", "err", err)
 		}
 	}
@@ -220,12 +210,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var username, email string
-	db := h.s.DB()
-	err := db.QueryRowContext(r.Context(), `SELECT username, email FROM users WHERE id = ?`, claims.UserID).Scan(&username, &email)
+	u, err := h.s.GetUserByID(r.Context(), claims.UserID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	username = u.Username
+	email = u.Email
 
 	respond.JSON(w, http.StatusOK, map[string]any{
 		"user_id":  claims.UserID,
@@ -251,15 +242,7 @@ func (h *AuthHandler) issueTokenPair(w http.ResponseWriter, r *http.Request, use
 	now := time.Now().UTC()
 	expires := now.Add(auth.RefreshTokenDuration)
 
-	db := h.s.DB()
-	_, err = db.ExecContext(r.Context(),
-		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-		uuid.New().String(), userID, tokenHash,
-		expires.Format(constants.TimeFormat),
-		now.Format(constants.TimeFormat),
-	)
-	if err != nil {
+	if err := h.s.SaveRefreshToken(r.Context(), uuid.New().String(), userID, tokenHash, expires.Format(constants.TimeFormat), now.Format(constants.TimeFormat)); err != nil {
 		return fmt.Errorf("store refresh token: %w", err)
 	}
 

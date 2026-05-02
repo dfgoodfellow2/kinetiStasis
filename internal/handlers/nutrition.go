@@ -31,25 +31,10 @@ func (h *NutritionHandler) List(w http.ResponseWriter, r *http.Request) {
 		to = today
 	}
 
-	db := h.s.DB()
-	rows, err := db.QueryContext(r.Context(), `
-        SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at
-        FROM nutrition_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`,
-		claims.UserID, from, to,
-	)
+	out, err := h.s.FetchNutritionLogsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
-	}
-	defer rows.Close()
-	var out []models.NutritionLog
-	for rows.Next() {
-		var n models.NutritionLog
-		if err := rows.Scan(&n.ID, &n.UserID, &n.Date, &n.Calories, &n.ProteinG, &n.CarbsG, &n.FatG, &n.FiberG, &n.WaterMl, &n.MealNotes, &n.UpdatedAt); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
-			return
-		}
-		out = append(out, n)
 	}
 	respond.JSON(w, http.StatusOK, out)
 }
@@ -59,11 +44,7 @@ func (h *NutritionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	var n models.NutritionLog
-	db := h.s.DB()
-	err := db.QueryRowContext(r.Context(), `
-        SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at
-        FROM nutrition_logs WHERE user_id = ? AND date = ?`, claims.UserID, date,
-	).Scan(&n.ID, &n.UserID, &n.Date, &n.Calories, &n.ProteinG, &n.CarbsG, &n.FatG, &n.FiberG, &n.WaterMl, &n.MealNotes, &n.UpdatedAt)
+	n, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "nutrition log not found")
 		return
@@ -86,11 +67,8 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(constants.TimeFormat)
 
 	// Check existing
-	db := h.s.DB()
 	var existing models.NutritionLog
-	err := db.QueryRowContext(r.Context(), `SELECT id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes FROM nutrition_logs WHERE user_id = ? AND date = ?`, claims.UserID, in.Date).Scan(
-		&existing.ID, &existing.Calories, &existing.ProteinG, &existing.CarbsG, &existing.FatG, &existing.FiberG, &existing.WaterMl, &existing.MealNotes,
-	)
+	existing, err := h.s.GetNutritionLog(r.Context(), claims.UserID, in.Date)
 	if err != nil && err != sql.ErrNoRows {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -99,9 +77,10 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// insert new
 		in.ID = uuid.New().String()
 		in.UpdatedAt = now
-		_, err := db.ExecContext(r.Context(), `INSERT INTO nutrition_logs (id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-			in.ID, in.UserID, in.Date, in.Calories, in.ProteinG, in.CarbsG, in.FatG, in.FiberG, in.WaterMl, in.MealNotes, in.UpdatedAt,
-		)
+		if err := h.s.CreateNutritionLog(r.Context(), &in); err != nil {
+			respond.Error(w, http.StatusInternalServerError, "database error")
+			return
+		}
 		if err != nil {
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
@@ -125,9 +104,12 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	merged.UpdatedAt = now
 
-	_, err = db.ExecContext(r.Context(), `UPDATE nutrition_logs SET calories = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, water_ml = ?, meal_notes = ?, updated_at = ? WHERE user_id = ? AND date = ?`,
-		merged.Calories, merged.ProteinG, merged.CarbsG, merged.FatG, merged.FiberG, merged.WaterMl, merged.MealNotes, merged.UpdatedAt, claims.UserID, in.Date,
-	)
+	merged.UserID = claims.UserID
+	merged.Date = in.Date
+	if err := h.s.UpdateNutritionLog(r.Context(), &merged); err != nil {
+		respond.Error(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -147,9 +129,7 @@ func (h *NutritionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ensure exists
-	var id string
-	db := h.s.DB()
-	if err := db.QueryRowContext(r.Context(), `SELECT id FROM nutrition_logs WHERE user_id = ? AND date = ?`, claims.UserID, date).Scan(&id); err == sql.ErrNoRows {
+	if _, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date); err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "nutrition log not found")
 		return
 	} else if err != nil {
@@ -157,19 +137,16 @@ func (h *NutritionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := db.ExecContext(r.Context(), `UPDATE nutrition_logs SET calories=?,protein_g=?,carbs_g=?,fat_g=?,fiber_g=?,water_ml=?,meal_notes=?,updated_at=? WHERE user_id=? AND date=?`,
-		in.Calories, in.ProteinG, in.CarbsG, in.FatG, in.FiberG, in.WaterMl, in.MealNotes, now, claims.UserID, date,
-	)
-	if err != nil {
+	in.UserID = claims.UserID
+	in.Date = date
+	in.UpdatedAt = now
+	if err := h.s.UpdateNutritionLog(r.Context(), &in); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	// return updated
-	var out models.NutritionLog
-	if err := db.QueryRowContext(r.Context(),
-		`SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at FROM nutrition_logs WHERE user_id = ? AND date = ?`,
-		claims.UserID, date,
-	).Scan(&out.ID, &out.UserID, &out.Date, &out.Calories, &out.ProteinG, &out.CarbsG, &out.FatG, &out.FiberG, &out.WaterMl, &out.MealNotes, &out.UpdatedAt); err != nil {
+	// return updated via store
+	out, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date)
+	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record")
 		return
 	}
@@ -180,9 +157,7 @@ func (h *NutritionHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *NutritionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
-	db := h.s.DB()
-	_, err := db.ExecContext(r.Context(), `DELETE FROM nutrition_logs WHERE user_id = ? AND date = ?`, claims.UserID, date)
-	if err != nil {
+	if err := h.s.DeleteNutritionLog(r.Context(), claims.UserID, date); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}

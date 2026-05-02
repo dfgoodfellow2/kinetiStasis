@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
 
@@ -68,12 +67,8 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 		r.Use(stdLimiter)
 
 		// Public
-		// health needs raw db ping; try to extract from store
-		var db *sql.DB
-		if sdb, ok := s.(*store.SQLiteStore); ok {
-			db = sdb.DB()
-		}
-		r.Get("/health", healthHandler(db))
+		// health uses store.PingContext now
+		r.Get("/health", healthHandlerFunc(s))
 
 		// Auth routes (public)
 		r.Route("/auth", func(r chi.Router) {
@@ -182,10 +177,10 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 	return r
 }
 
-func healthHandler(db *sql.DB) http.HandlerFunc {
+func healthHandlerFunc(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if err := db.PingContext(ctx); err != nil {
+		if err := s.PingContext(ctx); err != nil {
 			respond.Error(w, http.StatusServiceUnavailable, "database unavailable")
 			return
 		}

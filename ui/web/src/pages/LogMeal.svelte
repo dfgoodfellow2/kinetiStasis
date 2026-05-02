@@ -8,7 +8,7 @@
   import Alert from '../components/Alert.svelte'
 
   let mode = $state('ai')
-  let form = $state({ date: today(), calories: '', protein_g: '', carbs_g: '', fat_g: '', fiber_g: '', water_ml: '', meal_notes: '' })
+  let form = $state({ date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', meal_notes: '' })
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
@@ -24,11 +24,11 @@
       form = { 
         date: row.date, 
         calories: String(row.calories ?? ''), 
-        protein_g: String(row.protein_g ?? ''), 
-        carbs_g: String(row.carbs_g ?? ''), 
-        fat_g: String(row.fat_g ?? ''), 
-        fiber_g: String(row.fiber_g ?? ''), 
-        water_ml: String(row.water_ml ?? ''), 
+        proteinG: String(row.protein_g ?? ''), 
+        carbsG: String(row.carbs_g ?? ''), 
+        fatG: String(row.fat_g ?? ''), 
+        fiberG: String(row.fiber_g ?? ''), 
+        waterMl: String(row.water_ml ?? ''), 
         meal_notes: row.meal_notes ?? '' 
       }
       mode = 'manual'
@@ -44,16 +44,16 @@
       const payload = {
         date: form.date,
         calories: Number(form.calories) || 0,
-        protein_g: Number(form.protein_g) || 0,
-        carbs_g: Number(form.carbs_g) || 0,
-        fat_g: Number(form.fat_g) || 0,
-        fiber_g: Number(form.fiber_g) || 0,
-        water_ml: Number(form.water_ml) || 0,
+        protein_g: Number(form.proteinG) || 0,
+        carbs_g: Number(form.carbsG) || 0,
+        fat_g: Number(form.fatG) || 0,
+        fiber_g: Number(form.fiberG) || 0,
+        water_ml: Number(form.waterMl) || 0,
         meal_notes: form.meal_notes || '',
       }
       await api.postNutrition(payload)
       success = 'Saved'
-      form = { date: today(), calories: '', protein_g: '', carbs_g: '', fat_g: '', fiber_g: '', water_ml: '', meal_notes: '' }
+      form = { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', meal_notes: '' }
     } catch (e) {
       error = e.message
     } finally {
@@ -118,15 +118,15 @@
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="text-xs text-gray-400" for="lm-protein">Protein (g)</label>
-              <input class="input" id="lm-protein" type="number" placeholder="Protein (g)" bind:value={form.protein_g} />
+              <input class="input" id="lm-protein" type="number" placeholder="Protein (g)" bind:value={form.proteinG} />
             </div>
             <div>
               <label class="text-xs text-gray-400" for="lm-carbs">Carbs (g)</label>
-              <input class="input" id="lm-carbs" type="number" placeholder="Carbs (g)" bind:value={form.carbs_g} />
+              <input class="input" id="lm-carbs" type="number" placeholder="Carbs (g)" bind:value={form.carbsG} />
             </div>
             <div>
               <label class="text-xs text-gray-400" for="lm-fat">Fat (g)</label>
-              <input class="input" id="lm-fat" type="number" placeholder="Fat (g)" bind:value={form.fat_g} />
+              <input class="input" id="lm-fat" type="number" placeholder="Fat (g)" bind:value={form.fatG} />
             </div>
           </div>
         </div>
@@ -136,11 +136,11 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-gray-400" for="lm-fiber">Fiber (g)</label>
-              <input class="input" id="lm-fiber" type="number" placeholder="Fiber (g)" bind:value={form.fiber_g} />
+              <input class="input" id="lm-fiber" type="number" placeholder="Fiber (g)" bind:value={form.fiberG} />
             </div>
             <div>
               <label class="text-xs text-gray-400" for="lm-water">Water (ml)</label>
-              <input class="input" id="lm-water" type="number" placeholder="Water (ml)" bind:value={form.water_ml} />
+              <input class="input" id="lm-water" type="number" placeholder="Water (ml)" bind:value={form.waterMl} />
             </div>
           </div>
         </div>

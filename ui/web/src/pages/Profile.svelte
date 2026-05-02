@@ -10,7 +10,7 @@
     name: '', age: '', sex: 'male', height_cm: '', activity: 'sedentary',
     exercise_freq: '', running_km: '', is_lifter: false, goal: 'maintenance',
     prioritize_carbs: false, bf_pct: '', hr_rest: '', hr_max: '',
-    grip_weight: 0.5, tdee_lookback_days: 90, sleep_quality_max: 10, units: 'imperial',
+    grip_weight: 0.5, tdeeLookbackDays: 90, sleepQualityMax: 10, units: 'imperial',
   })
   let profileLoading = $state(false)
   let profileError = $state('')
@@ -47,7 +47,7 @@
     profileSuccess = ''
     profileLoading = true
     try {
-      await api.updateProfile({
+        await api.updateProfile({
         ...profile,
         age:                Number(profile.age)               || 0,
         height_cm:          profile.units === 'imperial'
@@ -61,11 +61,11 @@
         hr_rest:            Number(profile.hr_rest)           || 0,
         hr_max:             Number(profile.hr_max)            || 0,
         grip_weight:        Number(profile.grip_weight)       || 0.5,
-        tdee_lookback_days: Number(profile.tdee_lookback_days)|| 90,
-        sleep_quality_max:  Number(profile.sleep_quality_max) || 10,
+        tdeeLookbackDays:   Number(profile.tdeeLookbackDays)  || 90,
+        sleepQualityMax:    Number(profile.sleepQualityMax)   || 10,
       })
       setUnits(profile.units)
-      setSleepQualityMax(profile.sleep_quality_max)
+      setSleepQualityMax(profile.sleepQualityMax)
       profileSuccess = 'Profile updated'
     } catch (e) {
       profileError = e.message
@@ -76,7 +76,7 @@
 
   // ── Targets modal ───────────────────────────────────────
   let showTargets = $state(false)
-  let targets = $state({ calories: '', protein_g: '', carbs_g: '', fat_g: '', fiber_g: '', water_ml: '' })
+  let targets = $state({ calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '' })
   let tdee = $state(null)
   let targetsLoading = $state(false)
   let targetsError = $state('')
@@ -100,11 +100,11 @@
     try {
       await api.putTargets({
         calories:  Number(targets.calories)  || 0,
-        protein_g: Number(targets.protein_g) || 0,
-        carbs_g:   Number(targets.carbs_g)   || 0,
-        fat_g:     Number(targets.fat_g)     || 0,
-        fiber_g:   Number(targets.fiber_g)   || 0,
-        water_ml:  Number(targets.water_ml)  || 0,
+        protein_g: Number(targets.proteinG) || 0,
+        carbs_g:   Number(targets.carbsG)   || 0,
+        fat_g:     Number(targets.fatG)     || 0,
+        fiber_g:   Number(targets.fiberG)   || 0,
+        water_ml:  Number(targets.waterMl)  || 0,
       })
       targetsSuccess = 'Targets updated'
     } catch (e) {
@@ -253,11 +253,11 @@
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-tdee-days">TDEE Lookback Days</label>
-      <input class="input" id="pf-tdee-days" type="number" placeholder="90" bind:value={profile.tdee_lookback_days} />
+      <input class="input" id="pf-tdee-days" type="number" placeholder="90" bind:value={profile.tdeeLookbackDays} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-sleep-max">Sleep Quality Scale Max</label>
-      <input class="input" id="pf-sleep-max" type="number" placeholder="10" bind:value={profile.sleep_quality_max} />
+      <input class="input" id="pf-sleep-max" type="number" placeholder="10" bind:value={profile.sleepQualityMax} />
     </div>
   </div>
 

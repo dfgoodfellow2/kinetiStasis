@@ -23,7 +23,7 @@
       try {
         const profile = await api.getProfile()
         setUnits(profile.units)
-        setSleepQualityMax(profile.sleep_quality_max)
+        setSleepQualityMax(profile.sleepQualityMax)
       } catch {
         // profile not set yet — keep defaults
       }
