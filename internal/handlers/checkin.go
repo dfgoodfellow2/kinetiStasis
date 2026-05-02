@@ -62,11 +62,9 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 			lastPtr = &last
 		}
 	} else {
-		// fall back to direct DB read for full row if store returned an error
-		db := h.s.DB()
-		err = db.QueryRowContext(r.Context(), `SELECT id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, claims.UserID).Scan(&last.ID, &last.UserID, &last.CheckInDate, &last.WeightBefore, &last.WeightAfter, &last.CaloriesBefore, &last.CaloriesAfter, &last.Reason, &last.CreatedAt)
-		if err == nil {
-			lastPtr = &last
+		// fall back to fetching full last checkin row
+		if l, err2 := h.s.GetLastCheckin(r.Context(), claims.UserID); err2 == nil {
+			lastPtr = &l
 		}
 	}
 
@@ -107,10 +105,10 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// naive insert
+	// naive insert via store
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = h.s.DB().ExecContext(r.Context(), `INSERT INTO check_in_logs (id,user_id,check_in_date,weight_before,weight_after,calories_before,calories_after,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?)`, in.ID, in.UserID, in.CheckInDate, in.WeightBefore, in.WeightAfter, in.CaloriesBefore, in.CaloriesAfter, in.Reason, now)
-	if err != nil {
+	in.CreatedAt = now
+	if err = h.s.CreateCheckinLog(r.Context(), &in); err != nil {
 		// Check if it's a unique constraint violation (already checked in today)
 		if err.Error() == "UNIQUE constraint failed: check_in_logs.user_id, check_in_logs.check_in_date" {
 			respond.Error(w, http.StatusConflict, "already checked in today")
@@ -123,18 +121,32 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Optionally update targets if calories_after provided
 	if in.CaloriesAfter > 0 {
 		// fetch existing targets for snapshot
-		var existing models.Targets
-		if err := h.s.DB().QueryRowContext(r.Context(), `SELECT user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at FROM targets WHERE user_id = ?`, claims.UserID).Scan(&existing.UserID, &existing.Calories, &existing.ProteinG, &existing.CarbsG, &existing.FatG, &existing.FiberG, &existing.WaterMl, &existing.EatBackExercise, &existing.UpdatedAt); err != nil && err != sql.ErrNoRows {
+		existing, err := h.s.FetchTargets(r.Context(), claims.UserID)
+		if err != nil && err != sql.ErrNoRows {
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}
 		// snapshot
-		if _, err := h.s.DB().ExecContext(r.Context(), `INSERT INTO target_history (id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,created_at) VALUES (?,?,?,?,?,?,?,?,?)`, in.ID, claims.UserID, in.CheckInDate, existing.Calories, existing.ProteinG, existing.CarbsG, existing.FatG, existing.FiberG, now); err != nil {
+		snap := models.TargetSnapshot{
+			ID:            in.ID,
+			UserID:        claims.UserID,
+			EffectiveDate: in.CheckInDate,
+			Calories:      existing.Calories,
+			ProteinG:      existing.ProteinG,
+			CarbsG:        existing.CarbsG,
+			FatG:          existing.FatG,
+			FiberG:        existing.FiberG,
+			CreatedAt:     now,
+		}
+		if err := h.s.CreateTargetSnapshot(r.Context(), &snap); err != nil {
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}
 		// upsert new targets (minimal: only calories changed)
-		if _, err := h.s.DB().ExecContext(r.Context(), `INSERT INTO targets (user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET calories=excluded.calories,updated_at=excluded.updated_at`, claims.UserID, in.CaloriesAfter, existing.ProteinG, existing.CarbsG, existing.FatG, existing.FiberG, existing.WaterMl, existing.EatBackExercise, now); err != nil {
+		targets := existing
+		targets.Calories = float64(in.CaloriesAfter)
+		targets.UpdatedAt = now
+		if err := h.s.UpsertTargets(r.Context(), &targets); err != nil {
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}

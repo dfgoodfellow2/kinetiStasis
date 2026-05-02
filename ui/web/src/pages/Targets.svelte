@@ -3,7 +3,7 @@
   import { api } from '../lib/api.js'
   import Alert from '../components/Alert.svelte'
 
-  let targets = $state({ calories: '', protein_g: '', carbs_g: '', fat_g: '', fiber_g: '', water_ml: '' })
+  let targets = $state({ calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '' })
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
@@ -27,11 +27,11 @@
     try {
       await api.putTargets({
         calories:  Number(targets.calories)  || 0,
-        protein_g: Number(targets.protein_g) || 0,
-        carbs_g:   Number(targets.carbs_g)   || 0,
-        fat_g:     Number(targets.fat_g)     || 0,
-        fiber_g:   Number(targets.fiber_g)   || 0,
-        water_ml:  Number(targets.water_ml)  || 0,
+        protein_g: Number(targets.proteinG) || 0,
+        carbs_g:   Number(targets.carbsG)   || 0,
+        fat_g:     Number(targets.fatG)     || 0,
+        fiber_g:   Number(targets.fiberG)   || 0,
+        water_ml:  Number(targets.waterMl)  || 0,
       })
       success = 'Targets updated'
     } catch (e) {

@@ -177,9 +177,9 @@
               <tr class="border-t border-gray-800">
                 <td class="py-2 pr-4">{row.date}</td>
                 <td class="pr-4">{fmt0(row.calories)}</td>
-                <td class="pr-4">{fmt0(row.protein_g)}g</td>
-                <td class="pr-4">{fmt0(row.carbs_g)}g</td>
-                <td class="pr-4">{fmt0(row.fat_g)}g</td>
+                <td class="pr-4">{fmt0(row.proteinG ?? row.protein_g)}g</td>
+                <td class="pr-4">{fmt0(row.carbsG ?? row.carbs_g)}g</td>
+                <td class="pr-4">{fmt0(row.fatG ?? row.fat_g)}g</td>
                 <td class="text-gray-400 text-xs">{row.meal_notes ?? ''}</td>
                 <td class="py-2">
                   <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editNut(row)} title="Edit">✏️</button>
@@ -220,11 +220,11 @@
                 <td class="py-2 pr-4">{row.date}</td>
                  <td class="pr-4">{row.weight_kg ? dispWeight(row.weight_kg, store.units) : '—'}</td>
                  
-                <td class="pr-4">{row.sleep_hours ?? '—'}</td>
-                <td class="pr-4">{row.sleep_quality ?? '—'}</td>
-                <td class="pr-4">{row.subjective_feel ?? '—'}</td>
-                <td class="pr-4">{row.grip_kg ?? '—'}</td>
-                <td class="pr-4">{row.bolt_score ?? '—'}</td>
+                <td class="pr-4">{row.sleepHours ?? row.sleep_hours ?? '—'}</td>
+                <td class="pr-4">{row.sleepQuality ?? row.sleep_quality ?? '—'}</td>
+                <td class="pr-4">{row.subjectiveFeel ?? row.subjective_feel ?? '—'}</td>
+                <td class="pr-4">{row.gripKg ?? row.grip_kg ?? '—'}</td>
+                <td class="pr-4">{row.boltScore ?? row.bolt_score ?? '—'}</td>
                 <td class="text-gray-400 text-xs">{row.notes ?? ''}</td>
                 <td class="py-2">
                   <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editBio(row)} title="Edit">✏️</button>

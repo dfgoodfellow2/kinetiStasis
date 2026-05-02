@@ -53,7 +53,7 @@
       duration_min:    res.duration_min   || workout.duration_min,
       avg_hr:          res.avg_hr         || workout.avg_hr,
       max_hr:          res.max_hr         || workout.max_hr,
-      calories_burned: res.calories_burned || workout.calories_burned,
+      calories_burned: res.caloriesBurned || res.calories_burned || workout.calories_burned,
       notes:           res.notes || res.raw_notes || workout.notes,
       exercises:       (res.exercises || []).map(mapExercise),
     }

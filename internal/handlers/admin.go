@@ -22,32 +22,10 @@ func NewAdminHandler(s store.Store) *AdminHandler {
 
 // ListUsers handles GET /v1/admin/users
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	db := h.s.DB()
-	rows, err := db.QueryContext(r.Context(), `SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at ASC`)
+	users, err := h.s.ListUsers(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
-	}
-	defer rows.Close()
-
-	type userRow struct {
-		ID        string `json:"id"`
-		Username  string `json:"username"`
-		Email     string `json:"email"`
-		IsAdmin   bool   `json:"is_admin"`
-		CreatedAt string `json:"created_at"`
-	}
-
-	users := []userRow{}
-	for rows.Next() {
-		var u userRow
-		var isAdmin int
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &isAdmin, &u.CreatedAt); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "scan error")
-			return
-		}
-		u.IsAdmin = isAdmin == 1
-		users = append(users, u)
 	}
 	respond.JSON(w, http.StatusOK, users)
 }
@@ -63,9 +41,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db := h.s.DB()
-	_, err := db.ExecContext(r.Context(), `DELETE FROM users WHERE id = ?`, targetID)
-	if err != nil {
+	if err := h.s.DeleteUser(r.Context(), targetID); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -77,9 +53,7 @@ func (h *AdminHandler) PromoteUser(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	db := h.s.DB()
-	_, err := db.ExecContext(r.Context(), `UPDATE users SET is_admin = 1, updated_at = ? WHERE id = ?`, now, targetID)
-	if err != nil {
+	if err := h.s.PromoteUser(r.Context(), targetID, now); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -98,8 +72,8 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure at least one admin remains
-	var adminCount int
-	if err := h.s.DB().QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users WHERE is_admin = 1`).Scan(&adminCount); err != nil {
+	adminCount, err := h.s.CountAdmins(r.Context())
+	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -109,8 +83,7 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := h.s.DB().ExecContext(r.Context(), `UPDATE users SET is_admin = 0, updated_at = ? WHERE id = ?`, now, targetID)
-	if err != nil {
+	if err := h.s.DemoteUser(r.Context(), targetID, now); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
