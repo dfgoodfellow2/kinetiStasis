@@ -7,13 +7,9 @@ import (
 
 // SetAccessCookie writes the JWT access token as a httpOnly cookie.
 func SetAccessCookie(w http.ResponseWriter, token string, isProd bool) {
-	s := http.SameSiteLaxMode
-	if isProd {
-		// In production we require cross-site cookies for the SPA -> API flow
-		// (e.g. frontend on a different origin). Browsers require Secure when
-		// SameSite=None, so set None only in prod where Secure=true.
-		s = http.SameSiteNoneMode
-	}
+	// Always use SameSite=None so cookies are sent when SPA and API are on
+	// different ports (treated as cross-site). Only set Secure in prod.
+	s := http.SameSiteNoneMode
 	http.SetCookie(w, &http.Cookie{
 		Name:     AccessCookieName,
 		Value:    token,
@@ -27,10 +23,8 @@ func SetAccessCookie(w http.ResponseWriter, token string, isProd bool) {
 
 // SetRefreshCookie writes the opaque refresh token as a httpOnly cookie.
 func SetRefreshCookie(w http.ResponseWriter, token string, isProd bool) {
-	s := http.SameSiteLaxMode
-	if isProd {
-		s = http.SameSiteNoneMode
-	}
+	// Always use SameSite=None so refresh cookie is sent for cross-site calls.
+	s := http.SameSiteNoneMode
 	http.SetCookie(w, &http.Cookie{
 		Name:  RefreshCookieName,
 		Value: token,
@@ -45,8 +39,9 @@ func SetRefreshCookie(w http.ResponseWriter, token string, isProd bool) {
 
 // ClearAuthCookies removes both auth cookies from the browser.
 func ClearAuthCookies(w http.ResponseWriter) {
-	// Use Lax when clearing — safe default for development. Clearing is best-effort.
-	s := http.SameSiteLaxMode
+	// Match the SameSite setting used when setting cookies so the browser
+	// properly removes them. Clearing is best-effort.
+	s := http.SameSiteNoneMode
 	http.SetCookie(w, &http.Cookie{
 		Name:     AccessCookieName,
 		Value:    "",
