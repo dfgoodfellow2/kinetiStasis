@@ -81,10 +81,6 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}
-		if err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
-			return
-		}
 		respond.JSON(w, http.StatusCreated, in)
 		return
 	}
@@ -107,10 +103,6 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	merged.UserID = claims.UserID
 	merged.Date = in.Date
 	if err := h.s.UpdateNutritionLog(r.Context(), &merged); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
-		return
-	}
-	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
