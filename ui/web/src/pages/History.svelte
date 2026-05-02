@@ -309,7 +309,7 @@
                 <tr class="border-t border-gray-800">
                   <td class="py-2 pr-4">{day.date}</td>
                   <td class="pr-4 font-semibold">{w.title}</td>
-                  <td class="pr-4">{w.duration_min ? w.duration_min + ' min' : '—'}</td>
+                  <td class="pr-4">{w.durationMin ? w.durationMin + ' min' : '—'}</td>
                   <td class="pr-4 text-gray-400">
                     {#if w.exercises && w.exercises.length > 0}
                       {w.exercises.map(e => {
@@ -321,7 +321,7 @@
                       —
                     {/if}
                   </td>
-                  <td class="pr-4 text-gray-500 text-xs">{w.raw_notes || '—'}</td>
+                  <td class="pr-4 text-gray-500 text-xs">{w.rawNotes || '—'}</td>
                   <td class="py-2">
                     <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editW(w)} title="Edit">✏️</button>
                     <button class="text-gray-400 hover:text-red-400" onclick={() => deleteW(day.date, w.slot)} title="Delete">🗑️</button>
