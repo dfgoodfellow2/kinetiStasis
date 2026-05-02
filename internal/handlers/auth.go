@@ -88,9 +88,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusCreated, map[string]any{
-		"user_id":  userID,
+		"userId":   userID,
 		"username": req.Username,
-		"is_admin": isAdmin == 1,
+		"isAdmin":  isAdmin == 1,
 	})
 }
 
@@ -136,9 +136,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusOK, map[string]any{
-		"user_id":  userID,
+		"userId":   userID,
 		"username": username,
-		"is_admin": isAdmin,
+		"isAdmin":  isAdmin,
 	})
 }
 
@@ -219,10 +219,10 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	email = u.Email
 
 	respond.JSON(w, http.StatusOK, map[string]any{
-		"user_id":  claims.UserID,
+		"userId":   claims.UserID,
 		"username": username,
 		"email":    email,
-		"is_admin": claims.IsAdmin,
+		"isAdmin":  claims.IsAdmin,
 	})
 }
 

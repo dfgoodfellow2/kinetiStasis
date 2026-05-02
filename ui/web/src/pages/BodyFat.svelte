@@ -29,7 +29,7 @@
   <Card title="Body Fat % — Navy Method">
     {#if data && data.bf_pct > 0}
       <div class="space-y-3">
-        <div class="text-4xl font-bold text-emerald-400">{data.bf_pct.toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
+        <div class="text-4xl font-bold text-emerald-400">{(data.bf_pct ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div class="bg-gray-700 rounded-lg p-3">
             <div class="text-xs text-gray-400 mb-1">Lean Mass</div>

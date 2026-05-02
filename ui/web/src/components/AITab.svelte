@@ -51,10 +51,10 @@
       style:           res.style          || workout.style,
       surface:         res.surface        || workout.surface,
       focus:           focusStr           || workout.focus,
-      rest_interval:   res.rest_interval  || workout.rest_interval,
-      duration_min:    res.duration_min   || workout.duration_min,
-      avg_hr:          res.avg_hr         || workout.avg_hr,
-      max_hr:          res.max_hr         || workout.max_hr,
+      rest_interval:   res.restInterval  || res.rest_interval || workout.rest_interval,
+      duration_min:    res.durationMin   || res.duration_min   || workout.duration_min,
+      avg_hr:          res.avgHr         || res.avg_hr         || workout.avg_hr,
+      max_hr:          res.maxHr         || res.max_hr         || workout.max_hr,
       calories_burned: res.caloriesBurned || res.calories_burned || workout.calories_burned,
       notes:           res.notes || res.raw_notes || workout.notes,
       exercises:       (res.exercises || []).map(mapExercise),
@@ -68,31 +68,32 @@
     const setCount = setsArr.length || ''
     const firstSet = setsArr[0] ?? {}
 
-    let weightDisplay = e.load_raw || ''
-    if (!weightDisplay && firstSet.load_kg > 0) {
-      weightDisplay = String(firstSet.load_kg) + ' kg'
+    let weightDisplay = e.loadRaw || e.load_raw || ''
+    if (!weightDisplay && (firstSet.loadKg > 0 || firstSet.load_kg > 0)) {
+      const kg = firstSet.loadKg ?? firstSet.load_kg
+      weightDisplay = String(kg) + ' kg'
     }
 
     return {
       name:        e.name        || '',
       sets:        setCount,
       reps:        firstSet.reps ?? '',
-      duration:    e.duration_raw || '',
+      duration:    e.durationRaw || e.duration_raw || '',
       weight_lbs:  weightDisplay,
       tempo:       e.tempo        || '',
       rpe:         e.rpe          ?? '',
       pattern:     e.category     || '',
       bias:        e.bias         || '',
-      distance:    e.distance_km  || '',
-      elevation:   e.elevation_m  || '',
+      distance:    (e.distanceKm ?? e.distance_km) || '',
+      elevation:   (e.elevationM ?? e.elevation_m) || '',
       pace:        e.pace         || '',
-      met:         e.met_value    ?? '',
+      met:         (e.metValue ?? e.met_value) ?? '',
       notes:       e.notes        || '',
     }
   }
 </script>
 
-<div class="border rounded-lg p-4">
+<div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
   <h3 class="text-lg font-semibold mb-3">AI Parse</h3>
   {#if error}
     <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -101,14 +102,14 @@
   {/if}
   <textarea
     bind:value={aiRaw}
-    class="w-full p-2 border rounded mb-3 font-mono text-sm"
+    class="input font-mono text-sm mb-3"
     rows="6"
     placeholder="Paste meal text or workout description..."
   ></textarea>
   <button
     onclick={parseAI}
     disabled={aiParsing || !aiRaw.trim()}
-    class="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
+    class="btn-primary"
   >
     {aiParsing ? 'Parsing...' : 'Parse with AI'}
   </button>
