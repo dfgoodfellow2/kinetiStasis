@@ -10,6 +10,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/handlers"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/middleware"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 
 	geminiSvc "github.com/dfgoodfellow2/diet-tracker/v2/internal/services/gemini"
 	"github.com/go-chi/chi/v5"
@@ -19,7 +20,7 @@ import (
 
 // NewRouter builds and returns the complete Chi router with all middleware
 // and routes wired up.
-func NewRouter(cfg *config.Config, db *sql.DB, webHandler http.Handler) http.Handler {
+func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -43,29 +44,35 @@ func NewRouter(cfg *config.Config, db *sql.DB, webHandler http.Handler) http.Han
 	parseLimiter := middleware.RateLimit(rate.Every(time.Minute/10), 3) // 10 req/min, burst 3
 
 	// Handler constructors
-	authH := handlers.NewAuthHandler(db, cfg)
-	adminH := handlers.NewAdminHandler(db)
-	profileH := handlers.NewProfileHandler(db)
-	nutritionH := handlers.NewNutritionHandler(db)
-	biometricH := handlers.NewBiometricHandler(db)
-	workoutsH := handlers.NewWorkoutHandler(db)
-	targetsH := handlers.NewTargetsHandler(db)
-	mealsH := handlers.NewMealsHandler(db)
-	measurementsH := handlers.NewMeasurementsHandler(db)
-	calcH := handlers.NewCalcHandler(db)
-	exportH := handlers.NewExportHandler(db)
+	authH := handlers.NewAuthHandler(s, cfg)
+	adminH := handlers.NewAdminHandler(s)
+	profileH := handlers.NewProfileHandler(s)
+	nutritionH := handlers.NewNutritionHandler(s)
+	biometricH := handlers.NewBiometricHandler(s)
+	workoutsH := handlers.NewWorkoutHandler(s)
+	targetsH := handlers.NewTargetsHandler(s)
+	mealsH := handlers.NewMealsHandler(s)
+	measurementsH := handlers.NewMeasurementsHandler(s)
+	calcH := handlers.NewCalcHandler(s)
+	exportH := handlers.NewExportHandler(s)
 
 	var geminiClient *geminiSvc.Client
 	if cfg.GeminiKey != "" {
 		geminiClient = geminiSvc.NewClient(cfg.GeminiKey)
 	}
-	parseH := handlers.NewParseHandler(db, geminiClient)
+	// Parse handler uses store interface now
+	parseH := handlers.NewParseHandler(s, geminiClient)
 
 	r.Route("/v1", func(r chi.Router) {
 		// Apply standard rate limiter to all /v1 routes
 		r.Use(stdLimiter)
 
 		// Public
+		// health needs raw db ping; try to extract from store
+		var db *sql.DB
+		if sdb, ok := s.(*store.SQLiteStore); ok {
+			db = sdb.DB()
+		}
 		r.Get("/health", healthHandler(db))
 
 		// Auth routes (public)
@@ -143,7 +150,7 @@ func NewRouter(cfg *config.Config, db *sql.DB, webHandler http.Handler) http.Han
 			r.Get("/dashboard", calcH.Dashboard)
 
 			// Check-in
-			checkinH := handlers.NewCheckinHandler(db)
+			checkinH := handlers.NewCheckinHandler(s)
 			r.Get("/checkin", checkinH.Preview)
 			r.Post("/checkin", checkinH.Create)
 

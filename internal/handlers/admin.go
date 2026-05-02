@@ -1,29 +1,29 @@
 package handlers
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
 	respond "github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/go-chi/chi/v5"
 )
 
 // AdminHandler holds dependencies for admin endpoints.
 type AdminHandler struct {
-	db *sql.DB
+	s store.Store
 }
 
 // NewAdminHandler creates a new AdminHandler.
-func NewAdminHandler(db *sql.DB) *AdminHandler {
-	return &AdminHandler{db: db}
+func NewAdminHandler(s store.Store) *AdminHandler {
+	return &AdminHandler{s: s}
 }
 
 // ListUsers handles GET /v1/admin/users
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.QueryContext(r.Context(),
-		`SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at ASC`)
+	db := h.s.DB()
+	rows, err := db.QueryContext(r.Context(), `SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -63,7 +63,8 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.db.ExecContext(r.Context(), `DELETE FROM users WHERE id = ?`, targetID)
+	db := h.s.DB()
+	_, err := db.ExecContext(r.Context(), `DELETE FROM users WHERE id = ?`, targetID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -76,8 +77,8 @@ func (h *AdminHandler) PromoteUser(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err := h.db.ExecContext(r.Context(),
-		`UPDATE users SET is_admin = 1, updated_at = ? WHERE id = ?`, now, targetID)
+	db := h.s.DB()
+	_, err := db.ExecContext(r.Context(), `UPDATE users SET is_admin = 1, updated_at = ? WHERE id = ?`, now, targetID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -98,8 +99,7 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure at least one admin remains
 	var adminCount int
-	if err := h.db.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM users WHERE is_admin = 1`).Scan(&adminCount); err != nil {
+	if err := h.s.DB().QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users WHERE is_admin = 1`).Scan(&adminCount); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -109,8 +109,7 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := h.db.ExecContext(r.Context(),
-		`UPDATE users SET is_admin = 0, updated_at = ? WHERE id = ?`, now, targetID)
+	_, err := h.s.DB().ExecContext(r.Context(), `UPDATE users SET is_admin = 0, updated_at = ? WHERE id = ?`, now, targetID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return

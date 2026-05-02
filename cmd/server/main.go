@@ -8,6 +8,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/api"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/config"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/db"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/web"
 )
 
@@ -38,9 +39,10 @@ func main() {
 	}
 	defer database.Close()
 
-	// Build router with all middleware and routes. Pass web.Handler() which
-	// will return nil in non-pwa builds (internal/web handles that).
-	router := api.NewRouter(cfg, database, web.Handler())
+	// Create store wrapper around raw DB and build router with all middleware and routes.
+	s := store.NewSQLiteStore(database)
+	// Pass web.Handler() which will return nil in non-pwa builds (internal/web handles that).
+	router := api.NewRouter(cfg, s, web.Handler())
 
 	addr := ":" + cfg.Port
 	slog.Info("server starting", "addr", addr, "env", cfg.Env, "db", cfg.DBPath)

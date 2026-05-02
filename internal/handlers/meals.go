@@ -3,24 +3,27 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-type MealsHandler struct{ db *sql.DB }
+type MealsHandler struct{ s store.Store }
 
-func NewMealsHandler(db *sql.DB) *MealsHandler { return &MealsHandler{db: db} }
+func NewMealsHandler(s store.Store) *MealsHandler { return &MealsHandler{s: s} }
 
 // GET /v1/meals/saved
 func (h *MealsHandler) ListSaved(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,created_at,updated_at FROM saved_meals WHERE user_id = ? ORDER BY name ASC`, claims.UserID)
+	db := h.s.(*store.SQLiteStore).DB()
+	rows, err := db.QueryContext(r.Context(), `SELECT id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,created_at,updated_at FROM saved_meals WHERE user_id = ? ORDER BY name ASC`, claims.UserID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -52,7 +55,8 @@ func (h *MealsHandler) CreateSaved(w http.ResponseWriter, r *http.Request) {
 	}
 	m.CreatedAt = now
 	m.UpdatedAt = now
-	_, err := h.db.ExecContext(r.Context(), `INSERT INTO saved_meals (id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`, m.ID, m.UserID, m.Name, m.Calories, m.ProteinG, m.CarbsG, m.FatG, m.FiberG, m.CreatedAt, m.UpdatedAt)
+	db := h.s.(*store.SQLiteStore).DB()
+	_, err := db.ExecContext(r.Context(), `INSERT INTO saved_meals (id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`, m.ID, m.UserID, m.Name, m.Calories, m.ProteinG, m.CarbsG, m.FatG, m.FiberG, m.CreatedAt, m.UpdatedAt)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -66,7 +70,8 @@ func (h *MealsHandler) DeleteSaved(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// verify ownership
 	var uid string
-	if err := h.db.QueryRowContext(r.Context(), `SELECT user_id FROM saved_meals WHERE id = ?`, id).Scan(&uid); err == sql.ErrNoRows {
+	db := h.s.(*store.SQLiteStore).DB()
+	if err := db.QueryRowContext(r.Context(), `SELECT user_id FROM saved_meals WHERE id = ?`, id).Scan(&uid); err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "meal not found")
 		return
 	} else if err != nil {
@@ -77,7 +82,7 @@ func (h *MealsHandler) DeleteSaved(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusForbidden, "not allowed")
 		return
 	}
-	_, err := h.db.ExecContext(r.Context(), `DELETE FROM saved_meals WHERE id = ?`, id)
+	_, err := db.ExecContext(r.Context(), `DELETE FROM saved_meals WHERE id = ?`, id)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -88,7 +93,8 @@ func (h *MealsHandler) DeleteSaved(w http.ResponseWriter, r *http.Request) {
 // GET /v1/meals/templates
 func (h *MealsHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id,user_id,name,meals_json,created_at,updated_at FROM meal_templates WHERE user_id = ? ORDER BY name ASC`, claims.UserID)
+	db := h.s.(*store.SQLiteStore).DB()
+	rows, err := db.QueryContext(r.Context(), `SELECT id,user_id,name,meals_json,created_at,updated_at FROM meal_templates WHERE user_id = ? ORDER BY name ASC`, claims.UserID)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -103,7 +109,9 @@ func (h *MealsHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		}
 		var meals []models.SavedMeal
 		if mealsJSON != "" {
-			_ = json.Unmarshal([]byte(mealsJSON), &meals)
+			if err := json.Unmarshal([]byte(mealsJSON), &meals); err != nil {
+				slog.Warn("unmarshal meals_json failed", "err", err)
+			}
 		}
 		out = append(out, models.MealTemplate{ID: id, UserID: uid, Name: name, Meals: meals, CreatedAt: createdAt, UpdatedAt: updatedAt})
 	}
@@ -125,7 +133,8 @@ func (h *MealsHandler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 	in.CreatedAt = now
 	in.UpdatedAt = now
 	b, _ := json.Marshal(in.Meals)
-	_, err := h.db.ExecContext(r.Context(), `INSERT INTO meal_templates (id,user_id,name,meals_json,created_at,updated_at) VALUES (?,?,?,?,?,?)`, in.ID, in.UserID, in.Name, string(b), in.CreatedAt, in.UpdatedAt)
+	db := h.s.(*store.SQLiteStore).DB()
+	_, err := db.ExecContext(r.Context(), `INSERT INTO meal_templates (id,user_id,name,meals_json,created_at,updated_at) VALUES (?,?,?,?,?,?)`, in.ID, in.UserID, in.Name, string(b), in.CreatedAt, in.UpdatedAt)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
@@ -138,7 +147,8 @@ func (h *MealsHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	id := chi.URLParam(r, "id")
 	var uid string
-	if err := h.db.QueryRowContext(r.Context(), `SELECT user_id FROM meal_templates WHERE id = ?`, id).Scan(&uid); err == sql.ErrNoRows {
+	db := h.s.(*store.SQLiteStore).DB()
+	if err := db.QueryRowContext(r.Context(), `SELECT user_id FROM meal_templates WHERE id = ?`, id).Scan(&uid); err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "template not found")
 		return
 	} else if err != nil {
@@ -149,7 +159,7 @@ func (h *MealsHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusForbidden, "not allowed")
 		return
 	}
-	_, err := h.db.ExecContext(r.Context(), `DELETE FROM meal_templates WHERE id = ?`, id)
+	_, err := db.ExecContext(r.Context(), `DELETE FROM meal_templates WHERE id = ?`, id)
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return

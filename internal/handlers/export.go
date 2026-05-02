@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,11 +10,12 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/export"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 )
 
-type ExportHandler struct{ db *sql.DB }
+type ExportHandler struct{ s store.Store }
 
-func NewExportHandler(db *sql.DB) *ExportHandler { return &ExportHandler{db: db} }
+func NewExportHandler(s store.Store) *ExportHandler { return &ExportHandler{s: s} }
 
 func parseDateRange(r *http.Request) (from, to string) {
 	to = r.URL.Query().Get("to")
@@ -38,7 +38,13 @@ func writeExport(w http.ResponseWriter, r *http.Request, content, filename, mime
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	w.WriteHeader(200)
-	_, _ = w.Write([]byte(content))
+	if _, err := w.Write([]byte(content)); err != nil {
+		// best-effort log — do not treat as fatal for response flow
+		// use structured logger if available
+		// fallback to standard library printing
+		// but avoid importing log/slog here; keep simple
+		return
+	}
 }
 
 // GET /v1/export/nutrition
@@ -49,8 +55,12 @@ func (h *ExportHandler) Nutrition(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "md"
 	}
-	logs, _ := fetchNutritionLogs(r.Context(), h.db, claims.UserID, from)
-	targets, err := fetchTargets(r.Context(), h.db, claims.UserID)
+	logs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, from)
+	if err != nil {
+		respond.Error(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	targets, err := h.s.FetchTargets(r.Context(), claims.UserID)
 	if err != nil {
 		targets = models.Targets{}
 	}
@@ -75,11 +85,15 @@ func (h *ExportHandler) Workouts(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "md"
 	}
-	profile, err := fetchProfile(r.Context(), h.db, claims.UserID)
+	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
 	if err != nil {
 		profile.Units = "metric"
 	}
-	logs, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, from)
+	logs, err := h.s.FetchWorkouts(r.Context(), claims.UserID, from)
+	if err != nil {
+		respond.Error(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	var content, filename, mime string
 	if format == "csv" {
 		content = export.WorkoutsCSV(logs, from, to, profile.Units)
@@ -97,15 +111,24 @@ func (h *ExportHandler) Workouts(w http.ResponseWriter, r *http.Request) {
 func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	from, to := parseDateRange(r)
-	profile, err := fetchProfile(r.Context(), h.db, claims.UserID)
+	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
 	if err != nil {
 		profile.Units = "metric"
 	}
-	nut, _ := fetchNutritionLogs(r.Context(), h.db, claims.UserID, from)
-	bio, _ := fetchBiometricLogs(r.Context(), h.db, claims.UserID, from)
+	nut, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, from)
+	if err != nil {
+		respond.Error(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	bio, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, from)
+	if err != nil {
+		respond.Error(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	// body_measurements table stores circumference measurements (waist etc.)
 	// biometric_logs may not include waist; fetch body_measurements in range and merge waist values.
-	bmRows, err := h.db.QueryContext(r.Context(), `SELECT date, COALESCE(waist_cm,0) FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ?`, claims.UserID, from, to)
+	db := h.s.(*store.SQLiteStore).DB()
+	bmRows, err := db.QueryContext(r.Context(), `SELECT date, COALESCE(waist_cm,0) FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ?`, claims.UserID, from, to)
 	if err == nil {
 		defer bmRows.Close()
 		bmMap := make(map[string]float64)
@@ -136,8 +159,12 @@ func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	workouts, _ := fetchWorkouts(r.Context(), h.db, claims.UserID, from)
-	targets, err := fetchTargets(r.Context(), h.db, claims.UserID)
+	workouts, err := h.s.FetchWorkouts(r.Context(), claims.UserID, from)
+	if err != nil {
+		respond.Error(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	targets, err := h.s.FetchTargets(r.Context(), claims.UserID)
 	if err != nil {
 		targets = models.Targets{}
 	}

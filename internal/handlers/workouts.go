@@ -11,14 +11,15 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
-	workoutsvc "github.com/dfgoodfellow2/diet-tracker/v2/internal/services/workout"
+	met "github.com/dfgoodfellow2/diet-tracker/v2/internal/services/met"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-type WorkoutHandler struct{ db *sql.DB }
+type WorkoutHandler struct{ s store.Store }
 
-func NewWorkoutHandler(db *sql.DB) *WorkoutHandler { return &WorkoutHandler{db: db} }
+func NewWorkoutHandler(s store.Store) *WorkoutHandler { return &WorkoutHandler{s: s} }
 
 const workoutSelectCols = `id, user_id, date, slot, title, raw_notes, duration_min, calories_burned, mwv, nds, session_density, exercises_json, metadata_json, updated_at`
 
@@ -35,10 +36,14 @@ func scanWorkout(row interface {
 		return err
 	}
 	if exercisesJSON != "" {
-		_ = json.Unmarshal([]byte(exercisesJSON), &w.Exercises)
+		if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
+			slog.Warn("unmarshal exercises_json failed", "err", err)
+		}
 	}
 	if metadataJSON != "" {
-		_ = json.Unmarshal([]byte(metadataJSON), &w.Metadata)
+		if err := json.Unmarshal([]byte(metadataJSON), &w.Metadata); err != nil {
+			slog.Warn("unmarshal metadata_json failed", "err", err)
+		}
 	}
 	return nil
 }
@@ -55,7 +60,8 @@ func (h *WorkoutHandler) List(w http.ResponseWriter, r *http.Request) {
 	if to == "" {
 		to = today
 	}
-	rows, err := h.db.QueryContext(r.Context(),
+	db := h.s.DB()
+	rows, err := db.QueryContext(r.Context(),
 		`SELECT `+workoutSelectCols+` FROM workouts WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, slot ASC`,
 		claims.UserID, from, to)
 	if err != nil {
@@ -81,7 +87,8 @@ func (h *WorkoutHandler) Get(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	slot := chi.URLParam(r, "slot")
 	var went models.WorkoutEntry
-	row := h.db.QueryRowContext(r.Context(),
+	db := h.s.DB()
+	row := db.QueryRowContext(r.Context(),
 		`SELECT `+workoutSelectCols+` FROM workouts WHERE user_id = ? AND date = ? AND slot = ?`,
 		claims.UserID, date, slot)
 	if err := scanWorkout(row, &went); err == sql.ErrNoRows {
@@ -108,17 +115,23 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	// Auto-calculate calories from MET if not provided and we have a recent weight
 	if in.CaloriesBurned == 0 && len(in.Exercises) > 0 {
-		weightKg := fetchLatestWeight(r.Context(), h.db, claims.UserID)
-		if weightKg > 0 {
-			in.CaloriesBurned = workoutsvc.CalculateCaloriesBurned(in.Exercises, weightKg, in.DurationMin)
+		if wkg, err := h.s.FetchLatestWeight(r.Context(), claims.UserID); err == nil && wkg > 0 {
+			in.CaloriesBurned = met.CalculateCaloriesBurned(in.Exercises, wkg, in.DurationMin)
 		}
 	}
 
-	exb, _ := json.Marshal(in.Exercises)
-	metb, _ := json.Marshal(in.Metadata)
+	exb, err := json.Marshal(in.Exercises)
+	if err != nil {
+		slog.Warn("marshal exercises failed", "err", err)
+	}
+	metb, err := json.Marshal(in.Metadata)
+	if err != nil {
+		slog.Warn("marshal metadata failed", "err", err)
+	}
 
 	// Upsert: try UPDATE first, then INSERT if not found
-	res, err := h.db.ExecContext(r.Context(),
+	db := h.s.DB()
+	res, err := db.ExecContext(r.Context(),
 		`UPDATE workouts SET title=?, raw_notes=?, duration_min=?, calories_burned=?, exercises_json=?, metadata_json=?, updated_at=? WHERE user_id=? AND date=? AND slot=?`,
 		in.Title, in.RawNotes, in.DurationMin, in.CaloriesBurned, string(exb), string(metb), in.UpdatedAt, claims.UserID, in.Date, in.Slot)
 	if err != nil {
@@ -128,7 +141,7 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if ra, _ := res.RowsAffected(); ra == 0 {
 		// Not found, INSERT
-		_, err := h.db.ExecContext(r.Context(),
+		_, err = db.ExecContext(r.Context(),
 			`INSERT INTO workouts (id,user_id,date,slot,title,raw_notes,duration_min,calories_burned,mwv,nds,session_density,exercises_json,metadata_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			in.ID, claims.UserID, in.Date, in.Slot, in.Title, in.RawNotes, in.DurationMin, in.CaloriesBurned, in.MWV, in.NDS, in.SessionDensity, string(exb), string(metb), in.UpdatedAt)
 		if err != nil {
@@ -150,7 +163,8 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id string
-	if err := h.db.QueryRowContext(r.Context(),
+	db := h.s.DB()
+	if err := db.QueryRowContext(r.Context(),
 		`SELECT id FROM workouts WHERE user_id = ? AND date = ? AND slot = ?`,
 		claims.UserID, date, slot).Scan(&id); err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "workout not found")
@@ -161,16 +175,21 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	// Auto-calc calories on update if not provided
 	if in.CaloriesBurned == 0 && len(in.Exercises) > 0 {
-		weightKg := fetchLatestWeight(r.Context(), h.db, claims.UserID)
-		if weightKg > 0 {
-			in.CaloriesBurned = workoutsvc.CalculateCaloriesBurned(in.Exercises, weightKg, in.DurationMin)
+		if wkg, err := h.s.FetchLatestWeight(r.Context(), claims.UserID); err == nil && wkg > 0 {
+			in.CaloriesBurned = met.CalculateCaloriesBurned(in.Exercises, wkg, in.DurationMin)
 		}
 	}
 
-	exb, _ := json.Marshal(in.Exercises)
-	metb, _ := json.Marshal(in.Metadata)
+	exb, err := json.Marshal(in.Exercises)
+	if err != nil {
+		slog.Warn("marshal exercises failed", "err", err)
+	}
+	metb, err := json.Marshal(in.Metadata)
+	if err != nil {
+		slog.Warn("marshal metadata failed", "err", err)
+	}
 	now := time.Now().UTC().Format(constants.TimeFormat)
-	_, err := h.db.ExecContext(r.Context(),
+	_, err = db.ExecContext(r.Context(),
 		`UPDATE workouts SET title=?,raw_notes=?,duration_min=?,calories_burned=?,mwv=?,nds=?,session_density=?,exercises_json=?,metadata_json=?,updated_at=?
          WHERE user_id=? AND date=? AND slot=?`,
 		in.Title, in.RawNotes, in.DurationMin, in.CaloriesBurned, in.MWV, in.NDS, in.SessionDensity,
@@ -180,7 +199,7 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out models.WorkoutEntry
-	row := h.db.QueryRowContext(r.Context(),
+	row := db.QueryRowContext(r.Context(),
 		`SELECT `+workoutSelectCols+` FROM workouts WHERE user_id = ? AND date = ? AND slot = ?`,
 		claims.UserID, date, slot)
 	if err := scanWorkout(row, &out); err != nil {
@@ -195,7 +214,8 @@ func (h *WorkoutHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	slot := chi.URLParam(r, "slot")
-	_, err := h.db.ExecContext(r.Context(),
+	db := h.s.DB()
+	_, err := db.ExecContext(r.Context(),
 		`DELETE FROM workouts WHERE user_id = ? AND date = ? AND slot = ?`,
 		claims.UserID, date, slot)
 	if err != nil {

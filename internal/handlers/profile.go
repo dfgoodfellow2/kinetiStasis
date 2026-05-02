@@ -7,37 +7,26 @@ import (
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
-
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 )
 
-type ProfileHandler struct{ db *sql.DB }
+type ProfileHandler struct{ s store.Store }
 
-func NewProfileHandler(db *sql.DB) *ProfileHandler { return &ProfileHandler{db: db} }
+func NewProfileHandler(s store.Store) *ProfileHandler { return &ProfileHandler{s: s} }
 
 // GET /v1/profile — return authenticated user's profile
 func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
-	var p models.Profile
-	err := h.db.QueryRowContext(r.Context(), `
-        SELECT user_id, COALESCE(name,''), COALESCE(age,0), COALESCE(sex,''),
-               COALESCE(height_cm,0), COALESCE(activity,'sedentary'), COALESCE(exercise_freq,0),
-               COALESCE(running_km,0), COALESCE(is_lifter,0), COALESCE(goal,'maintenance'),
-               COALESCE(prioritize_carbs,0), COALESCE(bf_pct,0), COALESCE(hr_rest,0),
-               COALESCE(hr_max,0), COALESCE(grip_weight,0.5), COALESCE(tdee_lookback_days,90),
-               COALESCE(sleep_quality_max,10.0), COALESCE(units,'imperial'), updated_at
-        FROM profiles WHERE user_id = ?`, claims.UserID,
-	).Scan(&p.UserID, &p.Name, &p.Age, &p.Sex, &p.HeightCm, &p.Activity, &p.ExerciseFreq,
-		&p.RunningKm, &p.IsLifter, &p.Goal, &p.PrioritizeCarbs, &p.BfPct, &p.HRRest,
-		&p.HRMax, &p.GripWeight, &p.TDEELookbackDays, &p.SleepQualityMax, &p.Units, &p.UpdatedAt)
+	p, err := h.s.FetchProfile(r.Context(), claims.UserID)
 	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "profile not found")
 		return
 	}
 	if err != nil {
-		slog.Error("profile upsert failed", "user_id", claims.UserID, "err", err)
-		respond.Error(w, http.StatusInternalServerError, "profile save failed: "+err.Error())
+		slog.Error("profile fetch failed", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "profile fetch failed: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, p)
@@ -60,7 +49,8 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if p.PrioritizeCarbs {
 		prioritize = 1
 	}
-	_, err := h.db.ExecContext(r.Context(), `
+	db := h.s.(*store.SQLiteStore).DB()
+	_, err := db.ExecContext(r.Context(), `
         INSERT INTO profiles (user_id,name,age,sex,height_cm,activity,exercise_freq,running_km,
           is_lifter,goal,prioritize_carbs,bf_pct,hr_rest,hr_max,grip_weight,tdee_lookback_days,
           sleep_quality_max,units,updated_at)
