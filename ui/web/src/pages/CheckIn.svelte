@@ -286,14 +286,14 @@
 
         <div>
           <label class="text-xs text-gray-400" for="ci-weight">Weight ({weightUnit(store.units)})</label>
-          <input class="input" id="ci-weight" type="number" step="0.1" bind:value={dailyForm.weight_kg} />
+          <input class="input" id="ci-weight" type="number" step="0.1" bind:value={dailyForm.weightKg} />
         </div>
 
         
 
         <div>
           <label class="text-xs text-gray-400" for="ci-grip">Grip Strength ({loadUnit(store.units)})</label>
-          <input class="input" id="ci-grip" type="number" step="0.1" bind:value={dailyForm.grip_kg} />
+          <input class="input" id="ci-grip" type="number" step="0.1" bind:value={dailyForm.gripKg} />
         </div>
 
         <div>
