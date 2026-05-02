@@ -491,10 +491,10 @@
       <!-- Calculated (Navy Method) -->
       {#if bfLoading}
         <Spinner />
-      {:else if bfData && bfData.bf_pct > 0}
+      {:else if bfData && bfData.bfPct > 0}
         <Card title="Calculated — Navy Method">
           <div class="space-y-3">
-            <div class="text-4xl font-bold text-cyan-400">{(bfData.bf_pct ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
+            <div class="text-4xl font-bold text-cyan-400">{(bfData.bfPct ?? 0).toFixed(1)}<span class="text-lg text-gray-400 ml-1">%</span></div>
             <div class="grid grid-cols-2 gap-3 text-sm">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Lean Mass</div>

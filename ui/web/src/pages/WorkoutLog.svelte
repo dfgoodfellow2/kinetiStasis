@@ -186,7 +186,7 @@
 
     // Build duration fallback chain similar to History view:
     // 1. Prefer exercise-level duration if present (check camelCase and snake_case)
-    // 2. If reps <= 0 (timed exercise) and workout has only 1 exercise, fall back to workout.duration_min
+    // 2. If reps <= 0 (timed exercise) and workout has only 1 exercise, fall back to workout.durationMin
     // Check both camelCase (new) and snake_case (old DB format)
     const durationValue = ex.durationRaw || ex.duration || ''
     const workoutHasOneExercise = workout.exercises && workout.exercises.length === 1
@@ -271,7 +271,7 @@
           // Strength: sets/reps/weight
           sets: exerciseSets.length > 0 ? String(exerciseSets.length) : '',
           reps: firstExerciseSet.reps ? String(firstExerciseSet.reps) : '',
-          weightLbs: firstExerciseSet.load_lbs ? String(Math.round(firstExerciseSet.load_lbs)) : '',
+          weightLbs: firstExerciseSet.loadLbs ? String(Math.round(firstExerciseSet.loadLbs)) : '',
           
           // Conditioning: distance/elevation/pace/duration (JSON uses snake_case)
           distanceKm: ex.distanceKm ?? '',
@@ -280,7 +280,7 @@
           duration: ex.durationRaw || ex.duration || '',
           
           // Load info
-          load: ex.loadRaw || (firstExerciseSet.load_lbs ? `${Math.round(firstExerciseSet.load_lbs)} lbs` : ''),
+          load: ex.loadRaw || (firstExerciseSet.loadLbs ? `${Math.round(firstExerciseSet.loadLbs)} lbs` : ''),
 
           // RPE and Tempo
           rpe: String(ex.rpe || ''),

@@ -19,7 +19,7 @@
   // Height display: for imperial, show separate ft/in inputs
   let heightFt = $state('')
   let heightIn = $state('')
-  // When profile loads, split height_cm into ft+in for imperial display
+  // When profile loads, split heightCm into ft+in for imperial display
   $effect(() => {
     if (profile.units === 'imperial' && profile.heightCm) {
       const totalIn = Number(profile.heightCm) / 2.54
@@ -52,7 +52,7 @@
           sleepQualityMax: p.sleepQualityMax ?? 10,
           units: p.units || 'imperial',
         }
-            // Convert running_km to display units for the input
+            // Convert runningKm to display units for the input
                 if (profile.units === 'imperial' && p.runningKm) {
                 profile.runningKm = String(kmToMi(p.runningKm))
             }

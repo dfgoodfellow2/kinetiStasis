@@ -31,11 +31,11 @@
         <div class="font-bold">{day.date}</div>
         {#each day.workouts as w}
           <div class="mt-2 p-2 bg-gray-700 rounded">
-            <div class="font-semibold">{w.title} ({w.duration_min} min)</div>
+          <div class="font-semibold">{w.title} ({w.durationMin} min)</div>
             {#if w.exercises}
               <ul class="mt-1 ml-3 list-disc">
                 {#each w.exercises as ex}
-                  <li>{ex.name} — {ex.sets}x{ex.reps} @ {ex.load_raw ? ex.load_raw : `${dispLoad(ex.load_kg, store.units)} ${loadUnit(store.units)}`}</li>
+                  <li>{ex.name} — {ex.sets}x{ex.reps} @ {ex.loadRaw ? ex.loadRaw : `${dispLoad(ex.loadKg, store.units)} ${loadUnit(store.units)}`}</li>
                 {/each}
               </ul>
             {/if}
