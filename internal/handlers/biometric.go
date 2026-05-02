@@ -62,10 +62,12 @@ func (h *BiometricHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
-	// Validate weight is in reasonable range (20-300 kg)
-	if in.WeightKg < 20 || in.WeightKg > 300 {
-		respond.Error(w, http.StatusBadRequest, "weight must be between 20 and 300 kg")
-		return
+	// Validate weight only if positive (0 means not logged)
+	if in.WeightKg > 0 {
+		if in.WeightKg < 20 || in.WeightKg > 300 {
+			respond.Error(w, http.StatusBadRequest, "weight must be between 20 and 300 kg")
+			return
+		}
 	}
 	in.UserID = claims.UserID
 	in.UpdatedAt = time.Now().UTC().Format(constants.TimeFormat)
@@ -87,24 +89,59 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
-	// Validate weight is in reasonable range (20-300 kg)
-	if in.WeightKg < 20 || in.WeightKg > 300 {
-		respond.Error(w, http.StatusBadRequest, "weight must be between 20 and 300 kg")
-		return
+	// Validate weight only if positive (0 means not logged)
+	if in.WeightKg > 0 {
+		if in.WeightKg < 20 || in.WeightKg > 300 {
+			respond.Error(w, http.StatusBadRequest, "weight must be between 20 and 300 kg")
+			return
+		}
 	}
-	// ensure exists
-	if _, err := h.s.GetBiometricLog(r.Context(), claims.UserID, date); err == sql.ErrNoRows {
+	// fetch existing to perform a merge (PUT should allow partial fields like POST/UPSERT)
+	existing, err := h.s.GetBiometricLog(r.Context(), claims.UserID, date)
+	if err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
 		return
 	} else if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
+
+	// Merge: only overwrite fields that are explicitly provided (non-zero / non-empty)
+	// Note: 0 means "not provided" for numeric fields in this API
+	if in.WeightKg > 0 {
+		existing.WeightKg = in.WeightKg
+	}
+	if in.WaistCm > 0 {
+		existing.WaistCm = in.WaistCm
+	}
+	if in.GripKg > 0 {
+		existing.GripKg = in.GripKg
+	}
+	if in.BoltScore > 0 {
+		existing.BoltScore = in.BoltScore
+	}
+	if in.SleepHours > 0 {
+		existing.SleepHours = in.SleepHours
+	}
+	if in.SleepQuality > 0 {
+		existing.SleepQuality = in.SleepQuality
+	}
+	if in.SubjectiveFeel > 0 {
+		existing.SubjectiveFeel = in.SubjectiveFeel
+	}
+	if in.BodyFatPct > 0 {
+		existing.BodyFatPct = in.BodyFatPct
+	}
+	if in.Notes != "" {
+		existing.Notes = in.Notes
+	}
+
 	now := time.Now().UTC().Format(constants.TimeFormat)
-	in.UpdatedAt = now
-	in.UserID = claims.UserID
-	in.Date = date
-	if err := h.s.UpdateBiometricLog(r.Context(), &in); err != nil {
+	existing.UpdatedAt = now
+	existing.UserID = claims.UserID
+	existing.Date = date
+
+	if err := h.s.UpdateBiometricLog(r.Context(), &existing); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
