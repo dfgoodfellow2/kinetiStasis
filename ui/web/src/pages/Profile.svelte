@@ -32,11 +32,30 @@
     try {
       const p = await api.getProfile()
       if (p) {
-        profile = { ...profile, ...p }
-        // Convert running_km to display units for the input
-        if (profile.units === 'imperial' && p.running_km) {
-          profile.running_km = String(kmToMi(p.running_km))
+        profile = { 
+          ...profile, 
+          name: p.name || '',
+          age: p.age || '',
+          sex: p.sex || 'male',
+          height_cm: p.heightCm || '',  // Map camelCase to local snake_case
+          activity: p.activity || 'sedentary',
+          exercise_freq: p.exerciseFreq || '',
+          running_km: p.runningKm || '',
+          is_lifter: p.isLifter || false,
+          goal: p.goal || 'maintenance',
+          prioritize_carbs: p.prioritizeCarbs || false,
+          bf_pct: p.bfPct || '',
+          hr_rest: p.hrRest || '',
+          hr_max: p.hrMax || '',
+          grip_weight: p.gripWeight || 0.5,
+          tdeeLookbackDays: p.tdeeLookbackDays || 90,
+          sleepQualityMax: p.sleepQualityMax || 10,
+          units: p.units || 'imperial',
         }
+            // Convert running_km to display units for the input
+            if (profile.units === 'imperial' && p.runningKm) {
+                profile.running_km = String(kmToMi(p.runningKm))
+            }
       }
     } catch {}
     await loadTargets()
@@ -48,25 +67,31 @@
     profileLoading = true
     try {
         await api.updateProfile({
-        ...profile,
-        age:                Number(profile.age)               || 0,
-        height_cm:          profile.units === 'imperial'
-                              ? heightFtInToCm(heightFt, heightIn)
-                              : Number(profile.height_cm)     || 0,
-        exercise_freq:      Number(profile.exercise_freq)     || 0,
-        running_km:         profile.units === 'imperial'
-                              ? miToKm(Number(profile.running_km) || 0)
-                              : Number(profile.running_km)    || 0,
-        bf_pct:             Number(profile.bf_pct)            || 0,
-        hr_rest:            Number(profile.hr_rest)           || 0,
-        hr_max:             Number(profile.hr_max)            || 0,
-        grip_weight:        Number(profile.grip_weight)       || 0.5,
-        tdeeLookbackDays:   Number(profile.tdeeLookbackDays)  || 90,
-        sleepQualityMax:    Number(profile.sleepQualityMax)   || 10,
-      })
-      setUnits(profile.units)
-      setSleepQualityMax(profile.sleepQualityMax)
-      profileSuccess = 'Profile updated'
+            name: profile.name,
+            age: Number(profile.age) || 0,
+            sex: profile.sex,
+            heightCm: profile.units === 'imperial'
+                ? heightFtInToCm(heightFt, heightIn)
+                : Number(profile.height_cm) || 0,
+            activity: profile.activity,
+            exerciseFreq: Number(profile.exercise_freq) || 0,
+            runningKm: profile.units === 'imperial'
+                ? miToKm(Number(profile.running_km) || 0)
+                : Number(profile.running_km) || 0,
+            isLifter: profile.is_lifter || false,
+            goal: profile.goal,
+            prioritizeCarbs: profile.prioritize_carbs || false,
+            bfPct: Number(profile.bf_pct) || 0,
+            hrRest: Number(profile.hr_rest) || 0,
+            hrMax: Number(profile.hr_max) || 0,
+            gripWeight: Number(profile.grip_weight) || 0.5,
+            tdeeLookbackDays: Number(profile.tdeeLookbackDays) || 90,
+            sleepQualityMax: Number(profile.sleepQualityMax) || 10,
+            units: profile.units,
+        })
+        setUnits(profile.units)
+        setSleepQualityMax(profile.sleepQualityMax)
+        profileSuccess = 'Profile updated'
     } catch (e) {
       profileError = e.message
     } finally {
@@ -100,11 +125,11 @@
     try {
       await api.putTargets({
         calories:  Number(targets.calories)  || 0,
-        protein_g: Number(targets.proteinG) || 0,
-        carbs_g:   Number(targets.carbsG)   || 0,
-        fat_g:     Number(targets.fatG)     || 0,
-        fiber_g:   Number(targets.fiberG)   || 0,
-        water_ml:  Number(targets.waterMl)  || 0,
+        proteinG: Number(targets.proteinG) || 0,
+        carbsG:   Number(targets.carbsG)   || 0,
+        fatG:     Number(targets.fatG)     || 0,
+        fiberG:   Number(targets.fiberG)   || 0,
+        waterMl:  Number(targets.waterMl)  || 0,
       })
       targetsSuccess = 'Targets updated'
     } catch (e) {
@@ -347,23 +372,23 @@
           </div>
           <div>
             <label class="text-xs text-gray-400" for="pt-protein">Protein (g)</label>
-            <input class="input" id="pt-protein" type="number" placeholder="e.g. 180" bind:value={targets.protein_g} />
+            <input class="input" id="pt-protein" type="number" placeholder="e.g. 180" bind:value={targets.proteinG} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="pt-carbs">Carbs (g)</label>
-            <input class="input" id="pt-carbs" type="number" placeholder="e.g. 220" bind:value={targets.carbs_g} />
+            <input class="input" id="pt-carbs" type="number" placeholder="e.g. 220" bind:value={targets.carbsG} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="pt-fat">Fat (g)</label>
-            <input class="input" id="pt-fat" type="number" placeholder="e.g. 70" bind:value={targets.fat_g} />
+            <input class="input" id="pt-fat" type="number" placeholder="e.g. 70" bind:value={targets.fatG} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="pt-fiber">Fiber (g)</label>
-            <input class="input" id="pt-fiber" type="number" placeholder="e.g. 30" bind:value={targets.fiber_g} />
+            <input class="input" id="pt-fiber" type="number" placeholder="e.g. 30" bind:value={targets.fiberG} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="pt-water">Water (ml)</label>
-            <input class="input" id="pt-water" type="number" placeholder="e.g. 2500" bind:value={targets.water_ml} />
+            <input class="input" id="pt-water" type="number" placeholder="e.g. 2500" bind:value={targets.waterMl} />
           </div>
         </div>
 

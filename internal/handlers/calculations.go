@@ -283,7 +283,8 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		WeightKg float64 `json:"weightKg"`
 	}
 	for _, b := range bio30 {
-		if b.WeightKg > 0 {
+		// Filter out weights outside reasonable human range (20-300 kg)
+		if b.WeightKg > 20 && b.WeightKg < 300 {
 			weightTrend = append(weightTrend, struct {
 				Date     string  `json:"date"`
 				WeightKg float64 `json:"weightKg"`

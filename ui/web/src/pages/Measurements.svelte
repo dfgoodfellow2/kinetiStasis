@@ -28,12 +28,12 @@
     try {
       await api.postMeasurement({
         date:     form.date,
-        neck_cm:  inputLength(form.neck_cm, store.units),
-        chest_cm: inputLength(form.chest_cm, store.units),
-        waist_cm: inputLength(form.waist_cm, store.units),
-        hips_cm:  inputLength(form.hips_cm, store.units),
-        thigh_cm: inputLength(form.thigh_cm, store.units),
-        bicep_cm: inputLength(form.bicep_cm, store.units),
+        neckCm:  inputLength(form.neck_cm, store.units),
+        chestCm: inputLength(form.chest_cm, store.units),
+        waistCm: inputLength(form.waist_cm, store.units),
+        hipsCm:  inputLength(form.hips_cm, store.units),
+        thighCm: inputLength(form.thigh_cm, store.units),
+        bicepCm: inputLength(form.bicep_cm, store.units),
         notes:    form.notes || '',
       })
       success = 'Measurement saved'
@@ -75,7 +75,7 @@
         <thead><tr class="text-left text-gray-300"><th>Date</th><th>Neck ({lengthUnit(store.units)})</th><th>Chest ({lengthUnit(store.units)})</th><th>Waist ({lengthUnit(store.units)})</th><th>Hips ({lengthUnit(store.units)})</th></tr></thead>
         <tbody>
           {#each history as h}
-            <tr class="border-t border-gray-800"><td>{h.date}</td><td>{dispLength(h.neck_cm, store.units)}</td><td>{dispLength(h.chest_cm, store.units)}</td><td>{dispLength(h.waist_cm, store.units)}</td><td>{dispLength(h.hips_cm, store.units)}</td></tr>
+            <tr class="border-t border-gray-800"><td>{h.date}</td><td>{dispLength(h.neckCm, store.units)}</td><td>{dispLength(h.chestCm, store.units)}</td><td>{dispLength(h.waistCm, store.units)}</td><td>{dispLength(h.hipsCm, store.units)}</td></tr>
           {/each}
         </tbody>
       </table>

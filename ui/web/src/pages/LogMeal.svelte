@@ -76,15 +76,35 @@
   async function saveParsed() {
     if (!aiResult) return
     try {
-    const { raw_input, ...payload } = aiResult
+      // Fix: use rawInput (camelCase) not raw_input
+    const { rawInput, ...payload } = aiResult
     if (!payload.date) payload.date = today()
-    // Normalize to camelCase keys expected by backend
-    if (payload.protein_g !== undefined && payload.proteinG === undefined) payload.proteinG = payload.protein_g
-    if (payload.carbs_g !== undefined && payload.carbsG === undefined) payload.carbsG = payload.carbs_g
-    if (payload.fat_g !== undefined && payload.fatG === undefined) payload.fatG = payload.fat_g
-    if (payload.fiber_g !== undefined && payload.fiberG === undefined) payload.fiberG = payload.fiber_g
-    if (payload.water_ml !== undefined && payload.waterMl === undefined) payload.waterMl = payload.water_ml
-    payload.mealNotes = raw_input || payload.mealNotes || payload.meal_notes || ''
+    // Normalize to camelCase keys expected by backend and remove old snake_case keys
+    if (payload.protein_g !== undefined && payload.proteinG === undefined) {
+      payload.proteinG = payload.protein_g
+      delete payload.protein_g
+    }
+    if (payload.carbs_g !== undefined && payload.carbsG === undefined) {
+      payload.carbsG = payload.carbs_g
+      delete payload.carbs_g
+    }
+    if (payload.fat_g !== undefined && payload.fatG === undefined) {
+      payload.fatG = payload.fat_g
+      delete payload.fat_g
+    }
+    if (payload.fiber_g !== undefined && payload.fiberG === undefined) {
+      payload.fiberG = payload.fiber_g
+      delete payload.fiber_g
+    }
+    if (payload.water_ml !== undefined && payload.waterMl === undefined) {
+      payload.waterMl = payload.water_ml
+      delete payload.water_ml
+    }
+    if (payload.meal_notes !== undefined && payload.mealNotes === undefined) {
+      payload.mealNotes = payload.meal_notes
+      delete payload.meal_notes
+    }
+    payload.mealNotes = rawInput || payload.mealNotes || ''
     await api.postNutrition(payload)
       success = 'Saved parsed meal'
       aiResult = null

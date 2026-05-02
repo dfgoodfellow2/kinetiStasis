@@ -62,6 +62,11 @@ func (h *BiometricHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	// Validate weight is in reasonable range (20-300 kg)
+	if in.WeightKg < 20 || in.WeightKg > 300 {
+		respond.Error(w, http.StatusBadRequest, "weight must be between 20 and 300 kg")
+		return
+	}
 	in.UserID = claims.UserID
 	in.UpdatedAt = time.Now().UTC().Format(constants.TimeFormat)
 	if in.ID == "" {
@@ -82,6 +87,11 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	// Validate weight is in reasonable range (20-300 kg)
+	if in.WeightKg < 20 || in.WeightKg > 300 {
+		respond.Error(w, http.StatusBadRequest, "weight must be between 20 and 300 kg")
+		return
+	}
 	// ensure exists
 	if _, err := h.s.GetBiometricLog(r.Context(), claims.UserID, date); err == sql.ErrNoRows {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
@@ -90,7 +100,7 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC().Format(constants.TimeFormat)
 	in.UpdatedAt = now
 	in.UserID = claims.UserID
 	in.Date = date
