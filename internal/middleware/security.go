@@ -15,7 +15,7 @@ func SecureHeaders(next http.Handler) http.Handler {
 		// CSP: stricter in prod, relaxed for Vite HMR in dev
 		if os.Getenv("ENV") == "production" {
 			w.Header().Set("Content-Security-Policy",
-				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
+				"default-src 'self'; script-src 'self' 'sha256-ZswfTY7H35rbv8WC7NXBoiC7WNu86vSzCDChNWwZZDM='; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
 		} else {
 			// Dev: allow inline scripts, eval, and WebSocket for HMR
 			w.Header().Set("Content-Security-Policy",
