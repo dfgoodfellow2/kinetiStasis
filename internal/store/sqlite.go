@@ -234,6 +234,15 @@ func (s *SQLiteStore) PingContext(ctx context.Context) error {
 	return s.db.PingContext(ctx)
 }
 
+// CountCheckInLogs returns the number of rows in check_in_logs table.
+func (s *SQLiteStore) CountCheckInLogs(ctx context.Context) (int, error) {
+	var cnt int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM check_in_logs`).Scan(&cnt); err != nil {
+		return 0, err
+	}
+	return cnt, nil
+}
+
 // --- UserStore implementations ---
 func (s *SQLiteStore) CountUsers(ctx context.Context) (int, error) {
 	var cnt int
