@@ -70,6 +70,10 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 		// health uses store.PingContext now
 		r.Get("/health", healthHandlerFunc(s))
 
+		// Temporary debug endpoint (unauthenticated) for DB connectivity checks.
+		// WARNING: remove this after debugging; keep out of production CSP/security middleware.
+		r.Get("/debug/db-check", dbCheckHandler(s))
+
 		// Auth routes (public)
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authH.Register)

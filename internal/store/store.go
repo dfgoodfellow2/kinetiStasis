@@ -74,6 +74,8 @@ type LogStore interface {
 // CheckinStore handles weekly check-in events.
 type CheckinStore interface {
 	CreateCheckinLog(ctx context.Context, c *models.CheckInLog) error
+	// CountCheckInLogs returns the number of rows in the check_in_logs table.
+	CountCheckInLogs(ctx context.Context) (int, error)
 }
 
 // MeasurementStore handles create/update/delete for body measurements.
