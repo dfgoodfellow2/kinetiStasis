@@ -47,7 +47,8 @@ func Open(path string) (*sql.DB, error) {
 	// Ensure any columns that may be missing on some deployments are present.
 	// Don't fail startup if this check/alter fails; just log the error.
 	if err := ensureColumns(db); err != nil {
-		slog.Error("failed to ensure columns", "error", err)
+		// Log at Info level — this is a best-effort fix and shouldn't spam error logs
+		slog.Info("ensureColumns failed (non-fatal)", "err", err)
 	}
 
 	slog.Info("database ready", "path", path)

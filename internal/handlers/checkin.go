@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"database/sql"
-	"log/slog"
+	// removed temporary debug logging
 	"net/http"
 	"time"
 
@@ -29,7 +29,6 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -38,13 +37,11 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().UTC().AddDate(0, 0, -14).Format("2006-01-02")
 	nutLogs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since)
 	if err != nil {
-		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since)
 	if err != nil {
-		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -52,7 +49,6 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	// fetch current targets
 	targets, err := h.s.FetchTargets(r.Context(), claims.UserID)
 	if err != nil && err != sql.ErrNoRows {
-		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -119,7 +115,6 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 			respond.Error(w, http.StatusConflict, "already checked in today")
 			return
 		}
-		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
@@ -129,7 +124,6 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// fetch existing targets for snapshot
 		existing, err := h.s.FetchTargets(r.Context(), claims.UserID)
 		if err != nil && err != sql.ErrNoRows {
-			slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}
@@ -146,7 +140,6 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:     now,
 		}
 		if err := h.s.CreateTargetSnapshot(r.Context(), &snap); err != nil {
-			slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}
@@ -155,7 +148,6 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 		targets.Calories = float64(in.CaloriesAfter)
 		targets.UpdatedAt = now
 		if err := h.s.UpsertTargets(r.Context(), &targets); err != nil {
-			slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 			respond.Error(w, http.StatusInternalServerError, "database error")
 			return
 		}

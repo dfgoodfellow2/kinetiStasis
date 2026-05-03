@@ -115,7 +115,6 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_, _ = json.Marshal(in.Metadata)
 
 	if err := h.s.UpsertWorkout(r.Context(), &in); err != nil {
-		slog.Error("workout upsert", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}

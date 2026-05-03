@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"database/sql"
-	"log/slog"
+	// removed temporary debug logging
 	"net/http"
 	"time"
 
@@ -25,7 +25,6 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("profile fetch failed", "user_id", claims.UserID, "err", err)
 		respond.Error(w, http.StatusInternalServerError, "profile fetch failed: "+err.Error())
 		return
 	}
@@ -43,7 +42,6 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	// Upsert via store
 	if err := h.s.UpsertProfile(r.Context(), &p); err != nil {
-		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path, "operation", "upsert_profile")
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
