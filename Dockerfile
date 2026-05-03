@@ -49,7 +49,6 @@ COPY litestream.yml .
 RUN mkdir -p /data
 
 EXPOSE 8080
-
-# Litestream restores the DB from S3 on startup, then runs the server,
-# then continuously replicates changes back to S3.
-CMD ["litestream", "replicate", "-exec", "/app/diet-tracker-server"]
+ 
+# This attempts a restore first, then starts the app + replication
+CMD ["sh", "-c", "litestream restore -config /app/litestream.yml -if-db-not-exists -if-replica-exists /data/diet.db && litestream replicate -config /app/litestream.yml -exec /app/diet-tracker-server"]

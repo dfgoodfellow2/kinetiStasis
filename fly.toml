@@ -1,45 +1,43 @@
-app = "diet-tracker-v2"
-primary_region = "iad"
+# fly.toml app configuration file generated for diet-tracker-v2 on 2026-05-02T20:03:51-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'diet-tracker-v2'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
-  DB_PATH = "/data/diet.db"
-  ENV = "production"
-  APP_DOMAIN = "https://diet-tracker-v2.fly.dev"
-  # Secrets (set via: fly secrets set KEY=value)
-  # JWT_SECRET
-  # GEMINI_API_KEY
-  # LITESTREAM_BUCKET
-  # LITESTREAM_REGION
-  # LITESTREAM_ACCESS_KEY_ID
-  # LITESTREAM_SECRET_ACCESS_KEY
-  # LITESTREAM_ENDPOINT
+  APP_DOMAIN = 'https://kinetistasis.com'
+  DB_PATH = '/data/diet.db'
+  ENV = 'production'
+  PORT = '8080'
 
-[metrics]
-  port = 9090
-  path = "/metrics"
+[[mounts]]
+  source = 'diet_data'
+  destination = '/data'
+  initial_size = '1gb'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = true
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     hard_limit = 250
     soft_limit = 200
 
 [[vm]]
-  memory = "256mb"
-  cpu_kind = "shared"
+  memory = '256mb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 256
 
-[[mounts]]
-  source = "diet_data"
-  destination = "/data"
-  initial_size = "1gb"
+[[metrics]]
+  port = 9090
+  path = '/metrics'
