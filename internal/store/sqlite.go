@@ -243,6 +243,26 @@ func (s *SQLiteStore) CountCheckInLogs(ctx context.Context) (int, error) {
 	return cnt, nil
 }
 
+// RawQueryTables returns the list of table names in the sqlite_master table.
+// This is an unexported helper that can be used by debug endpoints without
+// exposing the underlying *sql.DB publicly.
+func (s *SQLiteStore) RawQueryTables(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
 // --- UserStore implementations ---
 func (s *SQLiteStore) CountUsers(ctx context.Context) (int, error) {
 	var cnt int
