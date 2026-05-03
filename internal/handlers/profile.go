@@ -43,6 +43,7 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	// Upsert via store
 	if err := h.s.UpsertProfile(r.Context(), &p); err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path, "operation", "upsert_profile")
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}

@@ -33,6 +33,9 @@ func (s *SQLiteStore) FetchProfile(ctx context.Context, userID string) (models.P
 	).Scan(&p.UserID, &p.Name, &p.Age, &p.Sex, &p.HeightCm, &p.Activity, &p.ExerciseFreq,
 		&p.RunningKm, &p.IsLifter, &p.Goal, &p.PrioritizeCarbs, &p.BfPct, &p.HRRest,
 		&p.HRMax, &p.GripWeight, &p.TDEELookbackDays, &p.SleepQualityMax, &p.Units, &p.UpdatedAt)
+	if err != nil {
+		slog.Error("database operation failed", "err", err, "operation", "fetch_profile", "user_id", userID)
+	}
 	return p, err
 }
 
@@ -63,6 +66,9 @@ func (s *SQLiteStore) UpsertProfile(ctx context.Context, p *models.Profile) erro
 		isLifter, p.Goal, prioritize, p.BfPct, p.HRRest, p.HRMax, p.GripWeight,
 		p.TDEELookbackDays, p.SleepQualityMax, p.Units, p.UpdatedAt,
 	)
+	if err != nil {
+		slog.Error("database operation failed", "err", err, "operation", "upsert_profile", "user_id", p.UserID)
+	}
 	return err
 }
 

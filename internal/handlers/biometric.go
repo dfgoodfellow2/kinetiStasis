@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -32,6 +33,7 @@ func (h *BiometricHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.s.FetchBiometricLogsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -49,6 +51,7 @@ func (h *BiometricHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -75,6 +78,7 @@ func (h *BiometricHandler) Create(w http.ResponseWriter, r *http.Request) {
 		in.ID = uuid.New().String()
 	}
 	if err := h.s.CreateBiometricLog(r.Context(), &in); err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -102,6 +106,7 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
 		return
 	} else if err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -142,6 +147,7 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 	existing.Date = date
 
 	if err := h.s.UpdateBiometricLog(r.Context(), &existing); err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -158,6 +164,7 @@ func (h *BiometricHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	if err := h.s.DeleteBiometricLog(r.Context(), claims.UserID, date); err != nil {
+		slog.Error("database operation failed", "err", err, "endpoint", r.URL.Path)
 		respond.Error(w, http.StatusInternalServerError, "database error")
 		return
 	}

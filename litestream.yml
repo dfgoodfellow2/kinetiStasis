@@ -1,11 +1,11 @@
-dbs:
+  dbs:
   - path: /data/diet.db
     replicas:
       - type: s3
-        bucket: ${LITESTREAM_BUCKET}
+        bucket: ${BUCKET_NAME}
         path: diet.db
-        region: ${LITESTREAM_REGION}
-        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
-        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
-        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${AWS_REGION}
+        endpoint: ${AWS_ENDPOINT_URL_S3}
+        access-key-id: ${AWS_ACCESS_KEY_ID}
+        secret-access-key: ${AWS_SECRET_ACCESS_KEY}
         force-path-style: true
