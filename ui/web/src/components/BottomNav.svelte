@@ -1,5 +1,6 @@
 <script>
   import { store, setCurrentPage } from '../lib/stores.svelte.js'
+  import Icon from './Icon.svelte'
 </script>
 
 <nav class="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-gray-800" style="padding-bottom: env(safe-area-inset-bottom);">
@@ -12,7 +13,7 @@
       aria-current={store.currentPage === 'dashboard' ? 'page' : undefined}
       type="button"
     >
-      <div class="text-xl">🏠</div>
+      <Icon name="home" />
       <div class="text-xs">Dashboard</div>
     </button>
 
@@ -24,7 +25,7 @@
       aria-current={store.currentPage === 'logmeal' ? 'page' : undefined}
       type="button"
     >
-      <div class="text-xl">➕</div>
+      <Icon name="log-meal" />
       <div class="text-xs">Log</div>
     </button>
 
@@ -36,7 +37,7 @@
       aria-current={store.currentPage === 'checkin' ? 'page' : undefined}
       type="button"
     >
-      <div class="text-xl">✅</div>
+      <Icon name="checkin" />
       <div class="text-xs">Check-In</div>
     </button>
 
@@ -48,7 +49,7 @@
       aria-current={store.currentPage === 'history' ? 'page' : undefined}
       type="button"
     >
-      <div class="text-xl">📊</div>
+      <Icon name="history" />
       <div class="text-xs">History</div>
     </button>
 
@@ -60,7 +61,7 @@
       aria-current={store.currentPage === 'workoutlog' ? 'page' : undefined}
       type="button"
     >
-      <div class="text-xl">🏋️</div>
+      <Icon name="workout" />
       <div class="text-xs">Workout</div>
     </button>
 
@@ -72,7 +73,7 @@
       aria-current={store.currentPage === 'profile' ? 'page' : undefined}
       type="button"
     >
-      <div class="text-xl">👤</div>
+      <Icon name="profile" />
       <div class="text-xs">Profile</div>
     </button>
   </div>

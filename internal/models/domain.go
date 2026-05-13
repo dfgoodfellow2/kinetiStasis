@@ -256,6 +256,15 @@ type ReadinessResult struct {
 	GripZ float64 `json:"gripZ"`
 	BoltZ float64 `json:"boltZ"`
 
+	// Standard deviation of the 14-day grip values used for z-score calculation
+	GripSD float64 `json:"gripSD"`
+	// Exponential moving average of the 14-day grip values
+	GripEMA float64 `json:"gripEMA"`
+	// Standard deviation of the 14-day BOLT values used for z-score calculation
+	BoltSD float64 `json:"boltSD"`
+	// Exponential moving average of the 14-day BOLT values
+	BoltEMA float64 `json:"boltEMA"`
+
 	// Notes / warnings
 	Notes []string `json:"notes"`
 

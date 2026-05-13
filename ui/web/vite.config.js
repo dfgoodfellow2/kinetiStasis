@@ -9,9 +9,9 @@ export default defineConfig({
     svelte(),
     VitePWA({
       registerType: 'autoUpdate',
-      manifest: {
-        name: 'Diet Tracker',
-        short_name: 'DietTracker',
+        manifest: {
+        name: 'kinetistasis',
+        short_name: 'kinetistasis',
         description: 'Personal diet and fitness tracker',
         theme_color: '#10b981',
         background_color: '#111827',

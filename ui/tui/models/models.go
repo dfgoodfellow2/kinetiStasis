@@ -159,6 +159,10 @@ type ReadinessResult struct {
 	VelocityDelta float64  `json:"velocityDelta"`
 	GripZ         float64  `json:"gripZ"`
 	BoltZ         float64  `json:"boltZ"`
+	GripSD        float64  `json:"gripSD"`
+	GripEMA       float64  `json:"gripEMA"`
+	BoltSD        float64  `json:"boltSD"`
+	BoltEMA       float64  `json:"boltEMA"`
 	Notes         []string `json:"notes"`
 }
 
