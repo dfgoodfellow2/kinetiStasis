@@ -165,14 +165,38 @@ let checklist = $derived(data ? [
           {@const bulbColor = level === 'green' ? 'bg-green-500' : level === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'}
           {@const arrowIcon = velocity === 'improving' ? '↑' : velocity === 'declining' ? '↓' : '→'}
           {@const arrowColor = velocity === 'improving' ? 'text-green-400' : velocity === 'declining' ? 'text-red-400' : 'text-gray-400'}
-          <div class="flex items-center justify-center gap-4">
-              <div class="flex flex-col items-center">
-                <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
-                <span class="text-xs text-gray-400 mt-1">Rz: {(data.readiness?.rz ?? 0).toFixed(2)}</span>
+          <div class="grid grid-cols-2 gap-3">
+            <!-- Left: current readiness display -->
+            <div class="flex flex-col items-center justify-center gap-1">
+              <div class="flex items-center justify-center gap-3">
+                <div class="flex flex-col items-center">
+                  <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
+                  <span class="text-xs text-gray-400 mt-1">Rz: {(data.readiness?.rz ?? 0).toFixed(2)}</span>
+                </div>
+                <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
               </div>
-            <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
+              <div class="text-xs text-gray-400">Trend: <span class="font-semibold">{velocity}</span></div>
+            </div>
+            <!-- Right: SD / EMA values -->
+            <div class="border-l border-gray-700 pl-3 space-y-2 text-xs">
+              <div>
+                <div class="text-gray-500 mb-0.5">Grip</div>
+                <div class="font-tabular-nums text-gray-200">
+                  SD: <span class="font-semibold">{(data.readiness?.gripSD ?? 0).toFixed(2)}</span>
+                  <span class="text-gray-600 mx-1">|</span>
+                  EMA: <span class="font-semibold">{(data.readiness?.gripEMA ?? 0).toFixed(2)}</span>
+                </div>
+              </div>
+              <div>
+                <div class="text-gray-500 mb-0.5">BOLT</div>
+                <div class="font-tabular-nums text-gray-200">
+                  SD: <span class="font-semibold">{(data.readiness?.boltSD ?? 0).toFixed(2)}</span>
+                  <span class="text-gray-600 mx-1">|</span>
+                  EMA: <span class="font-semibold">{(data.readiness?.boltEMA ?? 0).toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="text-xs text-gray-400 mt-2 text-center">Trend: <span class="font-semibold">{velocity}</span></div>
         </Card>
       </div>
     </div>
