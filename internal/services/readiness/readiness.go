@@ -1,6 +1,7 @@
 package readiness
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -16,6 +17,22 @@ type SignalAnalysis struct {
 	EMA               float64
 	StandardDeviation float64
 	ZScore            float64
+}
+
+// ReadinessThresholdZone defines a consecutive-day escalation zone.
+type ReadinessThresholdZone struct {
+	MinZ       float64 // inclusive lower bound for |z|
+	MaxZ       float64 // exclusive upper bound (0 = no bound)
+	DaysYellow int     // consecutive days to trigger yellow
+	DaysRed    int     // consecutive days to trigger red
+}
+
+// DefaultThresholdZones are the standard readiness escalation rules.
+// Inspired by Andy Galpin's HRV framework (2 SD >5 days → action),
+// but graduated for faster response.
+var DefaultThresholdZones = []ReadinessThresholdZone{
+	{MinZ: 2.0, MaxZ: 0, DaysYellow: 2, DaysRed: 3},   // Severe: |z| ≥ 2
+	{MinZ: 1.0, MaxZ: 2.0, DaysYellow: 4, DaysRed: 5}, // Moderate: 1 ≤ |z| < 2
 }
 
 // analyzeSignal computes EMA, SD, and z-score for a set of values.
@@ -78,11 +95,92 @@ func IdentifySynergy(zg, zb float64) string {
 	return ""
 }
 
+// computeCombinedRz computes the weighted combined Rz from grip and BOLT signals.
+func computeCombinedRz(logs []models.BiometricLog, gripWeight float64) (float64, bool, bool) {
+	grip := analyzeGrip(logs, constants.ReadinessEMAAlpha)
+	bolt := analyzeBolt(logs, constants.ReadinessEMAAlpha)
+
+	Rz := 0.0
+	weightSum := 0.0
+	if grip.HasSufficientData {
+		Rz += grip.ZScore * gripWeight
+		weightSum += gripWeight
+	}
+	// boltWeight derived from gripWeight
+	boltWeight := 1.0 - gripWeight
+	if bolt.HasSufficientData {
+		Rz += bolt.ZScore * boltWeight
+		weightSum += boltWeight
+	}
+	if weightSum > 0 {
+		Rz /= weightSum
+	}
+	return Rz, grip.HasSufficientData, bolt.HasSufficientData
+}
+
+// filterLogsUpTo returns all logs with Date <= the given date.
+func filterLogsUpTo(logs []models.BiometricLog, date string) []models.BiometricLog {
+	var filtered []models.BiometricLog
+	for _, b := range logs {
+		if b.Date <= date {
+			filtered = append(filtered, b)
+		}
+	}
+	return filtered
+}
+
+// computeRzHistory computes the combined Rz for each of the last `days` days.
+// Days are ordered from oldest to newest (index 0 = days-1 days ago).
+func computeRzHistory(logs []models.BiometricLog, profile models.Profile, days int) []float64 {
+	if len(logs) == 0 {
+		return make([]float64, days)
+	}
+
+	gripWeight := profile.GripWeight
+	if gripWeight <= 0 || gripWeight >= 1 {
+		gripWeight = 0.5
+	}
+
+	today := time.Now().UTC()
+	rzSeries := make([]float64, days)
+	for i := 0; i < days; i++ {
+		targetDate := today.AddDate(0, 0, -(days - 1 - i)).Format("2006-01-02")
+		window := filterLogsUpTo(logs, targetDate)
+		if len(window) == 0 {
+			continue
+		}
+		Rz, _, _ := computeCombinedRz(window, gripWeight)
+		rzSeries[i] = Rz
+	}
+	return rzSeries
+}
+
+// countDaysInRange counts trailing consecutive days (from most recent backward)
+// where |Rz| falls within [minZ, maxZ). If maxZ is 0, there is no upper bound.
+//
+// NOTE: A day with no biometric data produces Rz=0 (the zero value for a float64).
+// Since |0| < 1.0, such a day does NOT match any zone and breaks the streak.
+// This means a missed log day resets the consecutive-day count — by design,
+// since we cannot confirm a deviation streak without data.
+func countDaysInRange(rzHistory []float64, minZ, maxZ float64) int {
+	count := 0
+	for i := len(rzHistory) - 1; i >= 0; i-- {
+		absZ := math.Abs(rzHistory[i])
+		inRange := absZ >= minZ && (maxZ == 0 || absZ < maxZ)
+		if inRange {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
+}
+
 // ComputeReadiness computes CNS readiness using weighted Z-scores from grip and BOLT,
-// with sleep and subjective feel as minor modifiers.
+// with consecutive-day threshold escalation informed by Andy Galpin's HRV framework.
 func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) models.ReadinessResult {
 	gripWeight := profile.GripWeight
-	if gripWeight <= 0 || gripWeight > 1 {
+	if gripWeight <= 0 || gripWeight >= 1 {
 		gripWeight = 0.5
 	}
 	boltWeight := 1.0 - gripWeight
@@ -98,7 +196,7 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 		notes = append(notes, "BOLT below baseline")
 	}
 
-	makeResult := func(level, message string, rz float64) models.ReadinessResult {
+	makeResult := func(level, message string, rz float64, consecutiveDays int) models.ReadinessResult {
 		score := 50 + (rz/3.0)*50
 		if score < 0 {
 			score = 0
@@ -116,41 +214,27 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 			category = "moderate"
 		}
 		return models.ReadinessResult{
-			Level:    level,
-			Message:  message,
-			Rz:       rz,
-			GripZ:    grip.ZScore,
-			BoltZ:    bolt.ZScore,
-			GripSD:   grip.StandardDeviation,
-			GripEMA:  grip.EMA,
-			BoltSD:   bolt.StandardDeviation,
-			BoltEMA:  bolt.EMA,
-			Notes:    notes,
-			Score:    score,
-			Category: category,
+			Level:           level,
+			Message:         message,
+			Rz:              rz,
+			GripZ:           grip.ZScore,
+			BoltZ:           bolt.ZScore,
+			GripSD:          grip.StandardDeviation,
+			GripEMA:         grip.EMA,
+			BoltSD:          bolt.StandardDeviation,
+			BoltEMA:         bolt.EMA,
+			Notes:           notes,
+			Score:           score,
+			Category:        category,
+			ConsecutiveDays: consecutiveDays,
 		}
 	}
 
 	if !grip.HasSufficientData && !bolt.HasSufficientData {
-		return makeResult("green", "Learning...", 0)
+		return makeResult("green", "Learning...", 0, 0)
 	}
 
-	if grip.HasSufficientData && bolt.HasSufficientData {
-		if math.Abs(grip.ZScore) >= 2.0 || math.Abs(bolt.ZScore) >= 2.0 {
-			msg := "Rest needed"
-			if math.Abs(bolt.ZScore) > math.Abs(grip.ZScore) {
-				msg = "Respiratory stress detected — consider breathing/rest"
-			} else if math.Abs(grip.ZScore) > math.Abs(bolt.ZScore) {
-				msg = "Neuromuscular fatigue detected — consider reduced mechanical load"
-			}
-			return makeResult("red", msg, 0)
-		}
-	} else if grip.HasSufficientData && math.Abs(grip.ZScore) >= 2.0 {
-		return makeResult("red", "Neuromuscular fatigue detected — consider reduced mechanical load", 0)
-	} else if bolt.HasSufficientData && math.Abs(bolt.ZScore) >= 2.0 {
-		return makeResult("red", "Respiratory stress detected — consider breathing/rest", 0)
-	}
-
+	// Compute combined Rz for today
 	Rz := 0.0
 	weightSum := 0.0
 	if grip.HasSufficientData {
@@ -165,32 +249,48 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 		Rz /= weightSum
 	}
 
-	if !grip.HasSufficientData || !bolt.HasSufficientData {
-		singleZ := grip.ZScore
-		sigName := "Neuromuscular"
-		if !grip.HasSufficientData {
-			singleZ = bolt.ZScore
-			sigName = "Respiratory"
+	// Check consecutive-day thresholds
+	rzHistory := computeRzHistory(biometrics, profile, 14) // 14-day history for streak detection
+
+	level := "green"
+	msg := "Ready"
+	var consecutiveDays int
+
+	// Check each zone, most severe first
+	for _, zone := range DefaultThresholdZones {
+		count := countDaysInRange(rzHistory, zone.MinZ, zone.MaxZ)
+		if count >= zone.DaysRed {
+			level = "red"
+			if zone.MinZ >= 2.0 {
+				msg = fmt.Sprintf("Severe deviation %d days — rest required", count)
+			} else {
+				msg = fmt.Sprintf("Moderate deviation %d days — recovery needed", count)
+			}
+			consecutiveDays = count
+			notes = append(notes, fmt.Sprintf("|Rz| ≥ %.0f for %d consecutive days", zone.MinZ, count))
+			break // highest priority zone wins
 		}
-		if math.Abs(singleZ) >= 1.0 && singleZ < 0 {
-			return makeResult("yellow", sigName+" signal mild — consider easy day", Rz)
+		if count >= zone.DaysYellow {
+			level = "yellow"
+			if zone.MinZ >= 2.0 {
+				msg = fmt.Sprintf("Severe deviation %d days — monitor closely", count)
+			} else {
+				msg = fmt.Sprintf("Moderate deviation %d days — consider easy day", count)
+			}
+			consecutiveDays = count
+			notes = append(notes, fmt.Sprintf("|Rz| ≥ %.0f for %d consecutive days", zone.MinZ, count))
+			break
 		}
-		return makeResult("green", "Ready", Rz)
 	}
 
-	if math.Abs(Rz) >= 1.0 && Rz < 0 {
-		synergy := IdentifySynergy(grip.ZScore, bolt.ZScore)
-		if synergy != "" {
-			return makeResult("yellow", synergy, Rz)
+	// Fallback: if no zone breached, check synergy patterns
+	if level == "green" {
+		if synergy := IdentifySynergy(grip.ZScore, bolt.ZScore); synergy != "" {
+			return makeResult("yellow", synergy, Rz, 0)
 		}
-		return makeResult("yellow", "Mildly fatigued", Rz)
 	}
 
-	if synergy := IdentifySynergy(grip.ZScore, bolt.ZScore); synergy != "" {
-		return makeResult("yellow", synergy, Rz)
-	}
-
-	return makeResult("green", "Ready", Rz)
+	return makeResult(level, msg, Rz, consecutiveDays)
 }
 
 // ComputeReadinessVelocity computes the 7-day rolling average Rz vs the prior
@@ -200,17 +300,12 @@ func ComputeReadinessVelocity(biometrics []models.BiometricLog, profile models.P
 		return 0, 0, 0, "→"
 	}
 
-	today := time.Now()
+	today := time.Now().UTC()
 
 	rzSeries := make([]float64, 14)
 	for i, daysAgo := range [14]int{13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0} {
 		targetDate := today.AddDate(0, 0, -daysAgo).Format("2006-01-02")
-		var window []models.BiometricLog
-		for _, b := range biometrics {
-			if b.Date <= targetDate {
-				window = append(window, b)
-			}
-		}
+		window := filterLogsUpTo(biometrics, targetDate)
 		if len(window) == 0 {
 			rzSeries[i] = 0
 			continue

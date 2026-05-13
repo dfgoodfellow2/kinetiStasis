@@ -179,6 +179,34 @@ type CheckInLog struct {
 	CreatedAt      string  `json:"createdAt"`
 }
 
+// CheckinPreview is returned by GET /v1/checkin
+type CheckinPreview struct {
+	// Readiness gating
+	CanCheckIn           bool `json:"canCheckIn"`
+	DaysSinceLastCheckIn int  `json:"daysSinceLastCheckIn"`
+
+	// Adaptive TDEE result
+	ObservedTDEE   float64 `json:"observedTdee"`
+	EstimatedTDEE  float64 `json:"estimatedTdee"`
+	Confidence     string  `json:"confidence"`
+	EmergencyAlert bool    `json:"emergencyAlert"`
+	TDEEMethod     string  `json:"tdeeMethod"`
+	DaysOfData     int     `json:"daysOfData"`
+
+	// Weight trend (display context only)
+	WeightStart  float64 `json:"weightStart"`
+	WeightEnd    float64 `json:"weightEnd"`
+	WeightChange float64 `json:"weightChange"`
+
+	// Current nutritional state
+	CurrentCalories float64 `json:"currentCalories"`
+	EatBackExercise bool    `json:"eatBackExercise"`
+
+	// Recommendation from adaptive engine
+	RecommendedCalories int     `json:"recommendedCalories"`
+	CalorieAdjustment   float64 `json:"calorieAdjustment"`
+}
+
 // SavedMeal is a named, reusable meal with its macro breakdown.
 type SavedMeal struct {
 	ID        string  `json:"id"`
@@ -267,6 +295,8 @@ type ReadinessResult struct {
 
 	// Notes / warnings
 	Notes []string `json:"notes"`
+	// ConsecutiveDays tracks how many consecutive days the current alert level has been active (0 if green)
+	ConsecutiveDays int `json:"consecutiveDays"`
 
 	// Legacy compat fields (derived, kept so any existing callers don't break)
 	Score    float64 `json:"score"`    // 50 + (Rz/3)*50 clamped 0-100
