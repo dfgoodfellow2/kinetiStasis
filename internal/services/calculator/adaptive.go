@@ -6,6 +6,7 @@ import (
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/nutrition"
 )
 
 const (
@@ -16,7 +17,8 @@ const (
 )
 
 // ComputeObservedTDEE implements tiered adaptive TDEE estimation.
-func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.BiometricLog, profile models.Profile) models.TDEEResult {
+// bodyFatPct is optional (0 means unavailable) — used for Katch-McArdle estimated TDEE.
+func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.BiometricLog, profile models.Profile, bodyFatPct float64) models.TDEEResult {
 	// determine lookback days
 	capDays := profile.TDEELookbackDays
 	if capDays <= 0 {
@@ -145,17 +147,24 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 	// estimated TDEE from latest biometric weight if available
 	est := DefaultFallbackTDEE
 	if len(biometrics) > 0 {
-		// find last with weight
 		for i := len(biometrics) - 1; i >= 0; i-- {
 			if biometrics[i].WeightKg > 0 {
-				// approximate BMR via Mifflin using profile height/age
 				weightKg := biometrics[i].WeightKg
-				bmr := 10*weightKg + 6.25*profile.HeightCm - 5*float64(profile.Age)
-				if profile.Sex == "male" {
-					bmr += 5
+
+				// Use Katch-McArdle if body fat % is available, else Mifflin-St Jeor
+				var bmr float64
+				if bodyFatPct > 0 && bodyFatPct < 60 {
+					lbm := weightKg * (1 - bodyFatPct/100)
+					bmr = 370 + (21.6 * lbm)
 				} else {
-					bmr -= 161
+					bmr = 10*weightKg + 6.25*profile.HeightCm - 5*float64(profile.Age)
+					if profile.Sex == "male" {
+						bmr += 5
+					} else {
+						bmr -= 161
+					}
 				}
+
 				// NEAT multiplier
 				neat := 1.1
 				switch profile.Activity {
@@ -175,16 +184,12 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 	}
 
 	emergency := false
-	if confidence != "low" && est > 0 {
-		if math.Abs(observed-est)/est > 0.15 {
-			emergency = true
-		}
-	}
 
 	return models.TDEEResult{EstimatedTDEE: est, ObservedTDEE: observed, Confidence: confidence, DaysOfData: days, LookbackDays: capDays, Method: method, EmergencyAlert: emergency}
 }
 
 // ComputeWeeklyAdjustment computes a damped daily calorie recommendation
+// using estimated TDEE as baseline. Kept for alternate uses (dashboard etc.).
 func ComputeWeeklyAdjustment(observed models.TDEEResult, profile models.Profile, exerciseCalories float64, eatBack bool) float64 {
 	baseline := observed.EstimatedTDEE
 	if baseline <= 0 {
@@ -215,4 +220,35 @@ func ComputeWeeklyAdjustment(observed models.TDEEResult, profile models.Profile,
 		final = constants.MinCalorieFloor
 	}
 	return final
+}
+
+// ComputeCheckinRecommendation computes a damped daily calorie recommendation
+// for the weekly check-in. Uses current targets as the baseline and observed TDEE
+// as the ideal, clamped to ±500 kcal swing.
+// ComputeCheckinRecommendation computes a damped daily calorie recommendation
+// for the weekly check-in. Uses current targets as the baseline and the
+// goal-adjusted observed TDEE as the ideal, clamped to ±500 kcal swing.
+func ComputeCheckinRecommendation(observed models.TDEEResult, profile models.Profile, currentCalories float64, exerciseCalories float64, eatBack bool) (recommendedCalories int, adjustment float64) {
+	// Apply goal multiplier to observed TDEE so check-in converges toward
+	// the correct cut/bulk/maintenance target, not raw maintenance.
+	goalAdjusted := nutrition.ComputeTargetCalories(observed.ObservedTDEE, profile.Goal)
+
+	var ideal float64
+	if eatBack {
+		ideal = goalAdjusted + exerciseCalories
+	} else {
+		ideal = goalAdjusted
+	}
+
+	delta := ideal - currentCalories
+	if delta > MaxWeeklyCalorieSwing {
+		delta = MaxWeeklyCalorieSwing
+	} else if delta < -MaxWeeklyCalorieSwing {
+		delta = -MaxWeeklyCalorieSwing
+	}
+	final := currentCalories + delta
+	if final < constants.MinCalorieFloor {
+		final = constants.MinCalorieFloor
+	}
+	return int(math.Round(final)), delta
 }

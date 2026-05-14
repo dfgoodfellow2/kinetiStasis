@@ -106,12 +106,32 @@ type ExerciseEntry struct {
 	IntensityRelMax float64 `json:"intensityRelMax,omitempty"`
 	// IntensitySource indicates where intensity was derived from: "1rm", "rpe", "hr", or "default"
 	IntensitySource string `json:"intensitySource,omitempty"`
+
+	// Phase indicates session phase: "warmup" | "main" | "cooldown" | "" (default main)
+	Phase string `json:"phase,omitempty"`
+
+	// GroupID links exercises in a circuit/superset/cluster.
+	// Exercises with the same GroupID belong to the same group.
+	GroupID string `json:"groupId,omitempty"`
+
+	// GroupOrder is the 0-based position within the group (circuit rotation order).
+	GroupOrder int `json:"groupOrder,omitempty"`
+
+	// GroupStyle overrides the workout-level style for this group.
+	// "circuit" | "superset" | "cluster" | "straight" | "" (inherits from workout)
+	GroupStyle string `json:"groupStyle,omitempty"`
+
+	// TargetHRZone is the intended heart rate zone (1-5) for prescriptive tracking.
+	TargetHRZone int `json:"targetHrZone,omitempty"`
+
+	// HRZoneTime stores actual seconds spent in each HR zone, keyed by zone number.
+	// e.g. {"1": 60, "2": 720, "3": 180}
+	HRZoneTime map[int]float64 `json:"hrZoneTime,omitempty"`
 }
 
 // WorkoutMetadata holds session-level fields not tracked in individual columns.
 type WorkoutMetadata struct {
-	Type         string   `json:"type"`  // strength|conditioning|hiit|cardio|zone2|mobility|sport|yoga
-	Style        string   `json:"style"` // circuit|emom|amrap|for-time|hiit|cardio
+	Type         string   `json:"type"` // strength|conditioning|hiit|cardio|zone2|mobility|sport|yoga
 	Surface      string   `json:"surface"`
 	Focus        []string `json:"focus"` // e.g. ["Hinge(B)", "Push(U)"]
 	RestInterval string   `json:"restInterval"`
@@ -120,6 +140,8 @@ type WorkoutMetadata struct {
 	MaxHR        int      `json:"maxHr"`
 	Recovers     string   `json:"recovers"`
 	Day          int      `json:"day"`
+	// CoachNotes is coach's feedback/context for the session
+	CoachNotes string `json:"coachNotes,omitempty"`
 }
 
 // WorkoutEntry is a single training session (identified by date + slot).
@@ -186,12 +208,12 @@ type CheckinPreview struct {
 	DaysSinceLastCheckIn int  `json:"daysSinceLastCheckIn"`
 
 	// Adaptive TDEE result
-	ObservedTDEE   float64 `json:"observedTdee"`
-	EstimatedTDEE  float64 `json:"estimatedTdee"`
-	Confidence     string  `json:"confidence"`
-	EmergencyAlert bool    `json:"emergencyAlert"`
-	TDEEMethod     string  `json:"tdeeMethod"`
-	DaysOfData     int     `json:"daysOfData"`
+	ObservedTDEE         float64 `json:"observedTdee"`
+	EstimatedTDEE        float64 `json:"estimatedTdee"`
+	Confidence           string  `json:"confidence"`
+	TDEEMethod           string  `json:"tdeeMethod"`
+	DaysOfData           int     `json:"daysOfData"`
+	LowConfidenceWarning bool    `json:"lowConfidenceWarning"`
 
 	// Weight trend (display context only)
 	WeightStart  float64 `json:"weightStart"`
@@ -372,9 +394,10 @@ type ParsedWorkout struct {
 	Exercises      []ExerciseEntry `json:"exercises"`
 	RawInput       string          `json:"rawInput"`
 	Notes          string          `json:"notes,omitempty"`
+	// CoachNotes is coach's feedback/context for the session
+	CoachNotes string `json:"coachNotes,omitempty"`
 	// Session metadata (maps to WorkoutMetadata)
 	Type         string   `json:"type"`
-	Style        string   `json:"style"`
 	Surface      string   `json:"surface"`
 	Focus        []string `json:"focus"`
 	RestInterval string   `json:"restInterval"`

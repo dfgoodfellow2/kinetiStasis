@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -30,12 +31,13 @@ func (h *CalcHandler) TDEE(w http.ResponseWriter, r *http.Request) {
 	// fetch profile
 	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			// New user with no profile yet — return an empty dashboard rather than 404.
 			respond.JSON(w, http.StatusOK, models.DashboardData{})
 			return
 		}
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch profile for tdee", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
@@ -52,16 +54,18 @@ func (h *CalcHandler) TDEE(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().UTC().AddDate(0, 0, -lookback).Format(constants.DateFormat)
 	nutLogs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs for tdee", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs for tdee", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
-	res := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile)
+	res := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
 	respond.JSON(w, http.StatusOK, res)
 }
 
@@ -69,32 +73,36 @@ func (h *CalcHandler) TDEE(w http.ResponseWriter, r *http.Request) {
 func (h *CalcHandler) Macros(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "profile not found")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch profile for macros", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
 	weight, err := h.s.FetchLatestWeight(r.Context(), claims.UserID)
-	if err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch latest weight for macros", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
 	nutLogs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, time.Now().UTC().AddDate(0, 0, -constants.DefaultTDEELookbackDays).Format(constants.DateFormat))
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs for macros", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, time.Now().UTC().AddDate(0, 0, -constants.DefaultTDEELookbackDays).Format(constants.DateFormat))
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs for macros", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile)
+	observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
 	plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
 	respond.JSON(w, http.StatusOK, plan)
 }
@@ -103,17 +111,19 @@ func (h *CalcHandler) Macros(w http.ResponseWriter, r *http.Request) {
 func (h *CalcHandler) Readiness(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "profile not found")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch profile for readiness", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, time.Now().UTC().AddDate(0, 0, -constants.DefaultReadinessLookbackDays).Format(constants.DateFormat))
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs for readiness", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	res := readiness.ComputeReadiness(bioLogs, profile)
@@ -128,24 +138,27 @@ func (h *CalcHandler) BodyFat(w http.ResponseWriter, r *http.Request) {
 		method = "navy"
 	}
 	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "profile not found")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch profile for bodyfat", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	weight, err := h.s.FetchLatestWeight(r.Context(), claims.UserID)
-	if err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch latest weight for bodyfat", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
 	// most recent body measurements
 	neckCm, waistCm, hipsCm, err := h.s.FetchBodyMeasurements(r.Context(), claims.UserID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch body measurements for bodyfat", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
@@ -167,18 +180,20 @@ func (h *CalcHandler) BodyFat(w http.ResponseWriter, r *http.Request) {
 func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "profile not found")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch profile for dashboard", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
 	weight, err := h.s.FetchLatestWeight(r.Context(), claims.UserID)
-	if err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch latest weight for dashboard", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
@@ -199,26 +214,30 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	nut90, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since90)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs for dashboard", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	bio30, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since30)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs for dashboard", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	workouts7, err := h.s.FetchWorkouts(r.Context(), claims.UserID, since7)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch workouts (7d) for dashboard", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	workouts30, err := h.s.FetchWorkouts(r.Context(), claims.UserID, since30)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch workouts (30d) for dashboard", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
-	tdeeRes := calculator.ComputeObservedTDEE(nut90, bio30, profile)
+	tdeeRes := calculator.ComputeObservedTDEE(nut90, bio30, profile, 0)
 	macros := nutrition.FullDietPlan(profile, weight, tdeeRes.ObservedTDEE)
 
 	targets, terr := h.s.FetchTargets(r.Context(), claims.UserID)

@@ -104,7 +104,7 @@ func main() {
 		log.Fatalf("fetch biometric logs: %v", err)
 	}
 
-	tdeeRes := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile)
+	tdeeRes := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
 
 	// If observed TDEE looks clearly wrong (very low or too few days), prefer static
 	useObserved := true

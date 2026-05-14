@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"database/sql"
-	// removed temporary debug logging
+	"errors"
+	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/calculator"
@@ -19,51 +22,56 @@ type CheckinHandler struct{ s store.Store }
 
 func NewCheckinHandler(s store.Store) *CheckinHandler { return &CheckinHandler{s: s} }
 
-// GET /v1/checkin - preview readiness and adjustment
+// GET /v1/checkin — preview readiness and adjustment using adaptive TDEE
 func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
-	// fetch profile
+
+	// Fetch profile
 	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
-	if err == sql.ErrNoRows {
-		respond.JSON(w, http.StatusOK, models.DashboardData{})
+	if errors.Is(err, sql.ErrNoRows) {
+		respond.JSON(w, http.StatusOK, models.CheckinPreview{})
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch profile for checkin preview", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
-	// gather lookback data (14 days)
-	since := time.Now().UTC().AddDate(0, 0, -14).Format("2006-01-02")
+	// Gather lookback data (use profile lookback or default)
+	lookback := profile.TDEELookbackDays
+	if lookback <= 0 {
+		lookback = constants.DefaultTDEELookbackDays
+	}
+	since := time.Now().UTC().AddDate(0, 0, -lookback).Format(constants.DateFormat)
 	nutLogs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs for checkin preview", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs for checkin preview", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
-	// fetch current targets
+	// Fetch current targets
 	targets, err := h.s.FetchTargets(r.Context(), claims.UserID)
-	if err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch targets for checkin preview", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
-	// fetch last checkin if exists
-	var last models.CheckInLog
+	// Fetch last check-in for date gating
 	var lastPtr *models.CheckInLog
-	// Try to use store method to fetch last checkin date
 	if lastDate, err := h.s.FetchLastCheckin(r.Context(), claims.UserID); err == nil {
 		if lastDate != "" {
-			last = models.CheckInLog{CheckInDate: lastDate}
-			lastPtr = &last
+			lastPtr = &models.CheckInLog{CheckInDate: lastDate}
 		}
 	} else {
-		// fall back to fetching full last checkin row
 		if l, err2 := h.s.GetLastCheckin(r.Context(), claims.UserID); err2 == nil {
 			lastPtr = &l
 		}
@@ -77,11 +85,64 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	adj := calculator.ComputeWeightGoalAdjustment(profile, targets, nutLogs, bioLogs, lastPtr, bodyFatPct)
-	respond.JSON(w, http.StatusOK, adj)
+
+	// --- Adaptive TDEE computation (intake-driven, not weight-delta) ---
+	tdeeRes := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, bodyFatPct)
+
+	// --- Weight trend display (cosmetic, from biometric logs) ---
+	var weightStart, weightEnd, weightChange float64
+	if len(bioLogs) >= 2 {
+		weightStart = bioLogs[0].WeightKg
+		weightEnd = bioLogs[len(bioLogs)-1].WeightKg
+		weightChange = weightEnd - weightStart
+	}
+
+	// --- Date gating (MinCheckinIntervalDays rule) ---
+	daysSinceCheckIn := int(math.MaxInt32)
+	canCheckIn := true
+	if lastPtr != nil {
+		lastDate, _ := time.Parse(constants.DateFormat, lastPtr.CheckInDate)
+		daysSinceCheckIn = int(time.Since(lastDate).Hours() / 24)
+		canCheckIn = daysSinceCheckIn >= constants.MinCheckinIntervalDays
+	}
+	hasEnoughData := len(bioLogs) >= constants.MinBiometricLogsForCheckin
+	canCheckIn = canCheckIn && hasEnoughData
+
+	// --- Compute damped recommendation ---
+	currentCals := targets.Calories
+	recCals, adj := calculator.ComputeCheckinRecommendation(tdeeRes, profile, currentCals, 0, targets.EatBackExercise)
+
+	// Low-confidence + full-clamp warning: when we have very few data days
+	// and the adjustment is maxed at ±500, the user should know the
+	// recommendation is extrapolating from limited information.
+	lowConfidenceClamp := tdeeRes.Confidence == "low" && math.Abs(adj) >= 490
+
+	preview := models.CheckinPreview{
+		CanCheckIn:           canCheckIn,
+		DaysSinceLastCheckIn: daysSinceCheckIn,
+
+		ObservedTDEE:         tdeeRes.ObservedTDEE,
+		EstimatedTDEE:        tdeeRes.EstimatedTDEE,
+		Confidence:           tdeeRes.Confidence,
+		TDEEMethod:           tdeeRes.Method,
+		DaysOfData:           tdeeRes.DaysOfData,
+		LowConfidenceWarning: lowConfidenceClamp,
+
+		WeightStart:  weightStart,
+		WeightEnd:    weightEnd,
+		WeightChange: weightChange,
+
+		CurrentCalories: currentCals,
+		EatBackExercise: targets.EatBackExercise,
+
+		RecommendedCalories: recCals,
+		CalorieAdjustment:   adj,
+	}
+
+	respond.JSON(w, http.StatusOK, preview)
 }
 
-// POST /v1/checkin - record check-in and apply target changes
+// POST /v1/checkin — record check-in and optionally apply target changes
 func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	var in models.CheckInLog
@@ -90,44 +151,36 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	in.UserID = claims.UserID
 	in.ID = uuid.NewString()
-	// Use today's date if not provided
 	if in.CheckInDate == "" {
 		in.CheckInDate = time.Now().UTC().Format("2006-01-02")
 	}
 
-	// enforce 5-day rate limit: check last check-in date
-	var err error
-	var lastDate string
-	lastDate, err = h.s.FetchLastCheckin(r.Context(), claims.UserID)
-	if err == nil && lastDate != "" {
-		t, _ := time.Parse("2006-01-02", lastDate)
-		if int(time.Since(t).Hours()/24) < 5 {
-			respond.Error(w, http.StatusTooEarly, "check-in not available yet")
-			return
-		}
-	}
-	// naive insert via store
+	// NOTE: Previously there was a 5-day rate limit here. That gating
+	// has been removed — the Create handler only enforces the unique
+	// constraint (one check-in per date).
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	in.CreatedAt = now
-	if err = h.s.CreateCheckinLog(r.Context(), &in); err != nil {
-		// Check if it's a unique constraint violation (already checked in today)
+
+	// Insert check-in log
+	if err := h.s.CreateCheckinLog(r.Context(), &in); err != nil {
 		if err.Error() == "UNIQUE constraint failed: check_in_logs.user_id, check_in_logs.check_in_date" {
 			respond.Error(w, http.StatusConflict, "already checked in today")
 			return
 		}
+		slog.Error("create checkin log", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
-	// Optionally update targets if calories_after provided
-	if in.CaloriesAfter > 0 {
-		// fetch existing targets for snapshot
-		existing, err := h.s.FetchTargets(r.Context(), claims.UserID)
-		if err != nil && err != sql.ErrNoRows {
-			respond.Error(w, http.StatusInternalServerError, "database error")
-			return
-		}
-		// snapshot
+	// Always snapshot current targets for history
+	existing, err := h.s.FetchTargets(r.Context(), claims.UserID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch targets after checkin", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+	if err == nil {
 		snap := models.TargetSnapshot{
 			ID:            in.ID,
 			UserID:        claims.UserID,
@@ -140,15 +193,20 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:     now,
 		}
 		if err := h.s.CreateTargetSnapshot(r.Context(), &snap); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("create target snapshot", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
-		// upsert new targets (minimal: only calories changed)
+	}
+
+	// Only update targets if caloriesAfter provided (accept) vs skip
+	if in.CaloriesAfter > 0 {
 		targets := existing
 		targets.Calories = float64(in.CaloriesAfter)
 		targets.UpdatedAt = now
 		if err := h.s.UpsertTargets(r.Context(), &targets); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("upsert targets after checkin", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
 	}

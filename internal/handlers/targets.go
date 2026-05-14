@@ -2,7 +2,8 @@ package handlers
 
 import (
 	"database/sql"
-	"log"
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -26,16 +27,17 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var t models.Targets
 	var err error
 	t, err = h.s.FetchTargets(r.Context(), claims.UserID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// Compute fallback targets when no stored targets exist for the user.
 		profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			// No profile — cannot compute targets
 			respond.Error(w, http.StatusNotFound, "profile not found")
 			return
 		}
 		if err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("fetch profile for fallback targets", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
 
@@ -51,16 +53,18 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 		nutLogs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since)
 		if err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("fetch nutrition logs for fallback targets", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
 		bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since)
 		if err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("fetch biometric logs for fallback targets", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
 
-		observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile)
+		observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
 		plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
 
 		// map MacroResult -> Targets
@@ -75,13 +79,14 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			EatBackExercise: false,
 			UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
 		}
-		log.Printf("returning computed fallback targets for user=%s (observed_days=%d)", claims.UserID, observed.DaysOfData)
+		slog.Info("returning computed fallback targets", "user", claims.UserID, "observed_days", observed.DaysOfData)
 		w.Header().Set("X-Computed-Targets", "true")
 		respond.JSON(w, http.StatusOK, computed)
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch targets", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, t)
@@ -102,14 +107,15 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// load existing
 	var existing models.Targets
 	existing, err = h.s.FetchTargets(r.Context(), claims.UserID)
-	if err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch targets for update", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
 	// if changed, snapshot old
 	changed := false
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		if existing.Calories != in.Calories || existing.ProteinG != in.ProteinG || existing.CarbsG != in.CarbsG || existing.FatG != in.FatG || existing.FiberG != in.FiberG {
 			changed = true
 		}
@@ -118,13 +124,15 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if changed {
 		snap := &models.TargetSnapshot{ID: uuid.New().String(), UserID: claims.UserID, EffectiveDate: time.Now().UTC().Format("2006-01-02"), Calories: existing.Calories, ProteinG: existing.ProteinG, CarbsG: existing.CarbsG, FatG: existing.FatG, FiberG: existing.FiberG, CreatedAt: now}
 		if err := h.s.CreateTargetSnapshot(r.Context(), snap); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("create target snapshot", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
 	}
 	in.UpdatedAt = now
 	if err := h.s.UpsertTargets(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("upsert targets", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	in.UpdatedAt = now
@@ -136,7 +144,8 @@ func (h *TargetsHandler) History(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	out, err := h.s.FetchTargetHistory(r.Context(), claims.UserID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch target history", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)

@@ -23,6 +23,14 @@ const (
 	// applied when no "from" query param is provided on export endpoints.
 	DefaultExportLookbackDays = 30
 
+	// MinCheckinIntervalDays is the minimum number of days that must elapse
+	// between weekly check-ins to prevent reactive adjustments from noisy data.
+	MinCheckinIntervalDays = 5
+
+	// MinBiometricLogsForCheckin is the minimum number of biometric log entries
+	// required to perform a weekly check-in (ensures enough weight data).
+	MinBiometricLogsForCheckin = 3
+
 	// MinCalorieFloor is the absolute minimum daily calorie target that the adaptive
 	// TDEE algorithm will ever recommend, regardless of goal or adjustment.
 	MinCalorieFloor = 1200.0
