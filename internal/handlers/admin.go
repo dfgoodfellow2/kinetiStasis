@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -24,7 +25,8 @@ func NewAdminHandler(s store.Store) *AdminHandler {
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.s.ListUsers(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("list users", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, users)
@@ -42,7 +44,8 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.s.DeleteUser(r.Context(), targetID); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete user", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -54,7 +57,8 @@ func (h *AdminHandler) PromoteUser(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	if err := h.s.PromoteUser(r.Context(), targetID, now); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("promote user", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "promoted"})
@@ -74,7 +78,8 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 	// Ensure at least one admin remains
 	adminCount, err := h.s.CountAdmins(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("count admins", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	if adminCount <= 1 {
@@ -84,7 +89,8 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := h.s.DemoteUser(r.Context(), targetID, now); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("demote user", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "demoted"})

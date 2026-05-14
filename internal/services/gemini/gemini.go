@@ -92,7 +92,6 @@ func (c *Client) ParseWorkout(ctx context.Context, text string) (models.ParsedWo
   "title": "string",
   "slot": "string",
   "type": "strength|conditioning|hiit|cardio|zone2|mobility|sport|yoga",
-  "style": "circuit|emom|amrap|for-time|hiit|cardio|\"\"",
   "surface": "string",
   "focus": ["string"],
   "restInterval": "string",
@@ -115,7 +114,13 @@ func (c *Client) ParseWorkout(ctx context.Context, text string) (models.ParsedWo
       "pace": "string",
       "rpe": number,
       "loadRaw": "string",
-      "durationRaw": "string"
+      "durationRaw": "string",
+      "phase": "\"warmup\"|\"main\"|\"cooldown\"|\"\"",
+      "groupId": "string",
+      "groupOrder": "number",
+      "groupStyle": "\"circuit\"|\"superset\"|\"cluster\"|\"straight\"|\"\"",
+      "targetHrZone": "number",
+      "hrZoneTime": "object"
     }
   ]
 }
@@ -129,6 +134,13 @@ Rules:
 - tempo: preserve as string e.g. "3-1-2-1" (eccentric-pause-concentric-pause), "" if not specified
 - Use 0 for unknown numbers, "" for unknown strings, [] for unknown arrays
 - Return ONLY valid JSON, no explanation
+
+- phase: "warmup"|"main"|"cooldown"|"" — identifies if exercise is a warmup, main work, or cooldown
+- groupId: if exercises belong to a circuit or superset, give them the same groupId
+- groupOrder: position within the circuit/superset (0-based)
+- groupStyle: "circuit" for circuits, "superset" for supersets, "straight" for standalone sets
+- targetHrZone: intended heart rate zone (1-5) for the exercise
+- hrZoneTime: object with zone numbers as keys and seconds as values e.g. {"2": 720, "3": 180}
 
 WORKOUT: %s`, text)
 
@@ -160,7 +172,7 @@ func callGemini(ctx context.Context, apiKey, prompt string) (string, error) {
 		mdl := client.GenerativeModel(modelName)
 		resp, err := mdl.GenerateContent(ctx, genai.Text(prompt))
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("generate content: %w", err)
 		}
 		if resp == nil || len(resp.Candidates) == 0 {
 			return "", errors.New("empty response from API")

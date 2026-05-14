@@ -166,7 +166,7 @@ func (c *Client) do(method, path string, body interface{}) (*http.Response, erro
 // Returns nil if status is < 400.
 func checkHTTPResponse(resp *http.Response) error {
 	if resp.StatusCode >= 400 {
-		return checkHTTPResponse(resp)
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return nil
 }

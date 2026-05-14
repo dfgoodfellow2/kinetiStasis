@@ -51,8 +51,10 @@
   function blankExercise() {
     return {
       name: '', sets: '', reps: '', duration: '', weightLbs: '',
-    tempo: '', rpe: '', pattern: '', bias: '', pace: '',
-    distanceKm: '', elevationM: '',
+      tempo: '', rpe: '', pattern: '', bias: '', pace: '',
+      distanceKm: '', elevationM: '',
+      phase: '', groupId: '', groupOrder: '', groupStyle: '',
+      targetHrZone: '', notes: '', surface: '', met: '',
       _sets: [],
     }
   }
@@ -79,15 +81,15 @@
         title:           workout.title,
         durationMin:     Number(workout.durationMin)    || 0,
         caloriesBurned:  Number(calVal) || 0,
-        rawNotes:        [workout.notes, workout.coachNotes].filter(Boolean).join('\n\n'),
+        rawNotes:        workout.notes || '',
         metadata: {
           type:          workout.type         || '',
-          style:         workout.style        || '',
           surface:       workout.surface      || '',
           focus:         workout.focus ? workout.focus.split(',').map(s => s.trim()).filter(Boolean) : [],
           restInterval:  workout.restInterval || '',
           avgHr:         Number(workout.avgHr) || 0,
           maxHr:         Number(workout.maxHr) || 0,
+          coachNotes:    workout.coachNotes   || '',
         },
         exercises: workout.exercises.map(ex => {
           // If we have preserved _sets from a parse result, use them directly
@@ -118,19 +120,28 @@
               restSeconds: 0,
             }))
           }
-           return {
-              name:         ex.name     || '',
-              category:     ex.pattern  || '',
-              bias:         ex.bias     || '',
-              tempo:        ex.tempo    || '',
-              sets,
-              rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
-              loadRaw:      ex.weightLbs || '',
-              durationRaw:  ex.duration || '',
-              distanceKm:   ex.distanceKm !== '' ? inputDist(ex.distanceKm, store.units) : 0,
-              elevationM:   ex.elevationM !== '' ? inputElev(ex.elevationM, store.units) : 0,
-              pace:         ex.pace || '',
-            }
+            return {
+               name:         ex.name     || '',
+               category:     ex.pattern  || '',
+               bias:         ex.bias     || '',
+               tempo:        ex.tempo    || '',
+               sets,
+               rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
+               loadRaw:      ex.weightLbs || '',
+               durationRaw:  ex.duration || '',
+               distanceKm:   ex.distanceKm !== '' ? inputDist(ex.distanceKm, store.units) : 0,
+               elevationM:   ex.elevationM !== '' ? inputElev(ex.elevationM, store.units) : 0,
+               pace:         ex.pace || '',
+               phase:        ex.phase || '',
+               groupId:      ex.groupId || '',
+               groupOrder:   Number(ex.groupOrder) || 0,
+               groupStyle:   ex.groupStyle || '',
+               targetHrZone: Number(ex.targetHrZone) || 0,
+               hrZoneTime:   ex.hrZoneTime || null,
+               metValue:     Number(ex.met) || 0,
+               notes:        ex.notes || '',
+               surface:      ex.surface || '',
+             }
          }),
       }
       await api.postWorkout(payload)
@@ -210,6 +221,18 @@
       const biasTag = ex.bias === 'bilateral' ? '(B)' : ex.bias === 'unilateral' ? '(U)' : ''
       base += ` [${ex.pattern}${biasTag ? ' ' + biasTag : ''}]`
     }
+    if (ex.phase) base += ` [${ex.phase}]`
+    if (ex.groupId) base += ` [${ex.groupId} #${ex.groupOrder || '?'}]`
+    if (ex.targetHrZone) base += ` [Zone ${ex.targetHrZone}]`
+    if (ex.hrZoneTime && typeof ex.hrZoneTime === 'object') {
+      const parts = []
+      for (let z = 1; z <= 5; z++) {
+        if (ex.hrZoneTime[z] > 0) {
+          parts.push(`Z${z}:${ex.hrZoneTime[z]}s`)
+        }
+      }
+      if (parts.length > 0) base += ` [${parts.join(' ')}]`
+    }
     if (ex.rpe !== '' && ex.rpe !== null && ex.rpe !== undefined) base += ` RPE ${ex.rpe}`
     return base
   }
@@ -252,7 +275,7 @@
       workout.maxHr = w.metadata?.maxHr ? String(w.metadata.maxHr) : (w.metadata?.maxHr ? String(w.metadata.maxHr) : '')
       workout.caloriesBurned = String(w.caloriesBurned ?? '')
       workout.notes = w.rawNotes ?? ''
-      workout.coachNotes = w.coachNotes ?? ''
+      workout.coachNotes = w.metadata?.coachNotes ?? ''
 
       // Map ALL exercise fields from API to simple tab format
       workout.exercises = (w.exercises || []).map(ex => {
@@ -288,7 +311,17 @@
 
           // Bias
           bias: ex.bias || '',
-          
+
+          // New fields
+          phase:        ex.phase        || '',
+          groupId:      ex.groupId      || '',
+          groupOrder:   ex.groupOrder   ?? '',
+          groupStyle:   ex.groupStyle   || '',
+          targetHrZone: ex.targetHrZone ?? '',
+          hrZoneTime:   ex.hrZoneTime   || null,
+          surface:      ex.surface      || '',
+          met:          ex.metValue     ?? '',
+
           // _sets array preserves all set data for save
            _sets: exerciseSets.map(s => ({
             loadKg: s.loadKg ?? 0,
@@ -342,9 +375,9 @@
 
   <!-- ═══════════════════════ YAML TAB ═══════════════════════ -->
   {:else if tab === 'yaml'}
-    <div>
+    <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 space-y-3">
       <YAMLTab bind:workout={workout} onParsed={onParsed} />
-        <div class="mt-2">
+      <div>
         <label class="text-xs text-gray-400 block mb-1" for="wo-yaml-coach-notes">Coach's Note</label>
         <textarea class="input" id="wo-yaml-coach-notes" rows="2" placeholder="Context, feedback, how it felt…" bind:value={workout.coachNotes}></textarea>
       </div>
@@ -521,6 +554,37 @@
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-elevation">Elevation ({elevUnit(store.units)})</label>
             <input class="input" id="ex-{idx}-elevation" type="number" bind:value={ex.elevationM} />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400" for="ex-{idx}-phase">Phase</label>
+            <select class="input" id="ex-{idx}-phase" bind:value={ex.phase}>
+              <option value="">Main</option>
+              <option value="warmup">Warmup</option>
+              <option value="cooldown">Cooldown</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400" for="ex-{idx}-group-id">Group ID</label>
+            <input class="input" id="ex-{idx}-group-id" bind:value={ex.groupId} placeholder="optional group" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400" for="ex-{idx}-group-order">Group Order</label>
+            <input class="input" id="ex-{idx}-group-order" type="number" bind:value={ex.groupOrder} placeholder="order" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400" for="ex-{idx}-target-hr">Target HR Zone</label>
+            <select class="input" id="ex-{idx}-target-hr" bind:value={ex.targetHrZone}>
+              <option value="">—</option>
+              <option value="1">Zone 1</option>
+              <option value="2">Zone 2</option>
+              <option value="3">Zone 3</option>
+              <option value="4">Zone 4</option>
+              <option value="5">Zone 5</option>
+            </select>
+          </div>
+          <div class="col-span-3">
+            <label class="text-xs text-gray-400" for="ex-{idx}-notes">Notes</label>
+            <textarea class="input" id="ex-{idx}-notes" rows="1" placeholder="Exercise notes…" bind:value={ex.notes}></textarea>
           </div>
         </div>
       </div>

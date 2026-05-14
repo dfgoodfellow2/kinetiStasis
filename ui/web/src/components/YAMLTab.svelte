@@ -55,6 +55,7 @@
       maxHr:          res.maxHr         || workout.maxHr,
       caloriesBurned: res.caloriesBurned || workout.caloriesBurned,
       notes:           res.notes || res.rawNotes || workout.notes,
+      coachNotes:    res.coachNotes   || workout.coachNotes,
       exercises:       (res.exercises || []).map(mapExercise),
     }
 
@@ -87,11 +88,17 @@
       pace:        e.pace         || '',
       met:         e.metValue ?? '',
       notes:       e.notes        || '',
+      phase:       e.phase        || '',
+      groupId:     e.groupId      || '',
+      groupOrder:  e.groupOrder   ?? '',
+      groupStyle:  e.groupStyle   || '',
+      targetHrZone: e.targetHrZone ?? '',
+      hrZoneTime:  e.hrZoneTime   || null,
     }
   }
 </script>
 
-<div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+<div>
   <h3 class="text-lg font-semibold mb-3">YAML Parse</h3>
   {#if error}
     <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">

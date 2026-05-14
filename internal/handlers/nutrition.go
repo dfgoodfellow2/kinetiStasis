@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -33,7 +35,8 @@ func (h *NutritionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	out, err := h.s.FetchNutritionLogsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs range", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -45,12 +48,13 @@ func (h *NutritionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	var n models.NutritionLog
 	n, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "nutrition log not found")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get nutrition log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, n)
@@ -69,16 +73,18 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Check existing
 	var existing models.NutritionLog
 	existing, err := h.s.GetNutritionLog(r.Context(), claims.UserID, in.Date)
-	if err != nil && err != sql.ErrNoRows {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("get nutrition log for create", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// insert new
 		in.ID = uuid.New().String()
 		in.UpdatedAt = now
 		if err := h.s.CreateNutritionLog(r.Context(), &in); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "database error")
+			slog.Error("create nutrition log", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 			return
 		}
 		respond.JSON(w, http.StatusCreated, in)
@@ -103,7 +109,8 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	merged.UserID = claims.UserID
 	merged.Date = in.Date
 	if err := h.s.UpdateNutritionLog(r.Context(), &merged); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("update nutrition log (merge)", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	// return merged row
@@ -121,11 +128,12 @@ func (h *NutritionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ensure exists
-	if _, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date); err == sql.ErrNoRows {
+	if _, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date); errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "nutrition log not found")
 		return
 	} else if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get nutrition log for update", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -133,13 +141,15 @@ func (h *NutritionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	in.Date = date
 	in.UpdatedAt = now
 	if err := h.s.UpdateNutritionLog(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("update nutrition log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	// return updated via store
 	out, err := h.s.GetNutritionLog(r.Context(), claims.UserID, date)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record")
+		slog.Error("get updated nutrition log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -150,7 +160,8 @@ func (h *NutritionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	if err := h.s.DeleteNutritionLog(r.Context(), claims.UserID, date); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete nutrition log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})

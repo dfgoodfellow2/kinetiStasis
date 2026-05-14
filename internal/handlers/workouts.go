@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -69,7 +70,8 @@ func (h *WorkoutHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.s.FetchWorkoutsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch workouts range", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -81,11 +83,12 @@ func (h *WorkoutHandler) Get(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	slot := chi.URLParam(r, "slot")
 	went, err := h.s.GetWorkout(r.Context(), claims.UserID, date, slot)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "workout not found")
 		return
 	} else if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get workout", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, went)
@@ -115,7 +118,8 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_, _ = json.Marshal(in.Metadata)
 
 	if err := h.s.UpsertWorkout(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("upsert workout", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, in)
@@ -131,11 +135,12 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ensure exists
-	if _, err := h.s.GetWorkout(r.Context(), claims.UserID, date, slot); err == sql.ErrNoRows {
+	if _, err := h.s.GetWorkout(r.Context(), claims.UserID, date, slot); errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "workout not found")
 		return
 	} else if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get workout for update", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	// Auto-calc calories on update if not provided
@@ -152,12 +157,14 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 	in.Date = date
 	in.UpdatedAt = now
 	if _, err := h.s.UpdateWorkout(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("update workout", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	out, err := h.s.GetWorkout(r.Context(), claims.UserID, date, slot)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record")
+		slog.Error("get updated workout", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -169,7 +176,8 @@ func (h *WorkoutHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	slot := chi.URLParam(r, "slot")
 	if err := h.s.DeleteWorkout(r.Context(), claims.UserID, date, slot); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete workout", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})

@@ -57,6 +57,7 @@
       maxHr:          res.maxHr         || workout.maxHr,
       caloriesBurned: res.caloriesBurned || workout.caloriesBurned,
       notes:           res.notes || res.rawNotes || workout.notes,
+      coachNotes:      res.coachNotes   || workout.coachNotes,
       exercises:       (res.exercises || []).map(mapExercise),
     }
 
@@ -89,6 +90,12 @@
       pace:        e.pace         || '',
       met:         e.metValue ?? '',
       notes:       e.notes        || '',
+      phase:       e.phase        || '',
+      groupId:     e.groupId      || '',
+      groupOrder:  e.groupOrder   ?? '',
+      groupStyle:  e.groupStyle   || '',
+      targetHrZone: e.targetHrZone ?? '',
+      hrZoneTime:  e.hrZoneTime   || null,
     }
   }
 </script>

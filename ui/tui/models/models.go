@@ -46,16 +46,23 @@ type ExerciseEntry struct {
 	LoadRaw     string        `json:"loadRaw,omitempty"`
 	DurationRaw string        `json:"durationRaw,omitempty"`
 	Tempo       string        `json:"tempo,omitempty"`
+
+	Phase        string          `json:"phase,omitempty"`
+	GroupID      string          `json:"groupId,omitempty"`
+	GroupOrder   int             `json:"groupOrder,omitempty"`
+	GroupStyle   string          `json:"groupStyle,omitempty"`
+	TargetHRZone int             `json:"targetHrZone,omitempty"`
+	HRZoneTime   map[int]float64 `json:"hrZoneTime,omitempty"`
 }
 
 type WorkoutMetadata struct {
-	Type    string   `json:"type"`
-	Style   string   `json:"style"`
-	Surface string   `json:"surface"`
-	Focus   []string `json:"focus"`
-	RPE     float64  `json:"rpe"`
-	AvgHR   int      `json:"avgHr"`
-	MaxHR   int      `json:"maxHr"`
+	Type       string   `json:"type"`
+	Surface    string   `json:"surface"`
+	Focus      []string `json:"focus"`
+	RPE        float64  `json:"rpe"`
+	AvgHR      int      `json:"avgHr"`
+	MaxHR      int      `json:"maxHr"`
+	CoachNotes string   `json:"coachNotes,omitempty"`
 }
 
 type WorkoutEntry struct {
@@ -130,10 +137,18 @@ type ParsedWorkout struct {
 	DurationMin    float64         `json:"durationMin"`
 	CaloriesBurned float64         `json:"caloriesBurned"`
 	Exercises      []ExerciseEntry `json:"exercises"`
-	Notes          string          `json:"notes"`
+	RawInput       string          `json:"rawInput"`
+	Notes          string          `json:"notes,omitempty"`
+	CoachNotes     string          `json:"coachNotes,omitempty"`
 	Type           string          `json:"type"`
-	Style          string          `json:"style"`
+	Surface        string          `json:"surface"`
+	Focus          []string        `json:"focus"`
+	RestInterval   string          `json:"restInterval"`
 	RPE            float64         `json:"rpe"`
+	AvgHR          int             `json:"avgHr"`
+	MaxHR          int             `json:"maxHr"`
+	Recovers       string          `json:"recovers"`
+	Day            int             `json:"day"`
 }
 
 type BodyFatResult struct {

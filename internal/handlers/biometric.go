@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
+	"log/slog"
 	// removed temporary debug logging
 	"net/http"
 	"time"
@@ -33,7 +35,8 @@ func (h *BiometricHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.s.FetchBiometricLogsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs range", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -45,12 +48,13 @@ func (h *BiometricHandler) Get(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	var b models.BiometricLog
 	b, err := h.s.GetBiometricLog(r.Context(), claims.UserID, date)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get biometric log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, b)
@@ -76,7 +80,8 @@ func (h *BiometricHandler) Create(w http.ResponseWriter, r *http.Request) {
 		in.ID = uuid.New().String()
 	}
 	if err := h.s.CreateBiometricLog(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("create biometric log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, in)
@@ -99,11 +104,12 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	// fetch existing to perform a merge (PUT should allow partial fields like POST/UPSERT)
 	existing, err := h.s.GetBiometricLog(r.Context(), claims.UserID, date)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "biometric not found")
 		return
 	} else if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get biometric log for update", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
@@ -143,12 +149,14 @@ func (h *BiometricHandler) Update(w http.ResponseWriter, r *http.Request) {
 	existing.Date = date
 
 	if err := h.s.UpdateBiometricLog(r.Context(), &existing); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("update biometric log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	out, err := h.s.GetBiometricLog(r.Context(), claims.UserID, date)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record")
+		slog.Error("get updated biometric log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "failed to retrieve updated record: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -159,7 +167,8 @@ func (h *BiometricHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	if err := h.s.DeleteBiometricLog(r.Context(), claims.UserID, date); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete biometric log", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	// Note: store.DeleteBiometricLog could return sql.ErrNoRows if nothing deleted; currently implementation doesn't — handlers assume success

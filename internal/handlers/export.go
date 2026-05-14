@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -57,7 +58,8 @@ func (h *ExportHandler) Nutrition(w http.ResponseWriter, r *http.Request) {
 	}
 	logs, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, from)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs for export", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	targets, err := h.s.FetchTargets(r.Context(), claims.UserID)
@@ -91,7 +93,8 @@ func (h *ExportHandler) Workouts(w http.ResponseWriter, r *http.Request) {
 	}
 	logs, err := h.s.FetchWorkouts(r.Context(), claims.UserID, from)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch workouts for export", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	var content, filename, mime string
@@ -117,12 +120,14 @@ func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	}
 	nut, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, from)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch nutrition logs for combined export", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	bio, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, from)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch biometric logs for combined export", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	// body_measurements table stores circumference measurements (waist etc.)
@@ -144,7 +149,8 @@ func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	}
 	workouts, err := h.s.FetchWorkouts(r.Context(), claims.UserID, from)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch workouts for combined export", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	targets, err := h.s.FetchTargets(r.Context(), claims.UserID)

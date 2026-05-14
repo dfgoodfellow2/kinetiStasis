@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -53,7 +54,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var count int
 	cnt, err := h.s.CountUsers(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("count users during register", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	count = cnt
@@ -64,6 +66,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
+		slog.Error("hash password", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not hash password")
 		return
 	}
@@ -72,6 +75,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	userID := uuid.New().String()
 
 	if err := h.s.CreateUser(r.Context(), userID, req.Username, req.Email, hash, isAdmin == 1, now, now); err != nil {
+		slog.Error("create user during register", "err", err)
 		respond.Error(w, http.StatusConflict, "username or email already exists")
 		return
 	}
@@ -83,6 +87,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Issue tokens
 	if err := h.issueTokenPair(w, r, userID, isAdmin == 1); err != nil {
+		slog.Error("issue token pair during register", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not issue tokens")
 		return
 	}
@@ -116,12 +121,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		err      error
 	)
 	userID, username, hash, isAdmin, err = h.s.FindUserByLogin(r.Context(), req.Login)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("find user by login", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
@@ -131,6 +137,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.issueTokenPair(w, r, userID, isAdmin); err != nil {
+		slog.Error("issue token pair during login", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not issue tokens")
 		return
 	}
@@ -159,12 +166,13 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		expiresAt string
 	)
 	userID, isAdmin, expiresAt, err = h.s.FindRefreshToken(r.Context(), tokenHash)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusUnauthorized, "invalid refresh token")
 		return
 	}
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("find refresh token", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 
@@ -180,6 +188,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := auth.IssueAccessToken(h.cfg.JWTSecret, userID, isAdmin)
 	if err != nil {
+		slog.Error("issue access token during refresh", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
@@ -212,7 +221,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	var username, email string
 	u, err := h.s.GetUserByID(r.Context(), claims.UserID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("get user by id for /me", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	username = u.Username

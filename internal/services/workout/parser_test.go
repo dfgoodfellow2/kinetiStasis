@@ -69,7 +69,6 @@ exercises:
 			in: `name: Push Day
 type: strength
 slot: "1"
-style: circuit
 surface: gym
 rest_interval: "90s"
 duration: 60
@@ -109,9 +108,7 @@ exercises:
 				if out.Slot != "1" {
 					t.Errorf("Slot: got %q want %q", out.Slot, "1")
 				}
-				if out.Style != "circuit" {
-					t.Errorf("Style: got %q want %q", out.Style, "circuit")
-				}
+				// style is now treated as an unknown/top-level key and ignored
 				if out.Surface != "gym" {
 					t.Errorf("Surface: got %q want %q", out.Surface, "gym")
 				}
@@ -338,6 +335,160 @@ exercises:
 				}
 				if out.Exercises[1].Category != "conditioning" {
 					t.Errorf("sprint category: got %q want %q", out.Exercises[1].Category, "conditioning")
+				}
+			},
+		},
+		{
+			name: "Phase, group, and HR zone fields",
+			in: `title: Circuit Day
+exercises:
+  - name: Arm Circle
+    sets: 2
+    reps: 10
+    phase: warmup
+  - name: Bench Press
+    group: circuit-a
+    groupOrder: 1
+    sets: 3
+    reps: 8
+    load: 135 lbs
+    targetHrZone: 3
+  - name: Barbell Row
+    group: circuit-a
+    groupOrder: 2
+    sets: 3
+    reps: 10
+    load: 95 lbs
+  - name: Treadmill Run
+    sets: 1
+    duration: 10 min
+    hrZoneTime: {"2": 300, "3": 300}
+`,
+			validate: func(t *testing.T, out models.ParsedWorkout, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if len(out.Exercises) != 4 {
+					t.Fatalf("expected 4 exercises, got %d", len(out.Exercises))
+				}
+				// Warmup exercise
+				warmup := out.Exercises[0]
+				if warmup.Name != "Arm Circle" {
+					t.Errorf("warmup name: got %q want %q", warmup.Name, "Arm Circle")
+				}
+				if warmup.Phase != "warmup" {
+					t.Errorf("warmup phase: got %q want %q", warmup.Phase, "warmup")
+				}
+				if len(warmup.Sets) != 2 {
+					t.Errorf("warmup sets: got %d want %d", len(warmup.Sets), 2)
+				}
+				// Circuit exercise 1
+				bench := out.Exercises[1]
+				if bench.Name != "Bench Press" {
+					t.Errorf("bench name: got %q want %q", bench.Name, "Bench Press")
+				}
+				if bench.GroupID != "circuit-a" {
+					t.Errorf("bench groupId: got %q want %q", bench.GroupID, "circuit-a")
+				}
+				if bench.GroupOrder != 1 {
+					t.Errorf("bench groupOrder: got %d want %d", bench.GroupOrder, 1)
+				}
+				if bench.TargetHRZone != 3 {
+					t.Errorf("bench targetHrZone: got %d want %d", bench.TargetHRZone, 3)
+				}
+				if len(bench.Sets) != 3 {
+					t.Errorf("bench sets: got %d want %d", len(bench.Sets), 3)
+				}
+				if bench.Phase != "" {
+					t.Errorf("bench phase should be empty (main), got %q", bench.Phase)
+				}
+				// Circuit exercise 2
+				row := out.Exercises[2]
+				if row.Name != "Barbell Row" {
+					t.Errorf("row name: got %q want %q", row.Name, "Barbell Row")
+				}
+				if row.GroupID != "circuit-a" {
+					t.Errorf("row groupId: got %q want %q", row.GroupID, "circuit-a")
+				}
+				if row.GroupOrder != 2 {
+					t.Errorf("row groupOrder: got %d want %d", row.GroupOrder, 2)
+				}
+				// HR zone time exercise
+				run := out.Exercises[3]
+				if run.Name != "Treadmill Run" {
+					t.Errorf("run name: got %q want %q", run.Name, "Treadmill Run")
+				}
+				if len(run.HRZoneTime) != 2 {
+					t.Errorf("expected 2 hr zones, got %d", len(run.HRZoneTime))
+				} else {
+					if run.HRZoneTime[2] != 300 {
+						t.Errorf("zone 2 time: got %v want %v", run.HRZoneTime[2], float64(300))
+					}
+					if run.HRZoneTime[3] != 300 {
+						t.Errorf("zone 3 time: got %v want %v", run.HRZoneTime[3], float64(300))
+					}
+				}
+			},
+		},
+
+		{
+			name: "CamelCase YAML keys",
+			in: `title: CamelCase Test
+type: strength
+surfaceCondition: grass
+restInterval: 60s
+durationMin: 45
+avgHr: 140
+maxHr: 170
+caloriesBurned: 350
+exercises:
+  - name: Squat
+    sets: 3
+    reps: 5
+    load: 200 lbs
+    distanceKm: 0.5
+    elevationM: 20
+`,
+			validate: func(t *testing.T, out models.ParsedWorkout, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if out.Title != "CamelCase Test" {
+					t.Errorf("Title: got %q want %q", out.Title, "CamelCase Test")
+				}
+				if out.Type != "strength" {
+					t.Errorf("Type: got %q want %q", out.Type, "strength")
+				}
+				if out.Surface != "grass" {
+					t.Errorf("Surface: got %q want %q", out.Surface, "grass")
+				}
+				if out.RestInterval != "60s" {
+					t.Errorf("RestInterval: got %q want %q", out.RestInterval, "60s")
+				}
+				if out.DurationMin != 45 {
+					t.Errorf("DurationMin: got %v want %v", out.DurationMin, float64(45))
+				}
+				if out.AvgHR != 140 {
+					t.Errorf("AvgHR: got %v want %v", out.AvgHR, 140)
+				}
+				if out.MaxHR != 170 {
+					t.Errorf("MaxHR: got %v want %v", out.MaxHR, 170)
+				}
+				if out.CaloriesBurned != 350 {
+					t.Errorf("CaloriesBurned: got %v want %v", out.CaloriesBurned, float64(350))
+				}
+				if len(out.Exercises) != 1 {
+					t.Fatalf("expected 1 exercise, got %d", len(out.Exercises))
+				}
+				ex := out.Exercises[0]
+				if ex.Name != "Squat" {
+					t.Errorf("exercise name: got %q want %q", ex.Name, "Squat")
+				}
+				if ex.DistanceKm != 0.5 {
+					t.Errorf("distanceKm: got %v want %v", ex.DistanceKm, 0.5)
+				}
+				if ex.ElevationM != 20 {
+					t.Errorf("elevationM: got %v want %v", ex.ElevationM, float64(20))
 				}
 			},
 		},

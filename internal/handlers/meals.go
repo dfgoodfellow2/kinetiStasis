@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -21,7 +22,8 @@ func (h *MealsHandler) ListSaved(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	out, err := h.s.FetchSavedMeals(r.Context(), claims.UserID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch saved meals", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -42,7 +44,8 @@ func (h *MealsHandler) CreateSaved(w http.ResponseWriter, r *http.Request) {
 	m.CreatedAt = now
 	m.UpdatedAt = now
 	if err := h.s.CreateSavedMeal(r.Context(), &m); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("create saved meal", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusCreated, m)
@@ -54,7 +57,8 @@ func (h *MealsHandler) DeleteSaved(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// delete via store (store will ensure ownership)
 	if err := h.s.DeleteSavedMeal(r.Context(), claims.UserID, id); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete saved meal", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -65,7 +69,8 @@ func (h *MealsHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	out, err := h.s.FetchMealTemplates(r.Context(), claims.UserID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch meal templates", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -86,7 +91,8 @@ func (h *MealsHandler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 	in.CreatedAt = now
 	in.UpdatedAt = now
 	if err := h.s.CreateMealTemplate(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("create meal template", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusCreated, in)
@@ -99,7 +105,8 @@ func (h *MealsHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 	// verify ownership via templates list
 	templates, err := h.s.FetchMealTemplates(r.Context(), claims.UserID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch meal templates for delete", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	found := false
@@ -114,7 +121,8 @@ func (h *MealsHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.s.DeleteMealTemplate(r.Context(), claims.UserID, id); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete meal template", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})

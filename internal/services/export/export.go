@@ -134,7 +134,17 @@ func WorkoutsMarkdown(workouts []models.WorkoutEntry, from, to, units string) st
 		if len(w.Exercises) > 0 {
 			b.WriteString("- Exercises:\n")
 			for _, ex := range w.Exercises {
-				b.WriteString(fmt.Sprintf("  - %s\n", ex.Name))
+				phaseTag := ""
+				if ex.Phase == "warmup" {
+					phaseTag = " [Warmup]"
+				} else if ex.Phase == "cooldown" {
+					phaseTag = " [Cooldown]"
+				}
+				groupTag := ""
+				if ex.GroupID != "" {
+					groupTag = fmt.Sprintf(" (group: %s #%d)", ex.GroupID, ex.GroupOrder)
+				}
+				b.WriteString(fmt.Sprintf("  - %s%s%s\n", ex.Name, phaseTag, groupTag))
 				// list sets if available
 				if len(ex.Sets) > 0 {
 					for i, s := range ex.Sets {
@@ -154,6 +164,20 @@ func WorkoutsMarkdown(workouts []models.WorkoutEntry, from, to, units string) st
 				}
 				if ex.METValue > 0 {
 					b.WriteString(fmt.Sprintf("    - MET: %.1f\n", ex.METValue))
+				}
+				if ex.TargetHRZone > 0 {
+					b.WriteString(fmt.Sprintf("    - Target HR Zone: %d\n", ex.TargetHRZone))
+				}
+				if len(ex.HRZoneTime) > 0 {
+					var parts []string
+					for z := 1; z <= 5; z++ {
+						if sec, ok := ex.HRZoneTime[z]; ok && sec > 0 {
+							parts = append(parts, fmt.Sprintf("Zone %d: %.0fs", z, sec))
+						}
+					}
+					if len(parts) > 0 {
+						b.WriteString(fmt.Sprintf("    - HR Zone Time: %s\n", strings.Join(parts, ", ")))
+					}
 				}
 				if ex.Notes != "" {
 					b.WriteString(fmt.Sprintf("    - Notes: %s\n", ex.Notes))

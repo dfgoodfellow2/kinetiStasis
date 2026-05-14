@@ -46,6 +46,9 @@ func EffectiveVolume(e models.ExerciseEntry) float64 {
 func NeuralDemandScore(entries []models.ExerciseEntry) float64 {
 	total := 0.0
 	for _, e := range entries {
+		if e.Phase == "warmup" || e.Phase == "cooldown" {
+			continue
+		}
 		// Get surface multiplier
 		surfaceMul := 1.0
 		switch stringsToLower(e.Surface) {
@@ -183,8 +186,11 @@ func SummarizeWorkout(entry models.WorkoutEntry, weightLbs float64, profile mode
 		ex.IntensitySource = source
 	}
 
-	// Calculate MWV
+	// Calculate MWV (skip warmup and cooldown exercises)
 	for _, ex := range entry.Exercises {
+		if ex.Phase == "warmup" || ex.Phase == "cooldown" {
+			continue
+		}
 		for _, s := range ex.Sets {
 			if s.LoadLbs > 0 && s.Reps > 0 {
 				totalMWV += s.LoadLbs * float64(s.Reps)
@@ -195,14 +201,25 @@ func SummarizeWorkout(entry models.WorkoutEntry, weightLbs float64, profile mode
 	nds := NeuralDemandScore(entry.Exercises)
 	sd := SessionDensity(entry.Exercises, entry.DurationMin, weightLbs, profile)
 
-	// Estimate calories burned
+	// Count main exercises for time splitting
+	mainCount := 0
+	for _, ex := range entry.Exercises {
+		if ex.Phase != "warmup" && ex.Phase != "cooldown" {
+			mainCount++
+		}
+	}
+
+	// Estimate calories burned (skip warmup and cooldown)
 	calories := 0.0
-	if entry.DurationMin > 0 && len(entry.Exercises) > 0 {
+	if entry.DurationMin > 0 && mainCount > 0 {
 		for _, ex := range entry.Exercises {
+			if ex.Phase == "warmup" || ex.Phase == "cooldown" {
+				continue
+			}
 			if ex.METValue <= 0 {
 				continue
 			}
-			minutes := entry.DurationMin / float64(len(entry.Exercises))
+			minutes := entry.DurationMin / float64(mainCount)
 			calories += METToCalories(ex.METValue, weightLbs, minutes)
 		}
 	}

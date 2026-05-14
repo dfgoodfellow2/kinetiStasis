@@ -27,20 +27,26 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 	inFocus := false
 
 	type rawEx struct {
-		name        string
-		sets        int
-		reps        int
-		durationRaw string
-		tempo       string
-		load        string
-		rpe         float64
-		pattern     string
-		bias        string
-		metValue    float64
-		distanceKm  float64
-		elevationM  float64
-		pace        string
-		notes       string
+		name         string
+		sets         int
+		reps         int
+		durationRaw  string
+		tempo        string
+		load         string
+		rpe          float64
+		pattern      string
+		bias         string
+		metValue     float64
+		distanceKm   float64
+		elevationM   float64
+		pace         string
+		phase        string
+		groupID      string
+		groupOrder   int
+		groupStyle   string
+		targetHRZone int
+		hrZoneTime   map[int]float64
+		notes        string
 	}
 
 	var exercises []rawEx
@@ -85,15 +91,32 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 		case "distance":
 			// Accept both `distance_km` and `distance` in source YAML
 			rx.distanceKm = parseDistanceKm(v)
+		case "distanceKm":
+			rx.distanceKm = parseDistanceKm(v)
 		case "elevation_m":
 			rx.elevationM = parseElevationM(v)
 		case "elevation":
 			// Accept both `elevation_m` and `elevation` in source YAML
 			rx.elevationM = parseElevationM(v)
+		case "elevationM":
+			rx.elevationM = parseElevationM(v)
 		case "pace":
 			rx.pace = v
 		case "notes":
 			rx.notes = v
+
+		case "phase":
+			rx.phase = v
+		case "group", "groupId":
+			rx.groupID = v
+		case "groupOrder", "group_order":
+			rx.groupOrder, _ = strconv.Atoi(v)
+		case "groupStyle", "group_style":
+			rx.groupStyle = v
+		case "targetHrZone", "targetHrzone", "hrZone", "target_hr_zone":
+			rx.targetHRZone, _ = strconv.Atoi(v)
+		case "hrZoneTime", "hr_zone_time":
+			rx.hrZoneTime = parseHRZoneMap(v)
 		}
 	}
 
@@ -136,30 +159,45 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 				out.Type = v
 			case "slot":
 				out.Slot = v
-			case "style":
-				out.Style = v
+
 			case "surface", "surface_condition":
 				out.Surface = v
+			case "surfaceCondition":
+				out.Surface = v
 			case "rest_interval", "rest":
+				out.RestInterval = v
+			case "restInterval":
 				out.RestInterval = v
 			case "day":
 				out.Day, _ = strconv.Atoi(v)
 			case "duration", "duration_min":
+				out.DurationMin, _ = strconv.ParseFloat(v, 64)
+			case "durationMin":
 				out.DurationMin, _ = strconv.ParseFloat(v, 64)
 			case "rpe":
 				out.RPE, _ = strconv.ParseFloat(v, 64)
 			case "avg_hr":
 				n, _ := strconv.ParseFloat(v, 64)
 				out.AvgHR = int(n)
+			case "avgHr":
+				n, _ := strconv.ParseFloat(v, 64)
+				out.AvgHR = int(n)
 			case "max_hr":
 				n, _ := strconv.ParseFloat(v, 64)
 				out.MaxHR = int(n)
+			case "maxHr":
+				n, _ := strconv.ParseFloat(v, 64)
+				out.MaxHR = int(n)
 			case "calories", "calories_burned":
+				out.CaloriesBurned, _ = strconv.ParseFloat(v, 64)
+			case "caloriesBurned":
 				out.CaloriesBurned, _ = strconv.ParseFloat(v, 64)
 			case "recovers":
 				out.Recovers = v
 			case "notes":
 				out.Notes = v
+			case "coachNotes", "coach_notes":
+				out.CoachNotes = v
 			case "focus":
 				// Inline array: focus: ["Hinge(B)", "Push(U)"]
 				if v != "" {
@@ -197,18 +235,24 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 	// ── Convert rawEx → models.ExerciseEntry ─────────────────────
 	for _, rx := range exercises {
 		entry := models.ExerciseEntry{
-			Name:        rx.name,
-			Category:    rx.pattern,
-			Bias:        rx.bias,
-			Surface:     out.Surface,
-			Notes:       rx.notes,
-			DistanceKm:  rx.distanceKm,
-			ElevationM:  rx.elevationM,
-			Pace:        rx.pace,
-			RPE:         rx.rpe,
-			LoadRaw:     rx.load,
-			DurationRaw: rx.durationRaw,
-			Tempo:       rx.tempo,
+			Name:         rx.name,
+			Category:     rx.pattern,
+			Bias:         rx.bias,
+			Surface:      out.Surface,
+			Notes:        rx.notes,
+			DistanceKm:   rx.distanceKm,
+			ElevationM:   rx.elevationM,
+			Pace:         rx.pace,
+			RPE:          rx.rpe,
+			LoadRaw:      rx.load,
+			DurationRaw:  rx.durationRaw,
+			Tempo:        rx.tempo,
+			Phase:        rx.phase,
+			GroupID:      rx.groupID,
+			GroupOrder:   rx.groupOrder,
+			GroupStyle:   rx.groupStyle,
+			TargetHRZone: rx.targetHRZone,
+			HRZoneTime:   rx.hrZoneTime,
 		}
 
 		// MET: explicit override wins; else RPE fallback, then name-based lookup
@@ -411,6 +455,38 @@ func parseElevationM(s string) float64 {
 	s = strings.TrimSpace(s)
 	n, _ := strconv.ParseFloat(s, 64)
 	return n
+}
+
+// parseHRZoneMap parses a JSON-like HR zone map string.
+// Accepts: {"1": 60, "2": 720, "3": 180} or {1:60,2:720,3:180}
+func parseHRZoneMap(s string) map[int]float64 {
+	result := make(map[int]float64)
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "{")
+	s = strings.TrimSuffix(s, "}")
+	parts := strings.Split(s, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		zoneStr := strings.TrimSpace(strings.Trim(kv[0], "\"'"))
+		timeStr := strings.TrimSpace(strings.Trim(kv[1], "\"'"))
+		zone, err := strconv.Atoi(zoneStr)
+		if err != nil || zone < 1 || zone > 5 {
+			continue
+		}
+		sec, err := strconv.ParseFloat(timeStr, 64)
+		if err != nil || sec < 0 {
+			continue
+		}
+		result[zone] = sec
+	}
+	return result
 }
 
 // parsePatternBias splits a pattern string into movement pattern and bilateral/unilateral bias.

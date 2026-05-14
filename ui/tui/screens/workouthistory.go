@@ -121,6 +121,14 @@ func (m *WorkoutHistoryModel) View() string {
 			if ex.Category != "" {
 				label += " (" + ex.Category + ")"
 			}
+			if ex.Phase == "warmup" {
+				label += " [Warmup]"
+			} else if ex.Phase == "cooldown" {
+				label += " [Cooldown]"
+			}
+			if ex.GroupID != "" {
+				label += fmt.Sprintf(" [%s #%d]", ex.GroupID, ex.GroupOrder)
+			}
 			s += fmt.Sprintf("    • %s\n", label)
 			if len(ex.Sets) > 0 {
 				var setParts []string

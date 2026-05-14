@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -32,7 +34,8 @@ func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.s.FetchMeasurementsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("fetch measurements range", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, out)
@@ -52,7 +55,8 @@ func (h *MeasurementsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	// UPSERT: insert or replace if date already exists for this user
 	if err := h.s.CreateMeasurement(r.Context(), &in); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("create measurement", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	in.CreatedAt = now
@@ -70,11 +74,12 @@ func (h *MeasurementsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	in.UserID = claims.UserID
 	in.Date = date
 	if err := h.s.UpdateMeasurement(r.Context(), &in); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			respond.Error(w, http.StatusNotFound, "measurement not found")
 			return
 		}
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("update measurement", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, in)
@@ -85,7 +90,8 @@ func (h *MeasurementsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	date := chi.URLParam(r, "date")
 	if err := h.s.DeleteMeasurement(r.Context(), claims.UserID, date); err != nil {
-		respond.Error(w, http.StatusInternalServerError, "database error")
+		slog.Error("delete measurement", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
