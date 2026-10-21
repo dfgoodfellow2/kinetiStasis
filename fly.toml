@@ -33,11 +33,8 @@ primary_region = 'iad'
     soft_limit = 200
 
 [[vm]]
-  memory = '256mb'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
 
-[[metrics]]
-  port = 9090
-  path = '/metrics'
+# metrics: re-add when the app exposes a metrics listener

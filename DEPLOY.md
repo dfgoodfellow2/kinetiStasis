@@ -29,6 +29,11 @@ fly storage create
 
 Note the bucket name, region, access key, and secret key.
 
+`fly storage create` also injects the Litestream credentials as app secrets automatically
+under the names `litestream.yml` reads: `BUCKET_NAME`, `AWS_REGION`, `AWS_ENDPOINT_URL_S3`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Only set them manually if you are using your
+own bucket or rotating keys.
+
 ### 4. Set secrets
 
 ```bash
@@ -40,11 +45,11 @@ Edit the script first to set your real values. Or set individually:
 ```bash
 fly secrets set JWT_SECRET="$(openssl rand -hex 32)"
 fly secrets set GEMINI_API_KEY="your-key"
-fly secrets set LITESTREAM_BUCKET="your-bucket"
-fly secrets set LITESTREAM_REGION="auto"
-fly secrets set LITESTREAM_ACCESS_KEY_ID="your-key-id"
-fly secrets set LITESTREAM_SECRET_ACCESS_KEY="your-secret"
-fly secrets set LITESTREAM_ENDPOINT="https://fly.storage.tigris.dev"
+fly secrets set BUCKET_NAME="your-bucket"
+fly secrets set AWS_REGION="auto"
+fly secrets set AWS_ENDPOINT_URL_S3="https://fly.storage.tigris.dev"
+fly secrets set AWS_ACCESS_KEY_ID="your-key-id"
+fly secrets set AWS_SECRET_ACCESS_KEY="your-secret"
 ```
 
 ### 5. Deploy
@@ -78,10 +83,16 @@ make build
 
 ## Litestream Restore (disaster recovery)
 
-If the volume is wiped, Litestream restores automatically on next startup via:
+If the volume is wiped, Litestream restores automatically on next startup. The container CMD
+runs an explicit restore step before replication starts:
+
 ```
-litestream replicate -exec /app/diet-tracker-server
+litestream restore -config /app/litestream.yml -if-db-not-exists -if-replica-exists /data/diet.db && litestream replicate -config /app/litestream.yml -exec /app/diet-tracker-server
 ```
+
+The restore flag `-if-db-not-exists` skips work when a local DB is already present, and
+`-if-replica-exists` skips download when no replica exists yet. On a fresh volume with no
+replica, restore exits 0 and the goose migrations in the server create the schema from scratch.
 
 To manually restore to a local path:
 ```bash
