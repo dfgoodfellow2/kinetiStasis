@@ -1,5 +1,5 @@
 
-.PHONY: dev dev-web build pwa-build run tidy tui clean-all kill-server check-env dev-full smoke-test deploy gen-icons
+.PHONY: dev dev-web test build pwa-build run tidy tui clean-all kill-server check-env dev-full smoke-test deploy gen-icons
 
 DB_PATH ?= ./data/diet.db
 
@@ -35,9 +35,12 @@ dev:
 dev-web:
 	cd ui/web && npm run dev
 
+test:
+	go vet ./... && go test ./...
+
 pwa-build:
 	cd ui/web && npm install && npm run build
-	mkdir -p internal/web/dist
+	rm -rf internal/web/dist && mkdir -p internal/web/dist
 	cp -r ui/web/dist/. internal/web/dist/
 
 build: pwa-build
@@ -81,6 +84,7 @@ clean-all: kill-server
 	rm -rf bin/diet-tracker-server
 	rm -rf ui/web/dist ui/web/node_modules
 	rm -rf internal/web/dist
+	rm -rf ui/internal
 	@echo "✅ Clean complete"
 
 gen-icons:
