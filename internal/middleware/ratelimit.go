@@ -15,12 +15,20 @@ type rateLimitEntry struct {
 }
 
 type rateLimitStore struct {
-	mu      sync.Mutex
-	entries map[string]*rateLimitEntry
-	r       rate.Limit
-	burst   int
-	stop    chan struct{}
+	mu        sync.Mutex
+	entries   map[string]*rateLimitEntry
+	r         rate.Limit
+	burst     int
+	stop      chan struct{}
+	closeOnce sync.Once
 }
+
+// liveStores tracks every store created by RateLimit so they can all be shut
+// down from the process entrypoint.
+var (
+	liveStoresMu sync.Mutex
+	liveStores   = make(map[*rateLimitStore]struct{})
+)
 
 func newRateLimitStore(r rate.Limit, burst int) *rateLimitStore {
 	s := &rateLimitStore{
@@ -29,6 +37,11 @@ func newRateLimitStore(r rate.Limit, burst int) *rateLimitStore {
 		burst:   burst,
 		stop:    make(chan struct{}),
 	}
+
+	liveStoresMu.Lock()
+	liveStores[s] = struct{}{}
+	liveStoresMu.Unlock()
+
 	go func() {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
@@ -48,6 +61,32 @@ func newRateLimitStore(r rate.Limit, burst int) *rateLimitStore {
 		}
 	}()
 	return s
+}
+
+// Close stops the background cleanup goroutine. It is safe to call multiple
+// times.
+func (s *rateLimitStore) Close() {
+	s.closeOnce.Do(func() {
+		close(s.stop)
+		liveStoresMu.Lock()
+		delete(liveStores, s)
+		liveStoresMu.Unlock()
+	})
+}
+
+// CloseRateLimiters stops the background cleanup goroutines for every limiter
+// created by RateLimit. Call this during graceful shutdown.
+func CloseRateLimiters() {
+	liveStoresMu.Lock()
+	stores := make([]*rateLimitStore, 0, len(liveStores))
+	for s := range liveStores {
+		stores = append(stores, s)
+	}
+	liveStoresMu.Unlock()
+
+	for _, s := range stores {
+		s.Close()
+	}
 }
 
 func (s *rateLimitStore) get(key string) *rate.Limiter {

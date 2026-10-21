@@ -1,13 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/api"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/config"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/db"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/middleware"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/web"
 )
@@ -52,8 +58,34 @@ func main() {
 		Handler: router,
 	}
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.Error("server error", "err", err)
-		os.Exit(1)
+	// Shut down cleanly on SIGINT/SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			slog.Error("server error", "err", err)
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		slog.Info("shutdown signal received")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			slog.Error("server shutdown", "err", err)
+		}
 	}
+
+	// Stop rate limiter cleanup goroutines now that the server is done.
+	middleware.CloseRateLimiters()
+	slog.Info("server stopped")
 }

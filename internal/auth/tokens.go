@@ -41,7 +41,9 @@ func IssueAccessToken(secret []byte, userID string, isAdmin bool) (string, error
 // ParseAccessToken validates a JWT string and returns its claims.
 func ParseAccessToken(secret []byte, tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		// Pin the signing algorithm to HS256 so tokens signed with a different
+		// HMAC variant (or another family) are rejected outright.
+		if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return secret, nil

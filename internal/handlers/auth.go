@@ -55,7 +55,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	cnt, err := h.s.CountUsers(r.Context())
 	if err != nil {
 		slog.Error("count users during register", "err", err)
-		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	count = cnt
@@ -127,7 +127,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("find user by login", "err", err)
-		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("find refresh token", "err", err)
-		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -206,7 +206,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("failed to delete refresh token on logout", "err", err)
 		}
 	}
-	auth.ClearAuthCookies(w)
+	auth.ClearAuthCookies(w, h.cfg.IsProd())
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 
@@ -222,7 +222,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	u, err := h.s.GetUserByID(r.Context(), claims.UserID)
 	if err != nil {
 		slog.Error("get user by id for /me", "err", err)
-		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	username = u.Username

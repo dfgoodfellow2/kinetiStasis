@@ -22,3 +22,14 @@ vendor/
 
 # Dev/Test utilities
 cmd/testparse/
+
+# Dev artifacts
+tmp/
+tmp_issue_token/
+*.log
+cookies.txt
+commit_output.txt
+test_workout.yaml
+.ruff_cache/
+ui/internal/
+*.pid
