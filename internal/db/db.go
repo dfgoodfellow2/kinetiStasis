@@ -44,13 +44,6 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrations: %w", err)
 	}
 
-	// Ensure any columns that may be missing on some deployments are present.
-	// Don't fail startup if this check/alter fails; just log the error.
-	if err := ensureColumns(db); err != nil {
-		// Log at Info level — this is a best-effort fix and shouldn't spam error logs
-		slog.Info("ensureColumns failed (non-fatal)", "err", err)
-	}
-
 	slog.Info("database ready", "path", path)
 	return db, nil
 }
@@ -64,44 +57,6 @@ func runMigrations(db *sql.DB) error {
 
 	if err := goose.Up(db, "migrations"); err != nil {
 		return fmt.Errorf("goose up: %w", err)
-	}
-
-	return nil
-}
-
-// ensureColumns verifies the presence of optional columns and adds them
-// if missing. This is used because some deployment environments (eg. Fly.io
-// Alpine images) may not run local sqlite3 migrations before the app starts.
-func ensureColumns(db *sql.DB) error {
-	// Check if body_fat_pct column exists
-	rows, err := db.Query("PRAGMA table_info(biometric_logs)")
-	if err != nil {
-		return fmt.Errorf("pragma table_info: %w", err)
-	}
-	defer rows.Close()
-
-	found := false
-	for rows.Next() {
-		var cid int
-		var name string
-		var type_ string
-		var notnull int
-		var dflt_value interface{}
-		var pk int
-		if err := rows.Scan(&cid, &name, &type_, &notnull, &dflt_value, &pk); err != nil {
-			return fmt.Errorf("scan pragma: %w", err)
-		}
-		if name == "body_fat_pct" {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		slog.Info("adding missing body_fat_pct column to biometric_logs")
-		if _, err := db.Exec("ALTER TABLE biometric_logs ADD COLUMN body_fat_pct REAL DEFAULT 0"); err != nil {
-			return fmt.Errorf("alter table: %w", err)
-		}
 	}
 
 	return nil

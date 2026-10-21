@@ -10,7 +10,7 @@
 ## Quick Navigation
 
 ### Core Architecture
-- **Project Location:** `/home/dfgoodfellow2/Projects/Personal/Diet_Tracker/v2/`
+- **Project Location:** `/home/dfgoodfellow2/Projects/Personal/Diet_Tracker/`
 - **Module:** `github.com/dfgoodfellow2/diet-tracker/v2`
 - **Tech Stack:** Go 1.22+ API + SQLite + Svelte 5 PWA + Bubble Tea TUI
 - **Deployment:** fly.io
@@ -72,7 +72,7 @@ Truth Hierarchy:
   Profile Estimate (ONLY for: emergency override baseline, expected weight display)
 ```
 
-**Code location:** `services/calculator.go` → `ComputeWeeklyTargetsWithExercise()`
+**Code location:** `internal/services/calculator/adaptive.go` → `ComputeWeeklyTargetsWithExercise()`
 
 ---
 
@@ -209,7 +209,7 @@ func ShouldTriggerEmergencyOverride(observedTDEE int, estimatedTDEE int, confide
 
 ## Observed TDEE Computation (Tiered Method)
 
-**Source:** `ComputeObservedTDEETiered()` in `services/calculator.go`
+**Source:** `ComputeObservedTDEETiered()` in `internal/services/calculator/adaptive.go`
 
 The system uses **logged calorie history** (not weight-delta formula), making it adherence-sensitive but fast to converge for consistent trackers.
 
@@ -301,25 +301,25 @@ Also available:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `v2/services/calculator.go` | 600+ | `ComputeObservedTDEETiered()`, `ComputeWeeklyTargetsWithExercise()`, damping logic, `ShouldTriggerEmergencyOverride()` |
-| `v2/services/nutrition/macros.go` | 200+ | `ComputeTargets()`, macro distribution (Protein/Fat/Carbs/Fiber) |
-| `v2/internal/handlers/calculations.go` | 150+ | `/v1/calc/*` endpoint handlers (TDEE, Macros, Readiness, Dashboard) |
-| `v2/internal/handlers/targets.go` | 100+ | `/v1/targets` GET/PUT, target history snapshots |
-| `v2/internal/db/migrations/001_init.sql` | 300+ | DB schema: `macro_targets`, `target_history`, tables |
+| `internal/services/calculator/adaptive.go` | 600+ | `ComputeObservedTDEETiered()`, `ComputeWeeklyTargetsWithExercise()`, damping logic, `ShouldTriggerEmergencyOverride()` |
+| `internal/services/nutrition/macros.go` | 200+ | `ComputeTargets()`, macro distribution (Protein/Fat/Carbs/Fiber) |
+| `internal/handlers/calculations.go` | 150+ | `/v1/calc/*` endpoint handlers (TDEE, Macros, Readiness, Dashboard) |
+| `internal/handlers/targets.go` | 100+ | `/v1/targets` GET/PUT, target history snapshots |
+| `internal/db/migrations/001_init.sql` | 300+ | DB schema: `macro_targets`, `target_history`, tables |
 
 ### Frontend (TUI — Bubble Tea)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `v2/cmd/tui/ui/checkin.go` | 400+ | Weekly check-in screen: display, toggle eat-back, accept/skip logic |
-| `v2/cmd/tui/ui/dashboard.go` | 300+ | Dashboard: TDEE, macros, readiness, weekly stats |
+| `ui/tui/screens/checkin.go` | 400+ | Weekly check-in screen: display, toggle eat-back, accept/skip logic |
+| `ui/tui/screens/dashboard.go` | 300+ | Dashboard: TDEE, macros, readiness, weekly stats |
 
 ### Frontend (PWA — Svelte)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `v2/ui/web/src/routes/dashboard/+page.svelte` | 200+ | Dashboard page: displays TDEE, targets, weekly stats |
-| `v2/ui/web/src/routes/checkin/+page.svelte` | 200+ | Check-in page (PWA version of TUI check-in) |
+| `ui/web/src/routes/dashboard/+page.svelte` | 200+ | Dashboard page: displays TDEE, targets, weekly stats |
+| `ui/web/src/routes/checkin/+page.svelte` | 200+ | Check-in page (PWA version of TUI check-in) |
 
 ---
 

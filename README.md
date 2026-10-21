@@ -24,10 +24,10 @@ A personal diet and fitness tracking application for family use (2-10 users). Fu
 - **Language**: Go 1.22+
 - **Router**: `github.com/go-chi/chi/v5`
 - **Database**: SQLite via `modernc.org/sqlite` (pure Go, no CGO)
-- **Auth**: JWT HS256 access tokens (15 min) + opaque refresh tokens (30 days) — both httpOnly Secure SameSite=Strict cookies
+- **Auth**: JWT HS256 access tokens (15 min) + opaque refresh tokens (30 days) — both httpOnly cookies; dev uses `SameSite=Lax`, production uses `SameSite=None; Secure`
 - **Passwords**: bcrypt cost 12
 - **Backup**: Litestream → Tigris/S3 continuous streaming
-- **AI Parsing**: Google Gemini API (`gemini-1.5-flash`), server-side only
+- **AI Parsing**: Google Gemini API (`gemini-2.5-flash-lite`), server-side only
 - **Deployment**: fly.io, region `iad`, 256MB shared CPU
 - **Multi-user**: Fully isolated data, first registered = admin
 
@@ -99,14 +99,14 @@ cd ui/web && npm install && npm run dev
 In a **separate terminal** (while server is running):
 
 ```bash
-make tui          # Build the binary first
-./bin/diet-tui    # Run it
+make tui                  # Build the binary first
+./bin/diet-tracker-ui     # Run it
 ```
 
 Or point at a different server:
 
 ```bash
-DIET_API_URL=http://localhost:8080 ./bin/diet-tui
+DIET_API_URL=http://localhost:8080 ./bin/diet-tracker-ui
 ```
 
 ### 6. Full Embedded Build (API + PWA in one binary)
@@ -146,7 +146,7 @@ curl -X POST http://localhost:8080/v1/auth/register \
 | `make dev` | Run Go server in dev mode (no PWA) |
 | `make dev-web` | Run Svelte dev server on :5173 |
 | `make build` | Build PWA + embed + compile Go binary |
-| `make tui` | Build TUI binary → `bin/diet-tui` |
+| `make tui` | Build TUI binary → `bin/diet-tracker-ui` |
 | `make run` | Build then run the server |
 | `make tidy` | `go mod tidy` |
 | `make gen-icons` | Generate PNG PWA icons from SVG (needs ImageMagick) |
@@ -177,6 +177,9 @@ fly storage create
 # 5. Set secrets
 fly secrets set JWT_SECRET="$(openssl rand -hex 32)"
 fly secrets set GEMINI_API_KEY="your-key"
+# Litestream/Tigris backup secrets (BUCKET_NAME, AWS_REGION,
+# AWS_ENDPOINT_URL_S3, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) are also
+# required for deploy — see DEPLOY.md §3.
 
 # 6. Deploy
 make deploy
@@ -201,7 +204,7 @@ primary_region = "iad"
 PORT = "8080"
 DB_PATH = "/data/diet.db"
 ENV = "production"
-APP_DOMAIN = "https://diet-tracker-v2.fly.dev"
+APP_DOMAIN = "https://kinetistasis.com"
 
 [[mounts]]
 source = "diet_data"
@@ -229,36 +232,56 @@ DIET_API_URL=https://diet-tracker-v2.fly.dev make smoke-test
 |----------|-------------|
 | `POST /v1/auth/register` | Register new user |
 | `POST /v1/auth/login` | Login |
-| `POST /v1/auth/logout` | Logout |
 | `POST /v1/auth/refresh` | Refresh token |
+| `POST /v1/auth/logout` | Logout |
 | `GET /v1/auth/me` | Get current user |
+| `GET /v1/admin/users` | List users (admin) |
+| `DELETE /v1/admin/users/{userID}` | Delete user (admin) |
+| `POST /v1/admin/users/{userID}/promote` | Promote user (admin) |
+| `POST /v1/admin/users/{userID}/demote` | Demote user (admin) |
 | `GET /v1/profile` | Get profile |
 | `PUT /v1/profile` | Update profile |
-| `POST /v1/nutrition` | Log nutrition |
-| `GET /v1/nutrition` | Get nutrition logs |
+| `GET /v1/nutrition/logs` | List nutrition logs |
+| `GET /v1/nutrition/logs/{date}` | Get nutrition log by date |
+| `POST /v1/nutrition/logs` | Log nutrition |
+| `PUT /v1/nutrition/logs/{date}` | Update nutrition log |
+| `DELETE /v1/nutrition/logs/{date}` | Delete nutrition log |
+| `GET /v1/biometrics` | List biometric logs |
+| `GET /v1/biometrics/{date}` | Get biometric log by date |
 | `POST /v1/biometrics` | Log biometrics |
-| `GET /v1/biometrics` | Get biometric logs |
-| `POST /v1/workouts` | Log workout |
+| `PUT /v1/biometrics/{date}` | Update biometric log |
+| `DELETE /v1/biometrics/{date}` | Delete biometric log |
 | `GET /v1/workouts` | Get workouts |
-| `GET /v1/workouts/{id}` | Get workout by ID |
-| `PUT /v1/workouts/{id}` | Update workout |
-| `DELETE /v1/workouts/{id}` | Delete workout |
-| `GET /v1/measurements` | Get measurements |
-| `POST /v1/measurements` | Add measurement |
+| `GET /v1/workouts/{date}/{slot}` | Get workout by date and slot |
+| `POST /v1/workouts` | Log workout |
+| `PUT /v1/workouts/{date}/{slot}` | Update workout |
+| `DELETE /v1/workouts/{date}/{slot}` | Delete workout |
 | `GET /v1/targets` | Get macro targets |
 | `PUT /v1/targets` | Update macro targets |
+| `GET /v1/targets/history` | Get macro target history |
+| `GET /v1/meals/saved` | List saved meals |
+| `POST /v1/meals/saved` | Save a meal |
+| `DELETE /v1/meals/saved/{id}` | Delete saved meal |
+| `GET /v1/meals/templates` | List meal templates |
+| `POST /v1/meals/templates` | Create meal template |
+| `DELETE /v1/meals/templates/{id}` | Delete meal template |
+| `GET /v1/measurements` | Get measurements |
+| `POST /v1/measurements` | Add measurement |
+| `PUT /v1/measurements/{date}` | Update measurement |
+| `DELETE /v1/measurements/{date}` | Delete measurement |
 | `GET /v1/calc/tdee` | Calculate TDEE |
 | `GET /v1/calc/macros` | Calculate macros |
 | `GET /v1/calc/readiness` | Calculate readiness score |
 | `GET /v1/calc/bodyfat` | Calculate body fat (Navy) |
+| `POST /v1/calc/macros/distribute` | Auto-distribute macros for a calorie target |
+| `GET /v1/dashboard` | Get dashboard data |
+| `GET /v1/checkin` | Preview weekly check-in |
+| `POST /v1/checkin` | Create weekly check-in |
 | `POST /v1/parse/meal` | AI parse meal (Gemini) |
 | `POST /v1/parse/workout` | AI parse workout (Gemini) |
 | `GET /v1/export/nutrition` | Export nutrition (CSV/MD) |
 | `GET /v1/export/workouts` | Export workouts (CSV/MD) |
-| `GET /v1/dashboard` | Get dashboard data |
-| `GET /v1/admin/users` | List users (admin) |
-| `PUT /v1/admin/users/{id}/promote` | Promote user (admin) |
-| `DELETE /v1/admin/users/{id}` | Delete user (admin) |
+| `GET /v1/export/combined` | Export combined nutrition + workouts (CSV/MD) |
 | `GET /v1/health` | Health check |
 
 ## Repository

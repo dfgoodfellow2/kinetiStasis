@@ -161,10 +161,10 @@
 
 | Component | File | Lines | What It Does |
 |-----------|------|-------|-------------|
-| Observed TDEE | `services/calculator.go` | 50–150 | Tiered TDEE computation (LinReg/RLS/EMA) |
-| Damping Logic | `services/calculator.go` | 506–541 | Clamps delta to ±500 kcal |
-| Emergency Override | `services/calculator.go` | 580–593 | Decides if override should trigger |
-| Macro Distribution | `services/nutrition/macros.go` | Full file | ComputeTargets() implementation |
+| Observed TDEE | `internal/services/calculator/adaptive.go` | 50–150 | Tiered TDEE computation (LinReg/RLS/EMA) |
+| Damping Logic | `internal/services/calculator/adaptive.go` | 506–541 | Clamps delta to ±500 kcal |
+| Emergency Override | `internal/services/calculator/adaptive.go` | 580–593 | Decides if override should trigger |
+| Macro Distribution | `internal/services/nutrition/macros.go` | Full file | ComputeTargets() implementation |
 | API Handlers | `internal/handlers/calculations.go` | All routes | `/v1/calc/*`, `/v1/dashboard` |
 | Target Snapshot | `internal/handlers/targets.go` | PUT handler | Saves targets + history |
 
@@ -172,8 +172,8 @@
 
 | Component | File | What It Does |
 |-----------|------|-------------|
-| Check-In Screen | `cmd/tui/ui/checkin.go` | Display, toggle eat-back, accept/skip |
-| Dashboard | `cmd/tui/ui/dashboard.go` | Show TDEE, macros, weekly stats |
+| Check-In Screen | `ui/tui/screens/checkin.go` | Display, toggle eat-back, accept/skip |
+| Dashboard | `ui/tui/screens/dashboard.go` | Show TDEE, macros, weekly stats |
 
 ### Frontend (PWA)
 
@@ -202,11 +202,11 @@
 
 ### Phase 2: Review Implementation (1-2 hours)
 
-1. **Check services/calculator.go**
+1. **Check internal/services/calculator/adaptive.go**
    - ComputeWeeklyTargetsWithExercise() [damping logic]
    - ShouldTriggerEmergencyOverride() [override decision]
    
-2. **Check cmd/tui/ui/checkin.go**
+2. **Check ui/tui/screens/checkin.go**
    - How UI calls the backend
    - How user interacts with check-in
    
@@ -256,7 +256,7 @@
 → Read the rationale in WEEKLY_CHECKIN_DESIGN.md (10 min per topic)
 
 ### I need to verify the code matches the design
-→ Compare adaptive-tdee-calorie-targets.md (vault) against services/calculator.go (30 min)
+→ Compare adaptive-tdee-calorie-targets.md (vault) against internal/services/calculator/adaptive.go (30 min)
 
 ### I need to plan an enhancement
 → Read WEEKLY_CHECKIN_DESIGN.md "Future Enhancements" section (5 min)

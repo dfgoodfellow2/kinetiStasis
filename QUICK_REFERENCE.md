@@ -59,13 +59,13 @@ SKIP: No change
 
 | What | Where | Lines |
 |-----|-------|-------|
-| Observed TDEE | `services/calculator.go` | 50–150 |
-| Damping Logic | `services/calculator.go` | 506–541 |
-| Emergency Override | `services/calculator.go` | 580–593 |
-| Macro Distribution | `services/nutrition/macros.go` | Full file |
+| Observed TDEE | `internal/services/calculator/adaptive.go` | 50–150 |
+| Damping Logic | `internal/services/calculator/adaptive.go` | 506–541 |
+| Emergency Override | `internal/services/calculator/adaptive.go` | 580–593 |
+| Macro Distribution | `internal/services/nutrition/macros.go` | Full file |
 | API Handlers | `internal/handlers/calculations.go` | All `/v1/calc/*` |
 | Target Snapshot | `internal/handlers/targets.go` | PUT `/v1/targets` |
-| TUI Check-In Screen | `cmd/tui/ui/checkin.go` | 400+ lines |
+| TUI Check-In Screen | `ui/tui/screens/checkin.go` | 400+ lines |
 
 ---
 

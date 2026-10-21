@@ -1,16 +1,18 @@
 STATUS
 
+Audit 2026-10-21: all items verified implemented against the codebase; file/line references below are historical.
+
 All fixes tracked below. Mark each as done when completed.
 
-- [ ] FIX-001: Create internal/constants/constants.go
-- [ ] FIX-002: Fix swallowed errors
-- [ ] FIX-003: Refactor duplicated Gemini call logic
-- [ ] FIX-004: Fix export field names + unit-aware output
-- [ ] FIX-005: fetchWorkouts must select metadata_json
-- [ ] FIX-006: Stop double-counting sex adjustment in BMR
-- [ ] FIX-007: Remove duplicate respond package (internal/api/respond.go)
-- [ ] FIX-008: Fix ratelimit ticker goroutine leak
-- [ ] FIX-009: Remove dead code: computeEMASeries
+- [x] FIX-001: Create internal/constants/constants.go
+- [x] FIX-002: Fix swallowed errors
+- [x] FIX-003: Refactor duplicated Gemini call logic
+- [x] FIX-004: Fix export field names + unit-aware output
+- [x] FIX-005: fetchWorkouts must select metadata_json
+- [x] FIX-006: Stop double-counting sex adjustment in BMR
+- [x] FIX-007: Remove duplicate respond package (internal/api/respond.go)
+- [x] FIX-008: Fix ratelimit ticker goroutine leak
+- [x] FIX-009: Remove dead code: computeEMASeries
 
 OVERVIEW
 
