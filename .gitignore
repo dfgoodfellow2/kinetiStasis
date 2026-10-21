@@ -1,6 +1,6 @@
 # Binaries
 diet-tracker-server
-server
+/server
 bin/
 *.exe
 
