@@ -16,13 +16,6 @@ func EstimateBMRMifflin(weightKg, heightCm float64, age int, isMale bool) float6
 	return bmr - 161
 }
 
-func AdjustBMRForSex(bmr float64, sex string) float64 {
-	if sex == "female" {
-		return bmr * 0.95
-	}
-	return bmr
-}
-
 func EstimateBMRKatchMcArdle(weightKg, bfPct float64) float64 {
 	if weightKg <= 0 || bfPct < 0 || bfPct >= 100 {
 		return 0
@@ -34,14 +27,21 @@ func EstimateBMRKatchMcArdle(weightKg, bfPct float64) float64 {
 // ComputeBMR implements the Mifflin-St Jeor with Katch-McArdle override when bf% > 0
 func ComputeBMR(p models.Profile, weightKg float64) float64 {
 	isMale := p.Sex == "male"
+	age := models.AgeFromBirthdate(p.Birthdate)
+	if age <= 0 {
+		age = p.Age // fallback to stored age for legacy users
+	}
+	if age <= 0 {
+		age = 30 // default if no age available at all
+	}
 	if p.BfPct > 0 {
 		bmr := EstimateBMRKatchMcArdle(weightKg, p.BfPct)
 		if bmr <= 0 {
-			return EstimateBMRMifflin(weightKg, p.HeightCm, p.Age, isMale)
+			return EstimateBMRMifflin(weightKg, p.HeightCm, age, isMale)
 		}
 		return bmr
 	}
-	return EstimateBMRMifflin(weightKg, p.HeightCm, p.Age, isMale)
+	return EstimateBMRMifflin(weightKg, p.HeightCm, age, isMale)
 }
 
 func EstimateTDEEBase(bmr float64, activity string) float64 {
@@ -153,42 +153,117 @@ func ComputeTargetCalories(tdee float64, goal string) float64 {
 
 // ComputeMacros calculates protein/fat/carb/fiber/water with runner/lifter/BF% logic
 func ComputeMacros(p models.Profile, targetCalories float64, weightKg float64) models.MacroResult {
-	// weightKg is provided in kilograms
+	return DistributeMacros(p, targetCalories, weightKg)
+}
+
+// getFatPctForDistribution returns the fat percentage of remaining calories
+// (after protein) for the percentage-based macro distributions. Low-carb
+// distributions (keto, low_carb) do not use this — they cap carbohydrate at an
+// absolute gram target instead (see getCarbTargetForDistribution).
+func getFatPctForDistribution(distribution string) float64 {
+	switch distribution {
+	case "high_carb":
+		return 25
+	default: // "balanced"
+		return 40
+	}
+}
+
+// Absolute daily carbohydrate gram targets for the low-carbohydrate
+// distributions. Capping carbs at a fixed gram target (and giving the rest of
+// the post-protein calories to fat) is what makes keto/low_carb genuinely
+// low-carb, instead of leaving a percentage of the remainder as carbohydrate.
+const (
+	ketoCarbTargetG    = 30  // keto: ~25-30g carbs from the post-protein remainder
+	lowCarbCarbTargetG = 100 // low_carb: ~75-100g carbs from the post-protein remainder
+)
+
+// getCarbTargetForDistribution returns the absolute carb gram target for the
+// capped (low-carb) distributions. The bool is false for percentage-based
+// distributions (balanced, high_carb), which split the remainder by percentage.
+func getCarbTargetForDistribution(distribution string) (int, bool) {
+	switch distribution {
+	case "keto":
+		return ketoCarbTargetG, true
+	case "low_carb":
+		return lowCarbCarbTargetG, true
+	default:
+		return 0, false
+	}
+}
+
+// DistributeMacros distributes macros given a target calorie count and macro distribution.
+// Protein is calculated independently (based on lifter/BF%/deficit), then remaining
+// calories are split between fat and carbs according to the distribution.
+// This is used by the "Auto-Calculate" button in the UI, and also by full diet plan.
+func DistributeMacros(p models.Profile, targetCalories float64, weightKg float64) models.MacroResult {
 	inDeficit := p.Goal == "cut_10" || p.Goal == "cut_20" || p.Goal == "cut_30" || p.Goal == "cut_40"
-	proteinG := CalcProtein(weightKg, p.IsLifter, inDeficit, p.BfPct, int(math.Round(p.RunningKm)), p.PrioritizeCarbs)
+	runningKm := int(math.Round(p.RunningKm))
+
+	// Same protein logic as ComputeMacros
+	proteinG := CalcProtein(weightKg, p.IsLifter, inDeficit, p.BfPct, runningKm, p.PrioritizeCarbs)
 	proteinCals := proteinG * 4
 
+	// Fat minimum
 	fatMinG := CalcFatMinimum(p.HeightCm)
 
+	// Carb minimum for runners
 	carbMinG := 0
 	if p.RunningKm >= 24 {
 		carbMinG = int(math.Round(weightKg * 5))
 	}
 
 	remainingCals := int(math.Round(targetCalories)) - proteinCals
-
-	fatG := int(math.Round(targetCalories * 0.25 / 9))
-	if fatG < fatMinG {
-		fatG = fatMinG
-	}
-	fatCals := fatG * 9
-
-	carbCals := remainingCals - fatCals
-	carbG := int(math.Round(float64(carbCals) / 4))
-	if carbG < 0 {
-		carbG = 0
+	if remainingCals < 0 {
+		remainingCals = 0
 	}
 
+	var fatG, carbG int
+	if carbTargetG, capped := getCarbTargetForDistribution(p.MacroDistribution); capped {
+		// Low-carb distributions (keto, low_carb): cap carbohydrate at an
+		// absolute gram target and let fat take the rest of the post-protein
+		// calories. Never let the cap exceed what the remaining calories can
+		// supply.
+		carbG = carbTargetG
+		if maxCarbG := remainingCals / 4; carbG > maxCarbG {
+			carbG = maxCarbG
+		}
+		fatG = int(math.Round(float64(remainingCals-carbG*4) / 9.0))
+		if fatG < fatMinG {
+			// Fat floor wins; trim carbs so total energy still matches.
+			fatG = fatMinG
+			carbG = int(math.Round(float64(remainingCals-fatG*9) / 4.0))
+			if carbG < 0 {
+				carbG = 0
+			}
+		}
+	} else {
+		// Percentage-based distributions (balanced, high_carb): fat takes a
+		// share of the remaining calories and carbs get whatever is left.
+		fatPct := getFatPctForDistribution(p.MacroDistribution)
+		fatG = int(math.Round(float64(remainingCals) * fatPct / 100.0 / 9.0))
+		if fatG < fatMinG {
+			fatG = fatMinG
+		}
+		fatCals := fatG * 9
+		carbCals := remainingCals - fatCals
+		carbG = int(math.Round(float64(carbCals) / 4))
+		if carbG < 0 {
+			carbG = 0
+		}
+	}
+
+	// Enforce carb minimum for runners by stealing from fat
 	if carbG < carbMinG {
-		deficitCals := (carbMinG - carbG) * 4
-		newFatG := fatG - int(math.Round(float64(deficitCals)/9))
+		neededCals := (carbMinG - carbG) * 4
+		newFatG := fatG - int(math.Round(float64(neededCals)/9))
 		if newFatG < fatMinG {
 			fatG = fatMinG
 		} else {
 			fatG = newFatG
 		}
-		fatCals = fatG * 9
-		carbCals = remainingCals - fatCals
+		fatCals := fatG * 9
+		carbCals := remainingCals - fatCals
 		carbG = int(math.Round(float64(carbCals) / 4))
 		if carbG < 0 {
 			carbG = 0
@@ -196,7 +271,6 @@ func ComputeMacros(p models.Profile, targetCalories float64, weightKg float64) m
 	}
 
 	fiberG := CalcFiberTarget(int(math.Round(targetCalories)), p.Sex)
-
 	waterMl := 35 * weightKg
 
 	return models.MacroResult{

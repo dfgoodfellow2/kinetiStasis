@@ -82,7 +82,7 @@ type WorkoutEntry struct {
 
 type Profile struct {
 	Name             string  `json:"name"`
-	Age              int     `json:"age"`
+	Birthdate        string  `json:"birthdate"`
 	Sex              string  `json:"sex"`
 	HeightCm         float64 `json:"heightCm"`
 	Activity         string  `json:"activity"`

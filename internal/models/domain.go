@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // User represents an authenticated user account.
 type User struct {
 	ID        string `json:"id"`
@@ -12,25 +14,27 @@ type User struct {
 
 // Profile holds all personal and physiological data for a user.
 type Profile struct {
-	UserID           string  `json:"userId"`
-	Name             string  `json:"name"`
-	Age              int     `json:"age"`
-	Sex              string  `json:"sex"`
-	HeightCm         float64 `json:"heightCm"`
-	Activity         string  `json:"activity"`
-	ExerciseFreq     int     `json:"exerciseFreq"`
-	RunningKm        float64 `json:"runningKm"`
-	IsLifter         bool    `json:"isLifter"`
-	Goal             string  `json:"goal"`
-	PrioritizeCarbs  bool    `json:"prioritizeCarbs"`
-	BfPct            float64 `json:"bfPct"`
-	HRRest           int     `json:"hrRest"`
-	HRMax            int     `json:"hrMax"`
-	GripWeight       float64 `json:"gripWeight"`
-	TDEELookbackDays int     `json:"tdeeLookbackDays"`
-	SleepQualityMax  float64 `json:"sleepQualityMax"`
-	Units            string  `json:"units"`
-	UpdatedAt        string  `json:"updatedAt"`
+	UserID            string  `json:"userId"`
+	Name              string  `json:"name"`
+	Age               int     `json:"age"`
+	Sex               string  `json:"sex"`
+	HeightCm          float64 `json:"heightCm"`
+	Activity          string  `json:"activity"`
+	ExerciseFreq      int     `json:"exerciseFreq"`
+	RunningKm         float64 `json:"runningKm"`
+	IsLifter          bool    `json:"isLifter"`
+	Goal              string  `json:"goal"`
+	PrioritizeCarbs   bool    `json:"prioritizeCarbs"`
+	BfPct             float64 `json:"bfPct"`
+	HRRest            int     `json:"hrRest"`
+	HRMax             int     `json:"hrMax"`
+	GripWeight        float64 `json:"gripWeight"`
+	TDEELookbackDays  int     `json:"tdeeLookbackDays"`
+	SleepQualityMax   float64 `json:"sleepQualityMax"`
+	Units             string  `json:"units"`
+	UpdatedAt         string  `json:"updatedAt"`
+	Birthdate         string  `json:"birthdate"`         // "YYYY-MM-DD" — derive age from this
+	MacroDistribution string  `json:"macroDistribution"` // "keto", "low_carb", "balanced", "high_carb"
 }
 
 // NutritionLog is one day's nutrition intake.
@@ -406,4 +410,32 @@ type ParsedWorkout struct {
 	MaxHR        int      `json:"maxHr"`
 	Recovers     string   `json:"recovers"`
 	Day          int      `json:"day"`
+}
+
+// AgeFromBirthdate derives age from a birthdate string ("YYYY-MM-DD").
+// Returns 0 if birthdate is empty or unparseable, or if it is in the future.
+func AgeFromBirthdate(birthdate string) int {
+	return ageFromBirthdateAt(birthdate, time.Now())
+}
+
+// ageFromBirthdateAt is the testable core of AgeFromBirthdate. It derives age
+// relative to the supplied now, returning 0 for empty/unparseable/future dates.
+func ageFromBirthdateAt(birthdate string, now time.Time) int {
+	if birthdate == "" {
+		return 0
+	}
+	bd, err := time.Parse("2006-01-02", birthdate)
+	if err != nil {
+		return 0
+	}
+	// Future birthdates are nonsensical; report 0 rather than a negative age.
+	if bd.After(now) {
+		return 0
+	}
+	age := now.Year() - bd.Year()
+	// Compare month/day directly (YearDay is unreliable across leap years)
+	if now.Month() < bd.Month() || (now.Month() == bd.Month() && now.Day() < bd.Day()) {
+		age--
+	}
+	return age
 }

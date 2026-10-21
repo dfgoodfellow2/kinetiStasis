@@ -50,7 +50,10 @@ func SkinfoldMethod(profile models.Profile, weightKg float64, measurements ...fl
 		}
 		sum += v
 	}
-	age := profile.Age
+	age := models.AgeFromBirthdate(profile.Birthdate)
+	if age <= 0 {
+		age = profile.Age // fallback to stored age for legacy users
+	}
 	isMale := stringsToLower(profile.Sex) == "male"
 	density := 0.0
 	if isMale {

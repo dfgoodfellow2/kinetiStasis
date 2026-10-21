@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -105,6 +106,57 @@ func (h *CalcHandler) Macros(w http.ResponseWriter, r *http.Request) {
 	observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
 	plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
 	respond.JSON(w, http.StatusOK, plan)
+}
+
+type DistributeMacrosRequest struct {
+	Calories float64 `json:"calories"`
+}
+
+// POST /v1/calc/macros/distribute — compute macro distribution for a given calorie target
+func (h *CalcHandler) DistributeMacros(w http.ResponseWriter, r *http.Request) {
+	claims := auth.ClaimsFromCtx(r)
+
+	var req DistributeMacrosRequest
+	if !respond.Decode(w, r, &req) {
+		return
+	}
+
+	if math.IsNaN(req.Calories) || math.IsInf(req.Calories, 0) {
+		respond.Error(w, http.StatusBadRequest, "calories must be a finite number")
+		return
+	}
+	if req.Calories <= 0 {
+		respond.Error(w, http.StatusBadRequest, "calories must be > 0")
+		return
+	}
+	if req.Calories > 10000 {
+		respond.Error(w, http.StatusBadRequest, "calories must be <= 10000")
+		return
+	}
+
+	profile, err := h.s.FetchProfile(r.Context(), claims.UserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		respond.Error(w, http.StatusNotFound, "profile not found")
+		return
+	}
+	if err != nil {
+		slog.Error("fetch profile for distribute macros", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	weight, err := h.s.FetchLatestWeight(r.Context(), claims.UserID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("fetch latest weight for distribute macros", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if weight <= 0 {
+		weight = 70 // fallback weight if none logged
+	}
+
+	result := nutrition.DistributeMacros(profile, req.Calories, weight)
+	respond.JSON(w, http.StatusOK, result)
 }
 
 // GET /v1/calc/readiness

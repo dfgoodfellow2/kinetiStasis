@@ -119,4 +119,6 @@ export const api = {
   // Weekly Check-in
   getCheckinPreview: () => req('GET', '/checkin'),
   postCheckin: (data) => req('POST', '/checkin', data),
+  // Macro distribution
+  distributeMacros: (calories) => req('POST', '/calc/macros/distribute', { calories }),
 }

@@ -40,6 +40,35 @@
       loading = false
     }
   }
+
+  let distLoading = $state(false)
+
+  async function autoDistribute() {
+    error = ''
+    success = ''
+    const cal = Number(targets.calories)
+    if (!cal || cal <= 0) {
+      error = 'Set a calorie target first'
+      return
+    }
+    distLoading = true
+    try {
+      const result = await api.distributeMacros(cal)
+      targets = {
+        ...targets,
+        proteinG: String(Math.round(result.proteinG)),
+        carbsG: String(Math.round(result.carbsG)),
+        fatG: String(Math.round(result.fatG)),
+        fiberG: String(Math.round(result.fiberG)),
+        waterMl: String(Math.round(result.waterMl)),
+      }
+      success = 'Macros auto-calculated'
+    } catch (e) {
+      error = e.message
+    } finally {
+      distLoading = false
+    }
+  }
 </script>
 
 {#if error}<Alert type="error" message={error} />{/if}
@@ -47,18 +76,22 @@
 
   <div class="max-w-screen-xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
 
-  {#if tdee}
+{#if tdee}
     <div class="bg-gray-700 p-3 rounded text-sm space-y-1">
       <div class="text-emerald-400 font-semibold">Suggested from your data</div>
         <div>Observed TDEE: <span class="text-white font-mono">{Math.round(tdee.observedTdee ?? 0)} kcal</span></div>
         <div>Estimated TDEE: <span class="text-white font-mono">{Math.round(tdee.estimatedTdee ?? 0)} kcal</span></div>
         <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.daysOfData ?? 0} days of data</div>
-      <button
-        class="mt-2 text-xs text-emerald-400 underline"
-        onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
-      >Use observed TDEE as calorie target</button>
-    </div>
-  {/if}
+    <button
+      class="mt-2 text-xs text-emerald-400 underline"
+      onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
+    >Use observed TDEE as calorie target</button>
+  </div>
+{/if}
+
+  <button class="bg-cyan-700 px-3 py-2 rounded-lg text-sm hover:bg-cyan-600 w-full mb-3" onclick={autoDistribute} disabled={distLoading}>
+    {distLoading ? 'Calculating…' : '🤖 Auto-Calculate Macros'}
+  </button>
 
   <div class="grid grid-cols-2 gap-3">
     <div>

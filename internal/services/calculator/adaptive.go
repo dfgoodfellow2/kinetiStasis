@@ -157,7 +157,11 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 					lbm := weightKg * (1 - bodyFatPct/100)
 					bmr = 370 + (21.6 * lbm)
 				} else {
-					bmr = 10*weightKg + 6.25*profile.HeightCm - 5*float64(profile.Age)
+					age := models.AgeFromBirthdate(profile.Birthdate)
+					if age <= 0 {
+						age = profile.Age // fallback to stored age for legacy users
+					}
+					bmr = 10*weightKg + 6.25*profile.HeightCm - 5*float64(age)
 					if profile.Sex == "male" {
 						bmr += 5
 					} else {

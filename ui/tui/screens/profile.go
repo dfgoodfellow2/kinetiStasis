@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -21,7 +22,7 @@ type profileLoadedMsg struct {
 // field indices
 const (
 	pfName = iota
-	pfAge
+	pfBirthdate
 	pfSex
 	pfHeightCm
 	pfActivity
@@ -42,7 +43,7 @@ const (
 
 var profileLabels = [pfCount]string{
 	"Name",
-	"Age",
+	"Birthdate (YYYY-MM-DD)",
 	"Sex (male/female)",
 	"Height (cm)",
 	"Activity (sedentary/light/moderate/active/very_active)",
@@ -126,11 +127,16 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.err = ""
 			m.msg = ""
+			birthdate := strings.TrimSpace(m.inputs[pfBirthdate].Value())
+			if err := validateBirthdateInput(birthdate); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
 			m.loading = true
 			return m, func() tea.Msg {
 				p := client.Profile{}
 				p.Name = m.inputs[pfName].Value()
-				p.Age, _ = strconv.Atoi(m.inputs[pfAge].Value())
+				p.Birthdate = birthdate
 				p.Sex = m.inputs[pfSex].Value()
 				p.HeightCm, _ = strconv.ParseFloat(m.inputs[pfHeightCm].Value(), 64)
 				p.Activity = m.inputs[pfActivity].Value()
@@ -162,13 +168,13 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		p := msg.p
 		// if this is a save result (p is zero value), just show success
-		if p.Name == "" && p.Age == 0 && p.Units == "" {
+		if p.Name == "" && p.Birthdate == "" && p.Units == "" {
 			m.msg = "Profile saved"
 			return m, nil
 		}
 		// populate inputs from loaded profile
 		m.inputs[pfName].SetValue(p.Name)
-		m.inputs[pfAge].SetValue(fmt.Sprintf("%d", p.Age))
+		m.inputs[pfBirthdate].SetValue(p.Birthdate)
 		m.inputs[pfSex].SetValue(p.Sex)
 		m.inputs[pfHeightCm].SetValue(fmt.Sprintf("%.1f", p.HeightCm))
 		m.inputs[pfActivity].SetValue(p.Activity)
@@ -220,6 +226,22 @@ func (m *ProfileModel) View() string {
 	}
 	s += styles.Help.Render("Tab/Shift+Tab: navigate • Enter: save • Esc: menu")
 	return s
+}
+
+// validateBirthdateInput enforces the strict YYYY-MM-DD rule used by the server.
+// An empty value is allowed (legacy profiles with no birthdate).
+func validateBirthdateInput(v string) error {
+	if v == "" {
+		return nil
+	}
+	if len(v) != 10 {
+		return fmt.Errorf("birthdate must be in YYYY-MM-DD format")
+	}
+	bd, err := time.Parse("2006-01-02", v)
+	if err != nil || bd.Format("2006-01-02") != v {
+		return fmt.Errorf("birthdate must be in YYYY-MM-DD format")
+	}
+	return nil
 }
 
 // small helpers used by other screens too — keep them here

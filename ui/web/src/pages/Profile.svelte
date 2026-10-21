@@ -7,10 +7,11 @@
 
   // ── Profile ─────────────────────────────────────────────
   let profile = $state({
-    name: '', age: '', sex: 'male', heightCm: '', activity: 'sedentary',
+    name: '', age: '', birthdate: '', sex: 'male', heightCm: '', activity: 'sedentary',
     exerciseFreq: '', runningKm: '', isLifter: false, goal: 'maintenance',
     prioritizeCarbs: false, bfPct: '', hrRest: '', hrMax: '',
     gripWeight: 0.5, tdeeLookbackDays: 90, sleepQualityMax: 10, units: 'imperial',
+    macroDistribution: 'balanced',
   })
   let profileLoading = $state(false)
   let profileError = $state('')
@@ -36,6 +37,7 @@
           ...profile, 
           name: p.name || '',
           age: p.age || '',
+          birthdate: p.birthdate || '',
           sex: p.sex || 'male',
           heightCm: p.heightCm ?? '',
           activity: p.activity || 'sedentary',
@@ -51,6 +53,7 @@
           tdeeLookbackDays: p.tdeeLookbackDays ?? 90,
           sleepQualityMax: p.sleepQualityMax ?? 10,
           units: p.units || 'imperial',
+          macroDistribution: p.macroDistribution || 'balanced',
         }
             // Convert runningKm to display units for the input
                 if (profile.units === 'imperial' && p.runningKm) {
@@ -88,6 +91,8 @@
             tdeeLookbackDays: Number(profile.tdeeLookbackDays) || 90,
             sleepQualityMax: Number(profile.sleepQualityMax) || 10,
             units: profile.units,
+            birthdate: profile.birthdate || '',
+            macroDistribution: profile.macroDistribution || 'balanced',
         })
         setUnits(profile.units)
         setSleepQualityMax(profile.sleepQualityMax)
@@ -136,6 +141,35 @@
       targetsError = e.message
     } finally {
       targetsLoading = false
+    }
+  }
+
+  let distTargetsLoading = $state(false)
+
+  async function autoDistributeTargets() {
+    targetsError = ''
+    targetsSuccess = ''
+    const cal = Number(targets.calories)
+    if (!cal || cal <= 0) {
+      targetsError = 'Set a calorie target first'
+      return
+    }
+    distTargetsLoading = true
+    try {
+      const result = await api.distributeMacros(cal)
+      targets = {
+        ...targets,
+        proteinG: String(Math.round(result.proteinG)),
+        carbsG: String(Math.round(result.carbsG)),
+        fatG: String(Math.round(result.fatG)),
+        fiberG: String(Math.round(result.fiberG)),
+        waterMl: String(Math.round(result.waterMl)),
+      }
+      targetsSuccess = 'Macros auto-calculated from ' + (profile.macroDistribution || 'balanced') + ' distribution'
+    } catch (e) {
+      targetsError = e.message
+    } finally {
+      distTargetsLoading = false
     }
   }
 
@@ -208,8 +242,8 @@
       <input class="input" id="pf-name" placeholder="Name" bind:value={profile.name} />
     </div>
     <div>
-      <label class="text-xs text-gray-400" for="pf-age">Age</label>
-      <input class="input" id="pf-age" type="number" placeholder="Age" bind:value={profile.age} />
+      <label class="text-xs text-gray-400" for="pf-birthdate">Birthdate</label>
+      <input class="input" id="pf-birthdate" type="date" bind:value={profile.birthdate} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-sex">Sex</label>
@@ -254,6 +288,15 @@
         <option value="maintenance">Maintenance</option>
         <option value="bulk_10">Bulk 10%</option>
         <option value="bulk_20">Bulk 20%</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400" for="pf-macro-dist">Macro Distribution</label>
+      <select class="input" id="pf-macro-dist" bind:value={profile.macroDistribution}>
+        <option value="balanced">Balanced</option>
+        <option value="keto">Keto (very low carb, high fat)</option>
+        <option value="low_carb">Low Carb (moderate carb, higher fat)</option>
+        <option value="high_carb">High Carb (lower fat)</option>
       </select>
     </div>
     <div>
@@ -362,6 +405,11 @@
             class="mt-2 text-xs text-emerald-400 underline"
             onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
           >Use observed TDEE as calorie target</button>
+          <button
+            class="mt-2 text-xs text-cyan-400 underline"
+            onclick={autoDistributeTargets}
+            disabled={distTargetsLoading}
+          >🤖 Auto-Calculate from calories</button>
         </div>
       {/if}
 
@@ -390,6 +438,12 @@
             <label class="text-xs text-gray-400" for="pt-water">Water (ml)</label>
             <input class="input" id="pt-water" type="number" placeholder="e.g. 2500" bind:value={targets.waterMl} />
           </div>
+        </div>
+
+        <div class="mt-3">
+          <button class="bg-cyan-700 px-3 py-2 rounded-lg text-sm hover:bg-cyan-600 w-full" onclick={autoDistributeTargets} disabled={distTargetsLoading}>
+            {distTargetsLoading ? 'Calculating…' : '🤖 Auto-Calculate Macros'}
+          </button>
         </div>
 
       <div class="flex gap-3 mt-4">

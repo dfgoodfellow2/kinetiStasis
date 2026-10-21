@@ -29,11 +29,13 @@ func (s *SQLiteStore) FetchProfile(ctx context.Context, userID string) (models.P
                COALESCE(running_km,0), COALESCE(is_lifter,0), COALESCE(goal,'maintenance'),
                COALESCE(prioritize_carbs,0), COALESCE(bf_pct,0), COALESCE(hr_rest,0),
                COALESCE(hr_max,0), COALESCE(grip_weight,0.5), COALESCE(tdee_lookback_days,90),
-               COALESCE(sleep_quality_max,10.0), COALESCE(units,'imperial'), updated_at
+               COALESCE(sleep_quality_max,10.0), COALESCE(units,'imperial'), updated_at,
+               COALESCE(birthdate,''), COALESCE(macro_distribution,'balanced')
         FROM profiles WHERE user_id = ?`, userID,
 	).Scan(&p.UserID, &p.Name, &p.Age, &p.Sex, &p.HeightCm, &p.Activity, &p.ExerciseFreq,
 		&p.RunningKm, &p.IsLifter, &p.Goal, &p.PrioritizeCarbs, &p.BfPct, &p.HRRest,
-		&p.HRMax, &p.GripWeight, &p.TDEELookbackDays, &p.SleepQualityMax, &p.Units, &p.UpdatedAt)
+		&p.HRMax, &p.GripWeight, &p.TDEELookbackDays, &p.SleepQualityMax, &p.Units, &p.UpdatedAt,
+		&p.Birthdate, &p.MacroDistribution)
 	if err != nil {
 		slog.Error("database operation failed", "err", err, "operation", "fetch_profile", "user_id", userID)
 	}
@@ -53,8 +55,8 @@ func (s *SQLiteStore) UpsertProfile(ctx context.Context, p *models.Profile) erro
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO profiles (user_id,name,age,sex,height_cm,activity,exercise_freq,running_km,
           is_lifter,goal,prioritize_carbs,bf_pct,hr_rest,hr_max,grip_weight,tdee_lookback_days,
-          sleep_quality_max,units,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          sleep_quality_max,units,updated_at,birthdate,macro_distribution)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(user_id) DO UPDATE SET
           name=excluded.name, age=excluded.age, sex=excluded.sex, height_cm=excluded.height_cm,
           activity=excluded.activity, exercise_freq=excluded.exercise_freq,
@@ -62,10 +64,11 @@ func (s *SQLiteStore) UpsertProfile(ctx context.Context, p *models.Profile) erro
           prioritize_carbs=excluded.prioritize_carbs, bf_pct=excluded.bf_pct, hr_rest=excluded.hr_rest,
           hr_max=excluded.hr_max, grip_weight=excluded.grip_weight,
           tdee_lookback_days=excluded.tdee_lookback_days, sleep_quality_max=excluded.sleep_quality_max,
-          units=excluded.units, updated_at=excluded.updated_at`,
+          units=excluded.units, updated_at=excluded.updated_at,
+          birthdate=excluded.birthdate, macro_distribution=excluded.macro_distribution`,
 		p.UserID, p.Name, p.Age, p.Sex, p.HeightCm, p.Activity, p.ExerciseFreq, p.RunningKm,
 		isLifter, p.Goal, prioritize, p.BfPct, p.HRRest, p.HRMax, p.GripWeight,
-		p.TDEELookbackDays, p.SleepQualityMax, p.Units, p.UpdatedAt,
+		p.TDEELookbackDays, p.SleepQualityMax, p.Units, p.UpdatedAt, p.Birthdate, p.MacroDistribution,
 	)
 	if err != nil {
 		slog.Error("database operation failed", "err", err, "operation", "upsert_profile", "user_id", p.UserID)

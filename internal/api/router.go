@@ -144,6 +144,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 			r.Get("/calc/macros", calcH.Macros)
 			r.Get("/calc/readiness", calcH.Readiness)
 			r.Get("/calc/bodyfat", calcH.BodyFat)
+			r.Post("/calc/macros/distribute", calcH.DistributeMacros)
 			r.Get("/dashboard", calcH.Dashboard)
 
 			// Check-in
