@@ -98,6 +98,8 @@
   let dailyError = $state('')
   let dailySuccess = $state('')
   let draftRestored = $state(false)
+  // True while the daily form was populated from an existing biometric row.
+  let isEdit = $state(false)
 
   // Draft the daily check-in form only.
   function hasDraftContent(f) {
@@ -107,6 +109,8 @@
   }
 
   $effect(() => {
+    // Never draft an in-progress edit.
+    if (isEdit) return
     const snapshot = $state.snapshot(dailyForm)
     if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
   })
@@ -114,6 +118,7 @@
   function discardDraft() {
     clearDraft(DRAFT_KEY)
     draftRestored = false
+    isEdit = false
     tab = 'daily'
     dailyForm = emptyDailyForm()
   }
@@ -136,6 +141,7 @@
       dailySuccess = 'Check-in saved'
       clearDraft(DRAFT_KEY)
       draftRestored = false
+      isEdit = false
       dailyForm = emptyDailyForm()
     } catch (e) {
       dailyError = e.message
@@ -296,6 +302,9 @@
         clearDraft(DRAFT_KEY)
         draftRestored = false
         const row = store.editData.data
+        // Mark the edit before touching the form so the draft effect cannot
+        // snapshot the row being edited.
+        isEdit = true
         dailyForm = { 
           date: row.date, 
           weightKg: String(row.weightKg ?? ''),

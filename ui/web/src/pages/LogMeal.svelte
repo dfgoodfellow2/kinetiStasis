@@ -20,6 +20,7 @@
   let error = $state('')
   let success = $state('')
   let isEdit = $state(false)
+  let editDate = $state(null)
   let draftRestored = $state(false)
 
   let aiText = $state('')
@@ -54,6 +55,8 @@
   }
 
   $effect(() => {
+    // Never draft an in-progress edit or the AI/YAML tab forms.
+    if (isEdit || mode !== 'manual') return
     const snapshot = $state.snapshot(form)
     if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
   })
@@ -62,6 +65,7 @@
     clearDraft(DRAFT_KEY)
     draftRestored = false
     isEdit = false
+    editDate = null
     form = emptyForm()
     mode = 'manual'
   }
@@ -165,7 +169,11 @@
       clearDraft(DRAFT_KEY)
       draftRestored = false
       const row = store.editData.data
-        form = { 
+      // Mark the edit (and pin its original date) before touching the form so
+      // the draft effect can never snapshot an edit-in-progress.
+      isEdit = true
+      editDate = row.date
+      form = { 
         date: row.date, 
         calories: String(row.calories ?? ''), 
         proteinG: String(row.proteinG ?? ''), 
@@ -176,7 +184,6 @@
         mealNotes: row.mealNotes ?? '' 
       }
       mode = 'manual'
-      isEdit = true
       clearEditData()
     }
   })
@@ -196,11 +203,14 @@
         waterMl: Number(form.waterMl) || 0,
         mealNotes: form.mealNotes || '',
       }
-      if (isEdit) {
-        // Editing replaces the whole day's log, so PUT to the date path.
-        await api.putNutrition(form.date, payload)
+      const editing = editDate !== null
+      if (editing) {
+        // Editing replaces the whole day's log, so PUT to the ORIGINAL row's
+        // date — a date field changed mid-edit must not retarget the write.
+        await api.putNutrition(editDate, payload)
         success = 'Updated'
         // The edit has been applied, so subsequent saves should create new logs.
+        editDate = null
         isEdit = false
         // Keep the form on the edited date so the user retains date context.
       } else {

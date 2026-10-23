@@ -32,6 +32,8 @@
   }
 
   $effect(() => {
+    // Never draft an in-progress edit.
+    if (isEdit) return
     const snapshot = $state.snapshot(form)
     if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
   })

@@ -47,6 +47,8 @@
   let error = $state('')
   let success = $state('')
   let draftRestored = $state(false)
+  // True while the form was populated from an existing workout row.
+  let isEdit = $state(false)
 
   // ── Parse state (set when child components call onParsed) ──
   let parseReady = $state(false)
@@ -92,6 +94,8 @@
   }
 
   $effect(() => {
+    // Never draft an in-progress edit.
+    if (isEdit) return
     const snapshot = $state.snapshot(workout)
     if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
   })
@@ -100,6 +104,7 @@
     clearDraft(DRAFT_KEY)
     draftRestored = false
     parseReady = false
+    isEdit = false
     workout = blankWorkout()
   }
 
@@ -184,6 +189,7 @@
       success = 'Workout saved!'
       clearDraft(DRAFT_KEY)
       draftRestored = false
+      isEdit = false
       workout = blankWorkout()
       // reset parse states in parent — child components manage their own raw/parsed state
       parseReady = false
@@ -289,6 +295,9 @@
   onMount(() => {
     // Check if editing existing workout
     if (store.editData && store.editData.type === 'workout') {
+      // Mark the edit before populating the form so the draft effect can never
+      // snapshot the row being edited.
+      isEdit = true
       // An explicit edit supersedes any half-finished manual draft.
       clearDraft(DRAFT_KEY)
       draftRestored = false
