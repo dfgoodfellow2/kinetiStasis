@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { store, clearEditData } from '../lib/stores.svelte.js'
+  import { store, clearEditData, setCurrentPage } from '../lib/stores.svelte.js'
   import { api } from '../lib/api.js'
   import { today } from '../lib/utils.js'
   import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
@@ -188,6 +188,19 @@
     }
   })
 
+  // True when the given date already has a nutrition log. POST merges additively,
+  // so callers must confirm before writing over an existing day. A 404 is the only
+  // "no log yet" signal; any other failure propagates rather than silently merging.
+  async function logExistsFor(date) {
+    try {
+      await api.getNutrition(date)
+      return true
+    } catch (e) {
+      if (e.message === 'nutrition log not found') return false
+      throw e
+    }
+  }
+
   async function submitManual() {
     error = ''
     success = ''
@@ -208,12 +221,22 @@
         // Editing replaces the whole day's log, so PUT to the ORIGINAL row's
         // date — a date field changed mid-edit must not retarget the write.
         await api.putNutrition(editDate, payload)
-        success = 'Updated'
-        // The edit has been applied, so subsequent saves should create new logs.
-        editDate = null
+        // The edit originated in History, so return there as its natural
+        // completion. Leaving the form open on the edited date would silently
+        // re-arm Save as a new-entry POST, which additively merges into the
+        // day we just replaced.
+        clearDraft(DRAFT_KEY)
+        draftRestored = false
         isEdit = false
-        // Keep the form on the edited date so the user retains date context.
+        editDate = null
+        setCurrentPage('history')
+        return
       } else {
+        if (await logExistsFor(form.date)) {
+          if (!confirm(`A log already exists for ${form.date} — saving will ADD to it. Continue?`)) {
+            return
+          }
+        }
         await api.postNutrition(payload)
         success = 'Saved'
         form = emptyForm()
