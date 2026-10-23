@@ -159,7 +159,19 @@ export const api = {
   getBodyFat: (method) => req('GET', `/calc/bodyfat?method=${method}`),
 
   // Parse (AI)
-  parseMeal: (text) => req('POST', '/parse/meal', { text }),
+  // Back-compat: parseMeal('2 eggs') still maps to { text: '2 eggs' }.
+  // New form: parseMeal({ text, imageBase64, mimeType }) where imageBase64 is
+  // raw base64 (no "data:" prefix) and mimeType is image/jpeg|png|webp.
+  parseMeal: (input) => {
+    const opts = typeof input === 'string' ? { text: input } : (input || {})
+    const body = {}
+    if (opts.text !== undefined && opts.text !== null) body.text = opts.text
+    if (opts.imageBase64) {
+      body.imageBase64 = opts.imageBase64
+      body.mimeType = opts.mimeType || 'image/jpeg'
+    }
+    return req('POST', '/parse/meal', body)
+  },
   parseWorkout: (text, format = 'ai') => req('POST', '/parse/workout', { text, format }),
 
   // Export — returns { content: "..." }

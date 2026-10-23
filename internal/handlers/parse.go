@@ -19,22 +19,25 @@ func NewParseHandler(s store.Store, geminiClient *gemini.Client) *ParseHandler {
 }
 
 // POST /v1/parse/meal
+// Body: { "text"?: string, "imageBase64"?: string, "mimeType"?: string }
+// At least one of text or imageBase64 is required. imageBase64 is raw base64
+// (no data: prefix) and mimeType must be image/jpeg, image/png, or image/webp.
+// Image bytes are parsed and discarded — never persisted or logged.
 func (h *ParseHandler) Meal(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Text string `json:"text"`
-	}
+	var body mealParseRequest
 	if !respond.Decode(w, r, &body) {
 		return
 	}
-	if body.Text == "" {
-		respond.Error(w, http.StatusBadRequest, "text is required")
+	input, err := validateMealRequest(body)
+	if err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if h.gemini == nil {
 		respond.Error(w, http.StatusServiceUnavailable, "AI parsing unavailable")
 		return
 	}
-	parsed, err := h.gemini.ParseMeal(r.Context(), body.Text)
+	parsed, err := h.gemini.ParseMealWithImage(r.Context(), input.Text, input.Image)
 	if err != nil {
 		respond.Error(w, http.StatusBadGateway, err.Error())
 		return

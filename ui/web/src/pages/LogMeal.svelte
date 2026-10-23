@@ -3,20 +3,32 @@
   import { store, clearEditData } from '../lib/stores.svelte.js'
   import { api } from '../lib/api.js'
   import { today } from '../lib/utils.js'
+  import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
 
+  const DRAFT_KEY = 'draft:logmeal:manual'
+
+  function emptyForm() {
+    return { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' }
+  }
+
   let mode = $state('ai')
-  let form = $state({ date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' })
+  let form = $state(emptyForm())
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
   let isEdit = $state(false)
+  let draftRestored = $state(false)
 
   let aiText = $state('')
   let aiResult = $state(null)
   let aiLoading = $state(false)
+  // Photo attachment for the AI tab: { imageBase64, mimeType, previewUrl }
+  let aiImage = $state(null)
+  let aiImageLoading = $state(false)
+  let canParse = $derived(aiText.trim().length > 0 || !!aiImage)
 
   // Saved meals (quick add) & templates
   let savedMeals = $state([])
@@ -33,6 +45,26 @@
       .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
       .slice(0, 5)
   )
+
+  // Draft the manual form only (never the AI photo/base64 state).
+  function hasDraftContent(f) {
+    if (!f || typeof f !== 'object') return false
+    return ['calories', 'proteinG', 'carbsG', 'fatG', 'fiberG', 'waterMl', 'mealNotes']
+      .some((k) => String(f[k] ?? '').trim() !== '')
+  }
+
+  $effect(() => {
+    const snapshot = $state.snapshot(form)
+    if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
+  })
+
+  function discardDraft() {
+    clearDraft(DRAFT_KEY)
+    draftRestored = false
+    isEdit = false
+    form = emptyForm()
+    mode = 'manual'
+  }
 
   async function loadSaved() {
     savedLoading = true
@@ -121,8 +153,17 @@
   onMount(() => {
     loadSaved()
     loadTemplates()
+    // Restore an unsaved manual draft before editData (edit wins).
+    const draft = loadDraft(DRAFT_KEY)
+    if (hasDraftContent(draft)) {
+      form = { ...emptyForm(), ...draft }
+      draftRestored = true
+      mode = 'manual'
+    }
     // Check if we're editing an existing nutrition log
     if (store.editData && store.editData.type === 'nutrition') {
+      clearDraft(DRAFT_KEY)
+      draftRestored = false
       const row = store.editData.data
         form = { 
         date: row.date, 
@@ -165,8 +206,10 @@
       } else {
         await api.postNutrition(payload)
         success = 'Saved'
-        form = { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' }
+        form = emptyForm()
       }
+      clearDraft(DRAFT_KEY)
+      draftRestored = false
     } catch (e) {
       error = e.message
     } finally {
@@ -174,11 +217,81 @@
     }
   }
 
+  // Downscale a photo to <=1024px on its long edge and re-encode as JPEG.
+  // Resolves { imageBase64, mimeType, previewUrl }; base64 is raw (no prefix).
+  function downscaleImage(file, maxDim = 1024, quality = 0.85) {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight))
+          const width = Math.max(1, Math.round(img.naturalWidth * scale))
+          const height = Math.max(1, Math.round(img.naturalHeight * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) throw new Error('Could not process image')
+          ctx.drawImage(img, 0, 0, width, height)
+          const dataUrl = canvas.toDataURL('image/jpeg', quality)
+          const base64 = dataUrl.replace(/^data:image\/(?:jpeg|jpg);base64,/, '')
+          resolve({ imageBase64: base64, mimeType: 'image/jpeg', previewUrl: dataUrl })
+        } catch (e) {
+          reject(e)
+        } finally {
+          URL.revokeObjectURL(objectUrl)
+        }
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('Could not read that image'))
+      }
+      img.src = objectUrl
+    })
+  }
+
+  async function onPhotoSelected(event) {
+    const file = event.target.files?.[0]
+    // Reset so choosing the same file again still fires a change event.
+    event.target.value = ''
+    if (!file) return
+    error = ''
+    success = ''
+    aiImageLoading = true
+    try {
+      aiImage = await downscaleImage(file)
+    } catch (e) {
+      error = e.message
+    } finally {
+      aiImageLoading = false
+    }
+  }
+
+  function removeImage() {
+    aiImage = null
+  }
+
   async function parseAI() {
+    if (!canParse) {
+      error = 'describe your meal or attach a photo'
+      return
+    }
+    error = ''
+    success = ''
     aiLoading = true
     aiResult = null
     try {
-      aiResult = await api.parseMeal(aiText)
+      const payload = {}
+      if (aiText.trim()) payload.text = aiText
+      if (aiImage) {
+        payload.imageBase64 = aiImage.imageBase64
+        payload.mimeType = aiImage.mimeType
+      }
+      // Images are parsed and discarded server-side; Web Share Target integration is planned v2.
+      aiResult = await api.parseMeal(payload)
+      // Clear only after a successful parse.
+      aiImage = null
     } catch (e) {
       error = e.message
     } finally {
@@ -217,6 +330,12 @@
 
   {#if error}<Alert type="error" message={error} />{/if}
   {#if success}<Alert type="success" message={success} />{/if}
+
+  {#if draftRestored && mode === 'manual'}
+    <div class="mb-3 text-xs text-gray-400">
+      Draft restored — <button class="text-cyan-400 hover:text-cyan-300 underline" onclick={discardDraft}>Discard?</button>
+    </div>
+  {/if}
 
   {#if mode === 'manual'}
     <Card title="Quick Add">
@@ -382,9 +501,57 @@
   {:else}
     <Card title="AI Parse">
       <textarea class="input" rows="6" placeholder="Describe your meal..." bind:value={aiText}></textarea>
-        <div class="flex space-x-2 mt-2">
-        <button class="btn-primary" onclick={parseAI} disabled={aiLoading}>{aiLoading? 'Parsing…' : 'Parse'}</button>
+
+      {#if aiImage}
+        <div class="relative inline-block mt-3">
+          <img
+            src={aiImage.previewUrl}
+            alt="Meal preview"
+            class="w-24 h-24 object-cover rounded-lg border border-gray-700"
+          />
+          <button
+            type="button"
+            class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-gray-900 border border-gray-600 text-xs text-gray-300 hover:text-red-400"
+            title="Remove photo"
+            aria-label="Remove photo"
+            onclick={removeImage}
+          >
+            ✕
+          </button>
+        </div>
+      {/if}
+
+      <div class="flex flex-wrap items-center gap-2 mt-2">
+        <input
+          id="lm-photo"
+          class="hidden"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onchange={onPhotoSelected}
+        />
+        <label
+          for="lm-photo"
+          class="bg-gray-700 px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-gray-600"
+        >
+          📷 {aiImage ? 'Replace photo' : 'Attach photo'}
+        </label>
+        <button
+          class="btn-primary"
+          onclick={parseAI}
+          disabled={aiLoading || aiImageLoading || !canParse}
+        >
+          {aiLoading ? 'Parsing…' : 'Parse'}
+        </button>
+        {#if aiImageLoading}
+          <span class="text-xs text-gray-400">Preparing photo…</span>
+        {/if}
       </div>
+
+      {#if !canParse && !aiImageLoading}
+        <p class="text-xs text-gray-400 mt-2">describe your meal or attach a photo</p>
+      {/if}
+
       {#if aiLoading}<Spinner />{/if}
       {#if aiResult}
         <Card title="Parsed Result">
