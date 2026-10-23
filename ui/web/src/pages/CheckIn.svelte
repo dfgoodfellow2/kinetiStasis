@@ -2,11 +2,18 @@
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
   import { store, clearEditData } from '../lib/stores.svelte.js'
+  import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
   import { today, daysAgo, dispWeight, weightUnit, inputWeight, dispLength, lengthUnit, inputLength, inputLoad, dispLoad, loadUnit, kgToLbs } from '../lib/utils.js'
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
   import TdeeChart from '../components/TdeeChart.svelte'
+
+  const DRAFT_KEY = 'draft:checkin:daily'
+
+  function emptyDailyForm() {
+    return { date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '' }
+  }
 
   // --- Weekly Check-in ---
   let weeklyLoading = $state(false)
@@ -86,10 +93,30 @@
   let tab = $state('daily')
 
   // --- Daily tab ---
-  let dailyForm = $state({ date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '' })
+  let dailyForm = $state(emptyDailyForm())
   let dailyLoading = $state(false)
   let dailyError = $state('')
   let dailySuccess = $state('')
+  let draftRestored = $state(false)
+
+  // Draft the daily check-in form only.
+  function hasDraftContent(f) {
+    if (!f || typeof f !== 'object') return false
+    return ['weightKg', 'gripKg', 'boltScore', 'sleepHours', 'sleepQuality', 'subjective', 'notes']
+      .some((k) => String(f[k] ?? '').trim() !== '')
+  }
+
+  $effect(() => {
+    const snapshot = $state.snapshot(dailyForm)
+    if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
+  })
+
+  function discardDraft() {
+    clearDraft(DRAFT_KEY)
+    draftRestored = false
+    tab = 'daily'
+    dailyForm = emptyDailyForm()
+  }
 
   async function submitDaily() {
     dailyError = ''
@@ -107,7 +134,9 @@
         notes:           dailyForm.notes || '',
       })
       dailySuccess = 'Check-in saved'
-      dailyForm = { date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '' }
+      clearDraft(DRAFT_KEY)
+      draftRestored = false
+      dailyForm = emptyDailyForm()
     } catch (e) {
       dailyError = e.message
     } finally {
@@ -256,8 +285,16 @@
   }
 
   onMount(() => {
+    const draft = loadDraft(DRAFT_KEY)
+    if (hasDraftContent(draft)) {
+      dailyForm = { ...emptyDailyForm(), ...draft }
+      draftRestored = true
+      tab = 'daily'
+    }
     if (store.editData) {
         if (store.editData.type === 'biometric') {
+        clearDraft(DRAFT_KEY)
+        draftRestored = false
         const row = store.editData.data
         dailyForm = { 
           date: row.date, 
@@ -311,6 +348,11 @@
   {#if tab === 'daily'}
     {#if dailyError}<Alert type="error" message={dailyError} />{/if}
     {#if dailySuccess}<Alert type="success" message={dailySuccess} />{/if}
+    {#if draftRestored}
+      <div class="mb-3 text-xs text-gray-400">
+        Draft restored — <button class="text-cyan-400 hover:text-cyan-300 underline" onclick={discardDraft}>Discard?</button>
+      </div>
+    {/if}
     <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 space-y-4">
       <h3 class="text-emerald-400 font-bold text-lg">Daily Check-in</h3>
       <div class="grid grid-cols-2 gap-3">

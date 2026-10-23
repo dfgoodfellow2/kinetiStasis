@@ -1,7 +1,13 @@
 package api
 
 import (
+	"bufio"
+	"context"
+	"io"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
@@ -68,7 +74,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 
 		// Public
 		// health uses store.PingContext now
-		r.Get("/health", healthHandlerFunc(s))
+		r.Get("/health", healthHandlerFunc(s, cfg))
 
 		// Debug endpoints removed — kept health endpoint for checks
 
@@ -181,17 +187,148 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 	return r
 }
 
-func healthHandlerFunc(s store.Store) http.HandlerFunc {
+// replicaMetricsTimeout caps the best-effort Litestream metrics lookup. Health
+// must stay fast even when Litestream is not running or the metrics listener is
+// wedged, so this is deliberately the only network call in the handler.
+const replicaMetricsTimeout = 500 * time.Millisecond
+
+// healthHandlerFunc reports liveness plus two best-effort operational signals:
+//
+//	dbModifiedAgoSec — age of the SQLite file's mtime (-1 when it cannot be read)
+//	replicaAgeSec    — age of the most recent replica write, derived from a
+//	                   Prometheus timestamp metric (-1 when unavailable)
+//
+// Neither probe can fail the health check; they are observability only.
+func healthHandlerFunc(s store.Store, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		if err := s.PingContext(ctx); err != nil {
 			respond.Error(w, http.StatusServiceUnavailable, "database unavailable")
 			return
 		}
+
+		dbPath, metricsURL := "", ""
+		if cfg != nil {
+			dbPath = cfg.DBPath
+			metricsURL = cfg.LitestreamMetricsAddr
+		}
+
 		respond.JSON(w, http.StatusOK, map[string]any{
-			"status":  "ok",
-			"version": "2.0.0",
-			"time":    time.Now().UTC().Format(time.RFC3339),
+			"status":           "ok",
+			"version":          "2.0.0",
+			"time":             time.Now().UTC().Format(time.RFC3339),
+			"dbModifiedAgoSec": dbModifiedAgoSec(dbPath),
+			"replicaAgeSec":    replicaAgeSec(ctx, metricsURL),
 		})
 	}
+}
+
+// dbModifiedAgoSec returns how many seconds ago path was last modified, or -1
+// if the file cannot be stat'd (for example before the first write or when
+// DB_PATH points somewhere that does not exist in this environment).
+func dbModifiedAgoSec(path string) int {
+	if path == "" {
+		return -1
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return -1
+	}
+	ago := int(time.Since(info.ModTime()).Seconds())
+	if ago < 0 {
+		ago = 0
+	}
+	return ago
+}
+
+// replicaAgeSec fetches Litestream's Prometheus endpoint and, if it exposes a
+// timestamp metric for the last replica write/sync, returns the number of
+// seconds since that write. It returns -1 when the endpoint is unset,
+// unreachable, slow (hard 500 ms cap), or when no such metric is present.
+//
+// Investigation of the vendored/upstream litestream v0.3.13 source
+// (cmd/litestream/replicate.go, db.go, replica.go): the metrics listener is
+// promhttp.Handler() over the default registry, but the daemon only publishes
+// counters/gauges — litestream_db_size, litestream_wal_size,
+// litestream_total_wal_bytes, litestream_shadow_wal_index,
+// litestream_shadow_wal_size, litestream_sync_count, litestream_sync_error_count,
+// litestream_sync_seconds, litestream_checkpoint_*, litestream_replica_wal_bytes,
+// litestream_replica_wal_index, litestream_replica_wal_offset and
+// litestream_replica_validation_total. None carries a wall-clock timestamp, and
+// (contrary to the task note) v0.3.13 does not bind :9090 unless `addr` is set
+// in litestream.yml, so replicaAgeSec is normally -1 today. The parser below is
+// future-proofed for a timestamp gauge if one is added.
+func replicaAgeSec(parent context.Context, metricsURL string) int {
+	if metricsURL == "" {
+		return -1
+	}
+
+	ctx, cancel := context.WithTimeout(parent, replicaMetricsTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metricsURL, nil)
+	if err != nil {
+		return -1
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return -1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return -1
+	}
+
+	scanner := bufio.NewScanner(io.LimitReader(resp.Body, 1<<20))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[0]
+		if i := strings.IndexByte(name, '{'); i >= 0 {
+			name = name[:i]
+		}
+		if !isReplicaTimestampMetric(name) {
+			continue
+		}
+
+		ts, err := strconv.ParseFloat(fields[1], 64)
+		if err != nil {
+			continue
+		}
+		// Prometheus timestamps are seconds; accept ms/µs/ns defensively for
+		// exporters that emit a different unit.
+		switch {
+		case ts > 1e17:
+			ts /= 1e9
+		case ts > 1e14:
+			ts /= 1e6
+		case ts > 1e12:
+			ts /= 1e3
+		}
+		age := int(time.Since(time.Unix(int64(ts), 0)).Seconds())
+		if age < 0 {
+			age = 0
+		}
+		return age
+	}
+
+	return -1
+}
+
+// isReplicaTimestampMetric matches Prometheus names that plausibly represent
+// the moment of the most recent replica write/sync.
+func isReplicaTimestampMetric(name string) bool {
+	if !strings.HasPrefix(name, "litestream") || !strings.Contains(name, "timestamp") {
+		return false
+	}
+	return strings.Contains(name, "replica") ||
+		strings.Contains(name, "sync") ||
+		strings.Contains(name, "write")
 }

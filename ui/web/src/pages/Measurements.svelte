@@ -3,7 +3,10 @@
   import { api } from '../lib/api.js'
   import { store } from '../lib/stores.svelte.js'
   import { today, daysAgo, dispLength, lengthUnit, inputLength } from '../lib/utils.js'
+  import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
   import Alert from '../components/Alert.svelte'
+
+  const DRAFT_KEY = 'draft:measurements:form'
 
   function emptyForm() {
     return { date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', shouldersCm: '', calvesCm: '', notes: '' }
@@ -16,6 +19,22 @@
   let history = $state([])
   let isEdit = $state(false)
   let editDate = $state('')
+  let profile = $state(null)
+  let suggestion = $state(null)
+  let suggestionSaving = $state(false)
+  let draftRestored = $state(false)
+
+  // Draft only the text/number fields of this form.
+  function hasDraftContent(f) {
+    if (!f || typeof f !== 'object') return false
+    return ['neckCm', 'chestCm', 'waistCm', 'hipsCm', 'thighCm', 'bicepCm', 'shouldersCm', 'calvesCm', 'notes']
+      .some((k) => String(f[k] ?? '').trim() !== '')
+  }
+
+  $effect(() => {
+    const snapshot = $state.snapshot(form)
+    if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
+  })
 
   async function load() {
     try {
@@ -25,7 +44,33 @@
     }
   }
 
-  onMount(load)
+  async function ensureProfile() {
+    if (profile) return profile
+    try {
+      profile = await api.getProfile()
+    } catch {
+      profile = null
+    }
+    return profile
+  }
+
+  function discardDraft() {
+    clearDraft(DRAFT_KEY)
+    draftRestored = false
+    isEdit = false
+    editDate = ''
+    form = emptyForm()
+  }
+
+  onMount(() => {
+    const draft = loadDraft(DRAFT_KEY)
+    if (hasDraftContent(draft)) {
+      form = { ...emptyForm(), ...draft }
+      draftRestored = true
+    }
+    load()
+    ensureProfile()
+  })
 
   // Populate an input with the stored cm value converted to the display unit.
   // Blank/zero values stay blank so placeholders remain visible.
@@ -36,6 +81,9 @@
   function startEdit(h) {
     error = ''
     success = ''
+    suggestion = null
+    clearDraft(DRAFT_KEY)
+    draftRestored = false
     isEdit = true
     editDate = h.date
     form = {
@@ -57,12 +105,58 @@
     editDate = ''
     error = ''
     success = ''
+    suggestion = null
     form = emptyForm()
+  }
+
+  // Offer to write the Navy result to biometrics for the entry we just saved.
+  // The server calculation always uses the most recent measurement row, so we
+  // only offer when the saved date is the latest one — otherwise the percentage
+  // could belong to a different entry.
+  async function offerBodyFat(date) {
+    suggestion = null
+    const p = await ensureProfile()
+    if (!p || !p.sex || !(p.heightCm > 0)) return
+
+    const saved = history.find((h) => h.date === date)
+    if (!saved) return
+
+    const latestDate = history.reduce((max, h) => (h.date > max ? h.date : max), '')
+    if (latestDate !== date) return
+
+    const male = String(p.sex).toLowerCase() === 'male'
+    if (!(saved.neckCm > 0) || !(saved.waistCm > 0)) return
+    if (!male && !(saved.hipsCm > 0)) return
+
+    try {
+      const bf = await api.getBodyFat('navy')
+      if (bf && bf.bfPct > 0) suggestion = { date, bfPct: bf.bfPct }
+    } catch {
+      // Calculation is optional; a failure just means no suggestion chip.
+    }
+  }
+
+  async function applySuggestion() {
+    const s = suggestion
+    if (!s) return
+    suggestion = null
+    suggestionSaving = true
+    try {
+      // POST is a preserve-on-zero upsert: sending only the date and body fat
+      // leaves any other biometric fields for that day untouched.
+      await api.postBiometric({ date: s.date, bodyFatPct: s.bfPct })
+      success = `Body fat ${s.bfPct.toFixed(1)}% added for ${s.date}`
+    } catch (e) {
+      error = e.message
+    } finally {
+      suggestionSaving = false
+    }
   }
 
   async function submit() {
     error = ''
     success = ''
+    suggestion = null
     loading = true
     try {
       const payload = {
@@ -77,6 +171,7 @@
         calvesCm:    inputLength(form.calvesCm, store.units),
         notes:       form.notes || '',
       }
+      const savedDate = payload.date
       if (isEdit) {
         // PUT is a true replace: blank fields intentionally clear the stored value.
         await api.putMeasurement(editDate, payload)
@@ -89,8 +184,11 @@
       }
       // Return to new-entry mode after a successful save; on failure the
       // edit state is left untouched so the user can retry.
+      clearDraft(DRAFT_KEY)
+      draftRestored = false
       form = emptyForm()
       await load()
+      await offerBodyFat(savedDate)
     } catch (e) {
       error = e.message
     } finally {
@@ -114,6 +212,11 @@
 {#if success}<Alert type="success" message={success} />{/if}
 
   <div class="max-w-screen-xl mx-auto space-y-4">
+  {#if draftRestored}
+    <div class="text-xs text-gray-400">
+      Draft restored — <button class="text-cyan-400 hover:text-cyan-300 underline" onclick={discardDraft}>Discard?</button>
+    </div>
+  {/if}
   <div class="bg-gray-800 p-3 rounded border border-gray-700">
     <h3 class="text-emerald-400 font-bold mb-2">{isEdit ? 'Edit Measurement' : 'Log Measurement'}</h3>
     <div class="space-y-2">
@@ -131,6 +234,14 @@
         <button class="btn-primary" onclick={submit} disabled={loading}>{loading ? 'Saving…' : (isEdit ? 'Update' : 'Save')}</button>
         {#if isEdit}
           <button class="bg-gray-700 px-3 py-2 rounded-lg ml-2" onclick={cancelEdit}>Cancel</button>
+        {/if}
+        {#if suggestion}
+          <div class="mt-2 inline-flex items-center gap-1 rounded-full border border-emerald-700 bg-emerald-900/40 pl-3 pr-1 py-1 text-sm text-emerald-300">
+            <button class="hover:text-emerald-200" onclick={applySuggestion} disabled={suggestionSaving}>
+              Auto-fill body fat ({suggestion.bfPct.toFixed(1)}%)?
+            </button>
+            <button class="px-2 text-gray-400 hover:text-gray-200" onclick={() => (suggestion = null)} title="Dismiss" aria-label="Dismiss">✕</button>
+          </div>
         {/if}
       </div>
     </div>

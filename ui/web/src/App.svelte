@@ -17,6 +17,21 @@
   import BottomNav from './components/BottomNav.svelte'
 
   import { store, setUser, setCurrentPage, setUnits, setSleepQualityMax } from './lib/stores.svelte.js'
+
+  let online = $state(typeof navigator === 'undefined' ? true : navigator.onLine)
+  let bannerHeight = $state(0)
+
+  onMount(() => {
+    const syncOnline = () => { online = navigator.onLine }
+    syncOnline()
+    window.addEventListener('online', syncOnline)
+    window.addEventListener('offline', syncOnline)
+    return () => {
+      window.removeEventListener('online', syncOnline)
+      window.removeEventListener('offline', syncOnline)
+    }
+  })
+
   onMount(async () => {
     try {
       const u = await api.me()
@@ -34,6 +49,18 @@
     }
   })
 </script>
+
+{#if !online}
+  <div
+    bind:clientHeight={bannerHeight}
+    class="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-gray-900 text-xs sm:text-sm font-medium text-center px-4 py-2"
+    role="status"
+    aria-live="polite"
+  >
+    You're offline — your entries are saved as drafts until you reconnect.
+  </div>
+  <div style="height: {bannerHeight}px" aria-hidden="true"></div>
+{/if}
 
 {#if store.currentPage === 'login' || store.currentPage === 'register'}
   <Login />

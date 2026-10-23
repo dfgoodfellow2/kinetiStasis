@@ -2,6 +2,7 @@
   import { api } from '../lib/api.js'
   import { store, clearEditData } from '../lib/stores.svelte.js'
   import { onMount } from 'svelte'
+  import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
   import { today, dispLoad, loadUnit, inputLoad, distUnit, inputDist, elevUnit, inputElev } from '../lib/utils.js'
   import Alert from '../components/Alert.svelte'
   import AITab from '../components/AITab.svelte'
@@ -9,6 +10,7 @@
 
   // ── Tab (persisted) ─────────────────────────────────────
   const TAB_KEY = 'workout_tab'
+  const DRAFT_KEY = 'draft:workoutlog:form'
   const VALID_TABS = ['ai', 'simple', 'yaml']
   const savedTab = typeof localStorage !== 'undefined' ? localStorage.getItem(TAB_KEY) : null
   let tab = $state(VALID_TABS.includes(savedTab) ? savedTab : 'ai')
@@ -18,28 +20,33 @@
   })
 
   // ── Shared workout state ─────────────────────────────────
-  let workout = $state({
-    date: today(),
-    slot: '1',
-    title: '',
-    type: 'strength',
-    style: '',
-    surface: '',
-    focus: '',
-    restInterval: '',
-    durationMin: '',
+  function blankWorkout() {
+    return {
+      date: today(),
+      slot: '1',
+      title: '',
+      type: 'strength',
+      style: '',
+      surface: '',
+      focus: '',
+      restInterval: '',
+      durationMin: '',
 
-    avgHr: '',
-    maxHr: '',
-    caloriesBurned: '',
-    notes: '',
-    coachNotes: '',
-    exercises: [],
-  })
+      avgHr: '',
+      maxHr: '',
+      caloriesBurned: '',
+      notes: '',
+      coachNotes: '',
+      exercises: [],
+    }
+  }
+
+  let workout = $state(blankWorkout())
 
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
+  let draftRestored = $state(false)
 
   // ── Parse state (set when child components call onParsed) ──
   let parseReady = $state(false)
@@ -65,6 +72,35 @@
 
   function removeExercise(idx) {
     workout = { ...workout, exercises: workout.exercises.filter((_, i) => i !== idx) }
+  }
+
+  // Draft the manual workout form fields (never image/base64 payloads).
+  function hasExerciseContent(ex) {
+    if (!ex || typeof ex !== 'object') return false
+    if (Array.isArray(ex._sets) && ex._sets.length > 0) return true
+    return ['name', 'sets', 'reps', 'duration', 'weightLbs', 'tempo', 'rpe', 'pattern', 'bias', 'pace',
+      'distanceKm', 'elevationM', 'phase', 'groupId', 'groupOrder', 'groupStyle', 'targetHrZone', 'notes', 'surface', 'met']
+      .some((k) => String(ex[k] ?? '').trim() !== '')
+  }
+
+  function hasDraftContent(w) {
+    if (!w || typeof w !== 'object') return false
+    const sessionFields = ['title', 'style', 'surface', 'focus', 'restInterval', 'durationMin',
+      'avgHr', 'maxHr', 'caloriesBurned', 'notes', 'coachNotes']
+    if (sessionFields.some((k) => String(w[k] ?? '').trim() !== '')) return true
+    return Array.isArray(w.exercises) && w.exercises.some(hasExerciseContent)
+  }
+
+  $effect(() => {
+    const snapshot = $state.snapshot(workout)
+    if (hasDraftContent(snapshot)) saveDraft(DRAFT_KEY, snapshot)
+  })
+
+  function discardDraft() {
+    clearDraft(DRAFT_KEY)
+    draftRestored = false
+    parseReady = false
+    workout = blankWorkout()
   }
 
   // ── Save ─────────────────────────────────────────────────
@@ -146,12 +182,11 @@
       }
       await api.postWorkout(payload)
       success = 'Workout saved!'
-       workout = {
-         date: today(), slot: '1', title: '', type: 'strength', style: '', surface: '',
-         focus: '', restInterval: '', durationMin: '', avgHr: '', maxHr: '',
-         caloriesBurned: '', notes: '', coachNotes: '', exercises: [],
-       }
+      clearDraft(DRAFT_KEY)
+      draftRestored = false
+      workout = blankWorkout()
       // reset parse states in parent — child components manage their own raw/parsed state
+      parseReady = false
     } catch (e) {
       error = e.message
     } finally {
@@ -254,6 +289,10 @@
   onMount(() => {
     // Check if editing existing workout
     if (store.editData && store.editData.type === 'workout') {
+      // An explicit edit supersedes any half-finished manual draft.
+      clearDraft(DRAFT_KEY)
+      draftRestored = false
+
       const w = store.editData.data
 
       // Basic fields
@@ -336,6 +375,26 @@
 
       tab = 'simple'
       clearEditData()
+    } else {
+      // Restore a half-finished manual form. Deep-merge each exercise with
+      // blankExercise() so restored entries keep the full shape the form and
+      // save payload expect (newer fields are absent from older drafts).
+      const draft = loadDraft(DRAFT_KEY)
+      if (hasDraftContent(draft)) {
+        workout = {
+          ...blankWorkout(),
+          ...draft,
+          exercises: Array.isArray(draft.exercises)
+            ? draft.exercises.map((ex) => ({
+                ...blankExercise(),
+                ...(ex && typeof ex === 'object' ? ex : {}),
+                _sets: Array.isArray(ex?._sets) ? ex._sets : [],
+              }))
+            : [],
+        }
+        draftRestored = true
+        tab = 'simple'
+      }
     }
   })
 </script>
@@ -350,6 +409,12 @@
 
   {#if error}<Alert type="error" message={error} />{/if}
   {#if success}<Alert type="success" message={success} />{/if}
+
+  {#if draftRestored}
+    <div class="text-xs text-gray-400">
+      Draft restored — <button class="text-cyan-400 hover:text-cyan-300 underline" onclick={discardDraft}>Discard?</button>
+    </div>
+  {/if}
 
   <!-- ═══════════════════════ AI TAB ═══════════════════════ -->
   {#if tab === 'ai'}

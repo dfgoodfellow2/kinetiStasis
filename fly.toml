@@ -25,7 +25,8 @@ primary_region = 'iad'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 0
+  # keeps one machine warm — morning check-ins skip the cold start; replica backup observability in /v1/health
+  min_machines_running = 1
 
   [http_service.concurrency]
     type = 'requests'

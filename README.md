@@ -109,6 +109,11 @@ Or point at a different server:
 DIET_API_URL=http://localhost:8080 ./bin/diet-tracker-ui
 ```
 
+> **Frozen (2026-10-23):** the TUI is a secondary client, kept working at its
+> current feature parity. New features are PWA-only; no new TUI screens or
+> workflows are planned. See [docs/TUI_STATUS.md](docs/TUI_STATUS.md) for scope,
+> policy, and known gaps.
+
 ### 6. Full Embedded Build (API + PWA in one binary)
 
 ```bash
@@ -146,7 +151,7 @@ curl -X POST http://localhost:8080/v1/auth/register \
 | `make dev` | Run Go server in dev mode (no PWA) |
 | `make dev-web` | Run Svelte dev server on :5173 |
 | `make build` | Build PWA + embed + compile Go binary |
-| `make tui` | Build TUI binary → `bin/diet-tracker-ui` |
+| `make tui` | Build TUI binary → `bin/diet-tracker-ui` (frozen; see `docs/TUI_STATUS.md`) |
 | `make run` | Build then run the server |
 | `make tidy` | `go mod tidy` |
 | `make gen-icons` | Generate PNG PWA icons from SVG (needs ImageMagick) |
