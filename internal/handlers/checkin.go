@@ -16,6 +16,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/calculator"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 )
 
 type CheckinHandler struct{ s store.Store }
@@ -149,6 +150,16 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	if in.CheckInDate != "" {
+		if err := validate.Date(in.CheckInDate); err != nil {
+			respond.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := validate.NonNegativeBoundedInt("caloriesAfter", in.CaloriesAfter, 10000); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	in.UserID = claims.UserID
 	in.ID = uuid.NewString()
 	if in.CheckInDate == "" {
@@ -182,15 +193,17 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil {
 		snap := models.TargetSnapshot{
-			ID:            in.ID,
-			UserID:        claims.UserID,
-			EffectiveDate: in.CheckInDate,
-			Calories:      existing.Calories,
-			ProteinG:      existing.ProteinG,
-			CarbsG:        existing.CarbsG,
-			FatG:          existing.FatG,
-			FiberG:        existing.FiberG,
-			CreatedAt:     now,
+			ID:              in.ID,
+			UserID:          claims.UserID,
+			EffectiveDate:   in.CheckInDate,
+			Calories:        existing.Calories,
+			ProteinG:        existing.ProteinG,
+			CarbsG:          existing.CarbsG,
+			FatG:            existing.FatG,
+			FiberG:          existing.FiberG,
+			WaterMl:         existing.WaterMl,
+			EatBackExercise: existing.EatBackExercise,
+			CreatedAt:       now,
 		}
 		if err := h.s.CreateTargetSnapshot(r.Context(), &snap); err != nil {
 			slog.Error("create target snapshot", "err", err)

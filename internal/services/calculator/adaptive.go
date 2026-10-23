@@ -144,44 +144,24 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 		confidence = "high"
 	}
 
-	// estimated TDEE from latest biometric weight if available
+	// Estimated TDEE from the latest biometric weight, if available.
+	//
+	// Delegate the static BMR -> base-TDEE computation to the nutrition
+	// service so this path and the primary macro path share one implementation:
+	// age derivation (birthdate -> stored age -> 30), the BF% gate for
+	// Katch-McArdle, the NEAT/EAT factors, and the running-calorie add.
+	// Only the observed-TDEE tiering above is unique to this function.
 	est := DefaultFallbackTDEE
 	if len(biometrics) > 0 {
 		for i := len(biometrics) - 1; i >= 0; i-- {
 			if biometrics[i].WeightKg > 0 {
-				weightKg := biometrics[i].WeightKg
-
-				// Use Katch-McArdle if body fat % is available, else Mifflin-St Jeor
-				var bmr float64
-				if bodyFatPct > 0 && bodyFatPct < 60 {
-					lbm := weightKg * (1 - bodyFatPct/100)
-					bmr = 370 + (21.6 * lbm)
-				} else {
-					age := models.AgeFromBirthdate(profile.Birthdate)
-					if age <= 0 {
-						age = profile.Age // fallback to stored age for legacy users
-					}
-					bmr = 10*weightKg + 6.25*profile.HeightCm - 5*float64(age)
-					if profile.Sex == "male" {
-						bmr += 5
-					} else {
-						bmr -= 161
-					}
+				p := profile
+				// Callers may pass body fat from the latest biometric entry;
+				// treat it as the profile BF% when the profile has none.
+				if bodyFatPct > 0 && p.BfPct <= 0 {
+					p.BfPct = bodyFatPct
 				}
-
-				// NEAT multiplier
-				neat := 1.1
-				switch profile.Activity {
-				case "sedentary":
-					neat = 1.0
-				case "lightly_active":
-					neat = 1.1
-				case "moderately_active":
-					neat = 1.2
-				case "very_active":
-					neat = 1.3
-				}
-				est = math.Round(bmr * neat)
+				est = nutrition.ComputeStaticTDEE(p, biometrics[i].WeightKg)
 				break
 			}
 		}

@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	met "github.com/dfgoodfellow2/diet-tracker/v2/internal/services/met"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -21,6 +24,58 @@ import (
 type WorkoutHandler struct{ s store.Store }
 
 func NewWorkoutHandler(s store.Store) *WorkoutHandler { return &WorkoutHandler{s: s} }
+
+const (
+	maxWorkoutCalories = 5000
+	maxWorkoutRPE      = 10
+	maxInt             = int(^uint(0) >> 1)
+)
+
+// validateWorkoutInput rejects non-physical session values before the MET
+// auto-calculation runs. A zero CaloriesBurned is allowed because it means
+// "derive from MET"; only an explicit out-of-range value is rejected.
+func validateWorkoutInput(w *models.WorkoutEntry) error {
+	if err := validate.NonNegativeBounded("durationMin", w.DurationMin, math.MaxFloat64); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("caloriesBurned", w.CaloriesBurned, maxWorkoutCalories); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("metadata.rpe", w.Metadata.RPE, maxWorkoutRPE); err != nil {
+		return err
+	}
+	for i := range w.Exercises {
+		e := &w.Exercises[i]
+		if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].distanceKm", i), e.DistanceKm, math.MaxFloat64); err != nil {
+			return err
+		}
+		if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].elevationM", i), e.ElevationM, math.MaxFloat64); err != nil {
+			return err
+		}
+		if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].rpe", i), e.RPE, maxWorkoutRPE); err != nil {
+			return err
+		}
+		for j := range e.Sets {
+			set := &e.Sets[j]
+			if err := validate.NonNegativeBoundedInt(fmt.Sprintf("exercises[%d].sets[%d].reps", i, j), set.Reps, maxInt); err != nil {
+				return err
+			}
+			if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].sets[%d].loadKg", i, j), set.LoadKg, math.MaxFloat64); err != nil {
+				return err
+			}
+			if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].sets[%d].loadLbs", i, j), set.LoadLbs, math.MaxFloat64); err != nil {
+				return err
+			}
+			if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].sets[%d].tutSeconds", i, j), set.TUTSeconds, math.MaxFloat64); err != nil {
+				return err
+			}
+			if err := validate.NonNegativeBounded(fmt.Sprintf("exercises[%d].sets[%d].restSeconds", i, j), set.RestSeconds, math.MaxFloat64); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 const workoutSelectCols = `id, user_id, date, slot, title, raw_notes, duration_min, calories_burned, mwv, nds, session_density, exercises_json, metadata_json, updated_at`
 
@@ -101,6 +156,10 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	if err := validateWorkoutInput(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	in.UserID = claims.UserID
 	in.UpdatedAt = time.Now().UTC().Format(constants.TimeFormat)
 	if in.ID == "" {
@@ -132,6 +191,10 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 	slot := chi.URLParam(r, "slot")
 	var in models.WorkoutEntry
 	if !respond.Decode(w, r, &in) {
+		return
+	}
+	if err := validateWorkoutInput(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// ensure exists

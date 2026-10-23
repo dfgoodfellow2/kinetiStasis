@@ -12,6 +12,7 @@
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
+  let isEdit = $state(false)
 
   let aiText = $state('')
   let aiResult = $state(null)
@@ -32,6 +33,7 @@
         mealNotes: row.mealNotes ?? '' 
       }
       mode = 'manual'
+      isEdit = true
       clearEditData()
     }
   })
@@ -51,9 +53,18 @@
         waterMl: Number(form.waterMl) || 0,
         mealNotes: form.mealNotes || '',
       }
-      await api.postNutrition(payload)
-      success = 'Saved'
-      form = { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' }
+      if (isEdit) {
+        // Editing replaces the whole day's log, so PUT to the date path.
+        await api.putNutrition(form.date, payload)
+        success = 'Updated'
+        // The edit has been applied, so subsequent saves should create new logs.
+        isEdit = false
+        // Keep the form on the edited date so the user retains date context.
+      } else {
+        await api.postNutrition(payload)
+        success = 'Saved'
+        form = { date: today(), calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', mealNotes: '' }
+      }
     } catch (e) {
       error = e.message
     } finally {

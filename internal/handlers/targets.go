@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
@@ -14,12 +15,44 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/calculator"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/nutrition"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 	"github.com/google/uuid"
 )
 
 type TargetsHandler struct{ s store.Store }
 
 func NewTargetsHandler(s store.Store) *TargetsHandler { return &TargetsHandler{s: s} }
+
+const (
+	maxTargetsCalories = 10000
+	maxTargetsMacroG   = 500
+	maxTargetsFiberG   = 200
+	maxTargetsWaterMl  = 20000
+)
+
+// validateTargets enforces non-negative, human-scale bounds on every target
+// item, including the water and eat-back fields that were previously ignored.
+func validateTargets(t *models.Targets) error {
+	if err := validate.NonNegativeBounded("calories", t.Calories, maxTargetsCalories); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("proteinG", t.ProteinG, maxTargetsMacroG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("carbsG", t.CarbsG, maxTargetsMacroG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("fatG", t.FatG, maxTargetsMacroG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("fiberG", t.FiberG, maxTargetsFiberG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("waterMl", t.WaterMl, maxTargetsWaterMl); err != nil {
+		return err
+	}
+	return nil
+}
 
 // GET /v1/targets
 func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +132,10 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	if err := validateTargets(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	in.UserID = claims.UserID
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -113,16 +150,20 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if changed, snapshot old
+	// If changed, snapshot the old targets. Compare the full incoming struct
+	// against the stored row (with volatile identity/timestamp fields
+	// normalised out) so water-only and eat-back-only edits are not missed.
 	changed := false
 	if !errors.Is(err, sql.ErrNoRows) {
-		if existing.Calories != in.Calories || existing.ProteinG != in.ProteinG || existing.CarbsG != in.CarbsG || existing.FatG != in.FatG || existing.FiberG != in.FiberG {
-			changed = true
-		}
+		existingCmp := existing
+		inCmp := in
+		existingCmp.UserID, inCmp.UserID = "", ""
+		existingCmp.UpdatedAt, inCmp.UpdatedAt = "", ""
+		changed = !reflect.DeepEqual(existingCmp, inCmp)
 	}
 	// perform snapshot + upsert via store methods (transaction handled inside store)
 	if changed {
-		snap := &models.TargetSnapshot{ID: uuid.New().String(), UserID: claims.UserID, EffectiveDate: time.Now().UTC().Format("2006-01-02"), Calories: existing.Calories, ProteinG: existing.ProteinG, CarbsG: existing.CarbsG, FatG: existing.FatG, FiberG: existing.FiberG, CreatedAt: now}
+		snap := &models.TargetSnapshot{ID: uuid.New().String(), UserID: claims.UserID, EffectiveDate: time.Now().UTC().Format("2006-01-02"), Calories: existing.Calories, ProteinG: existing.ProteinG, CarbsG: existing.CarbsG, FatG: existing.FatG, FiberG: existing.FiberG, WaterMl: existing.WaterMl, EatBackExercise: existing.EatBackExercise, CreatedAt: now}
 		if err := h.s.CreateTargetSnapshot(r.Context(), snap); err != nil {
 			slog.Error("create target snapshot", "err", err)
 			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())

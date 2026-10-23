@@ -98,6 +98,11 @@ type Profile struct {
 	TDEELookbackDays int     `json:"tdeeLookbackDays"`
 	SleepQualityMax  float64 `json:"sleepQualityMax"`
 	Units            string  `json:"units"`
+	// MacroDistribution is server-managed preference ("keto", "low_carb",
+	// "balanced", "high_carb"). It is not edited by this screen yet, but it
+	// must round-trip through GET -> PUT because the server replaces the
+	// whole profile (an empty value normalizes to "balanced").
+	MacroDistribution string `json:"macroDistribution"`
 }
 
 type Targets struct {
@@ -111,14 +116,16 @@ type Targets struct {
 }
 
 type BodyMeasurement struct {
-	Date    string  `json:"date"`
-	NeckCm  float64 `json:"neckCm"`
-	ChestCm float64 `json:"chestCm"`
-	WaistCm float64 `json:"waistCm"`
-	HipsCm  float64 `json:"hipsCm"`
-	ThighCm float64 `json:"thighCm"`
-	BicepCm float64 `json:"bicepCm"`
-	Notes   string  `json:"notes"`
+	Date        string  `json:"date"`
+	NeckCm      float64 `json:"neckCm"`
+	ChestCm     float64 `json:"chestCm"`
+	WaistCm     float64 `json:"waistCm"`
+	HipsCm      float64 `json:"hipsCm"`
+	ThighCm     float64 `json:"thighCm"`
+	BicepCm     float64 `json:"bicepCm"`
+	ShouldersCm float64 `json:"shouldersCm"`
+	CalvesCm    float64 `json:"calvesCm"`
+	Notes       string  `json:"notes"`
 }
 
 type ParsedMeal struct {

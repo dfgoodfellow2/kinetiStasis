@@ -181,15 +181,17 @@ type Targets struct {
 
 // TargetSnapshot is a historical record of targets on a given date.
 type TargetSnapshot struct {
-	ID            string  `json:"id"`
-	UserID        string  `json:"userId"`
-	EffectiveDate string  `json:"effectiveDate"`
-	Calories      float64 `json:"calories"`
-	ProteinG      float64 `json:"proteinG"`
-	CarbsG        float64 `json:"carbsG"`
-	FatG          float64 `json:"fatG"`
-	FiberG        float64 `json:"fiberG"`
-	CreatedAt     string  `json:"createdAt"`
+	ID              string  `json:"id"`
+	UserID          string  `json:"userId"`
+	EffectiveDate   string  `json:"effectiveDate"`
+	Calories        float64 `json:"calories"`
+	ProteinG        float64 `json:"proteinG"`
+	CarbsG          float64 `json:"carbsG"`
+	FatG            float64 `json:"fatG"`
+	FiberG          float64 `json:"fiberG"`
+	WaterMl         float64 `json:"waterMl"`
+	EatBackExercise bool    `json:"eatBackExercise"`
+	CreatedAt       string  `json:"createdAt"`
 }
 
 // CheckInLog records a weekly check-in event and the state before/after

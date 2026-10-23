@@ -70,6 +70,11 @@ type ProfileModel struct {
 	inputs  []textinput.Model
 	focus   int
 	offset  int // for scrolling through many fields
+	// profile is the last profile loaded from the server. PUT /profile has
+	// replace semantics, so we rebuild the request from this value and only
+	// overwrite the form-edited fields. This keeps server-only fields such as
+	// macroDistribution intact on save.
+	profile client.Profile
 }
 
 func NewProfile(c *client.Client) *ProfileModel {
@@ -133,8 +138,11 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.loading = true
+			base := m.profile
 			return m, func() tea.Msg {
-				p := client.Profile{}
+				// Start from the GET-loaded profile so every server-managed
+				// field (notably macroDistribution) round-trips unchanged.
+				p := base
 				p.Name = m.inputs[pfName].Value()
 				p.Birthdate = birthdate
 				p.Sex = m.inputs[pfSex].Value()
@@ -173,6 +181,7 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// populate inputs from loaded profile
+		m.profile = p
 		m.inputs[pfName].SetValue(p.Name)
 		m.inputs[pfBirthdate].SetValue(p.Birthdate)
 		m.inputs[pfSex].SetValue(p.Sex)

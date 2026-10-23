@@ -12,6 +12,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -19,6 +20,32 @@ import (
 type MeasurementsHandler struct{ s store.Store }
 
 func NewMeasurementsHandler(s store.Store) *MeasurementsHandler { return &MeasurementsHandler{s: s} }
+
+// maxCircumferenceCm is the upper bound for a single body circumference in
+// centimetres. Anything beyond this is a data-entry error, not a real body.
+const maxCircumferenceCm = 250
+
+func validateMeasurement(m *models.BodyMeasurement) error {
+	fields := []struct {
+		name string
+		v    float64
+	}{
+		{"neckCm", m.NeckCm},
+		{"chestCm", m.ChestCm},
+		{"waistCm", m.WaistCm},
+		{"hipsCm", m.HipsCm},
+		{"thighCm", m.ThighCm},
+		{"bicepCm", m.BicepCm},
+		{"shouldersCm", m.ShouldersCm},
+		{"calvesCm", m.CalvesCm},
+	}
+	for _, f := range fields {
+		if err := validate.NonNegativeBounded(f.name, f.v, maxCircumferenceCm); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // GET /v1/measurements
 func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +75,10 @@ func (h *MeasurementsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	if err := validateMeasurement(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	in.UserID = claims.UserID
 	if in.ID == "" {
 		in.ID = uuid.New().String()
@@ -69,6 +100,10 @@ func (h *MeasurementsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	var in models.BodyMeasurement
 	if !respond.Decode(w, r, &in) {
+		return
+	}
+	if err := validateMeasurement(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	in.UserID = claims.UserID

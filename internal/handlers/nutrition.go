@@ -12,6 +12,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -19,6 +20,38 @@ import (
 type NutritionHandler struct{ s store.Store }
 
 func NewNutritionHandler(s store.Store) *NutritionHandler { return &NutritionHandler{s: s} }
+
+const (
+	maxNutritionCalories = 10000
+	maxNutritionMacroG   = 1000
+	maxNutritionFiberG   = 200
+	maxNutritionWaterMl  = 20000
+)
+
+// validateNutritionValues enforces non-negative, human-scale bounds on the
+// nutrient fields shared by POST and PUT. Date validation is handled by the
+// caller because PUT takes its date from the URL path.
+func validateNutritionValues(n *models.NutritionLog) error {
+	if err := validate.NonNegativeBounded("calories", n.Calories, maxNutritionCalories); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("proteinG", n.ProteinG, maxNutritionMacroG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("carbsG", n.CarbsG, maxNutritionMacroG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("fatG", n.FatG, maxNutritionMacroG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("fiberG", n.FiberG, maxNutritionFiberG); err != nil {
+		return err
+	}
+	if err := validate.NonNegativeBounded("waterMl", n.WaterMl, maxNutritionWaterMl); err != nil {
+		return err
+	}
+	return nil
+}
 
 // GET /v1/nutrition/logs
 func (h *NutritionHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +98,14 @@ func (h *NutritionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	var in models.NutritionLog
 	if !respond.Decode(w, r, &in) {
+		return
+	}
+	if err := validate.Date(in.Date); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateNutritionValues(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	in.UserID = claims.UserID
@@ -125,6 +166,14 @@ func (h *NutritionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	var in models.NutritionLog
 	if !respond.Decode(w, r, &in) {
+		return
+	}
+	if err := validate.Date(date); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateNutritionValues(&in); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// ensure exists

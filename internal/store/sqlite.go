@@ -594,7 +594,11 @@ func (s *SQLiteStore) UpsertTargets(ctx context.Context, t *models.Targets) erro
 }
 
 func (s *SQLiteStore) CreateTargetSnapshot(ctx context.Context, snap *models.TargetSnapshot) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO target_history (id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,created_at) VALUES (?,?,?,?,?,?,?,?,?)`, snap.ID, snap.UserID, snap.EffectiveDate, snap.Calories, snap.ProteinG, snap.CarbsG, snap.FatG, snap.FiberG, snap.CreatedAt)
+	eatBack := 0
+	if snap.EatBackExercise {
+		eatBack = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO target_history (id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, snap.ID, snap.UserID, snap.EffectiveDate, snap.Calories, snap.ProteinG, snap.CarbsG, snap.FatG, snap.FiberG, snap.WaterMl, eatBack, snap.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create target snapshot: %w", err)
 	}
@@ -602,7 +606,7 @@ func (s *SQLiteStore) CreateTargetSnapshot(ctx context.Context, snap *models.Tar
 }
 
 func (s *SQLiteStore) FetchTargetHistory(ctx context.Context, userID string) ([]models.TargetSnapshot, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,created_at FROM target_history WHERE user_id = ? ORDER BY effective_date DESC`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,created_at FROM target_history WHERE user_id = ? ORDER BY effective_date DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch target history: %w", err)
 	}
@@ -610,9 +614,11 @@ func (s *SQLiteStore) FetchTargetHistory(ctx context.Context, userID string) ([]
 	var out []models.TargetSnapshot
 	for rows.Next() {
 		var t models.TargetSnapshot
-		if err := rows.Scan(&t.ID, &t.UserID, &t.EffectiveDate, &t.Calories, &t.ProteinG, &t.CarbsG, &t.FatG, &t.FiberG, &t.CreatedAt); err != nil {
+		var eatBack int
+		if err := rows.Scan(&t.ID, &t.UserID, &t.EffectiveDate, &t.Calories, &t.ProteinG, &t.CarbsG, &t.FatG, &t.FiberG, &t.WaterMl, &eatBack, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan target history row: %w", err)
 		}
+		t.EatBackExercise = eatBack == 1
 		out = append(out, t)
 	}
 	return out, nil
@@ -711,7 +717,25 @@ func (s *SQLiteStore) FetchMeasurementsRange(ctx context.Context, userID, from, 
 }
 
 func (s *SQLiteStore) CreateMeasurement(ctx context.Context, m *models.BodyMeasurement) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO body_measurements (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,date) DO UPDATE SET neck_cm=excluded.neck_cm,chest_cm=excluded.chest_cm,waist_cm=excluded.waist_cm,hips_cm=excluded.hips_cm,thigh_cm=excluded.thigh_cm,bicep_cm=excluded.bicep_cm,notes=excluded.notes,shoulders_cm=excluded.shoulders_cm,calves_cm=excluded.calves_cm`, m.ID, m.UserID, m.Date, m.NeckCm, m.ChestCm, m.WaistCm, m.HipsCm, m.ThighCm, m.BicepCm, m.Notes, m.CreatedAt, m.ShouldersCm, m.CalvesCm)
+	// POST semantics mirror POST /biometrics: preserve any existing non-zero
+	// value when the incoming field is zero. This prevents clients that do not
+	// collect every circumference (e.g. the TUI, which omits shoulders/calves)
+	// from wiping fields they never sent. PUT /measurements/{date} remains a
+	// true replace for intentional clears.
+	_, err := s.db.ExecContext(ctx, `
+        INSERT INTO body_measurements (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(user_id,date) DO UPDATE SET
+          neck_cm      = CASE WHEN excluded.neck_cm      != 0   THEN excluded.neck_cm      ELSE neck_cm      END,
+          chest_cm     = CASE WHEN excluded.chest_cm     != 0   THEN excluded.chest_cm     ELSE chest_cm     END,
+          waist_cm     = CASE WHEN excluded.waist_cm     != 0   THEN excluded.waist_cm     ELSE waist_cm     END,
+          hips_cm      = CASE WHEN excluded.hips_cm      != 0   THEN excluded.hips_cm      ELSE hips_cm      END,
+          thigh_cm     = CASE WHEN excluded.thigh_cm     != 0   THEN excluded.thigh_cm     ELSE thigh_cm     END,
+          bicep_cm     = CASE WHEN excluded.bicep_cm     != 0   THEN excluded.bicep_cm     ELSE bicep_cm     END,
+          shoulders_cm = CASE WHEN excluded.shoulders_cm != 0   THEN excluded.shoulders_cm ELSE shoulders_cm END,
+          calves_cm    = CASE WHEN excluded.calves_cm    != 0   THEN excluded.calves_cm    ELSE calves_cm    END,
+          notes        = CASE WHEN excluded.notes        != ''  THEN excluded.notes        ELSE notes        END`,
+		m.ID, m.UserID, m.Date, m.NeckCm, m.ChestCm, m.WaistCm, m.HipsCm, m.ThighCm, m.BicepCm, m.Notes, m.CreatedAt, m.ShouldersCm, m.CalvesCm)
 	if err != nil {
 		return fmt.Errorf("create measurement: %w", err)
 	}

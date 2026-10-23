@@ -30,6 +30,10 @@ type TargetsModel struct {
 	inputs  []textinput.Model
 	focus   int
 	tdee    client.TDEEResult
+	// targets is the last server response. PUT /targets replaces the whole
+	// record, so the save path starts from this value and only overwrites the
+	// six form-edited fields (preserving e.g. eatBackExercise).
+	targets client.Targets
 }
 
 func NewTargets(c *client.Client) *TargetsModel {
@@ -97,8 +101,11 @@ func (m *TargetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = ""
 			m.msg = ""
 			m.loading = true
+			base := m.targets
 			return m, func() tea.Msg {
-				t := client.Targets{}
+				// Preserve server-side fields (eatBackExercise) by starting
+				// from the GET response and overwriting only form fields.
+				t := base
 				t.Calories, _ = strconv.ParseFloat(m.inputs[0].Value(), 64)
 				t.ProteinG, _ = strconv.ParseFloat(m.inputs[1].Value(), 64)
 				t.CarbsG, _ = strconv.ParseFloat(m.inputs[2].Value(), 64)
@@ -120,6 +127,7 @@ func (m *TargetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		t := msg.targets
+		m.targets = t
 		m.tdee = msg.tdee
 		m.inputs[0].SetValue(fmt.Sprintf("%.0f", t.Calories))
 		m.inputs[1].SetValue(fmt.Sprintf("%.0f", t.ProteinG))
