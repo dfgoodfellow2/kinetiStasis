@@ -1,0 +1,24 @@
+# VCS + secrets — never in build context
+.git
+.env
+.env.*
+
+# Local dev state
+data/
+bin/
+tmp/
+tmp_issue_token/
+.ruff_cache/
+*.log
+*.pid
+cookies.txt
+commit_output.txt
+test_workout.yaml
+
+# Rebuilt inside the image
+ui/web/node_modules/
+ui/web/dist/
+internal/web/dist/
+
+# Reference material, not build input
+*.pdf
