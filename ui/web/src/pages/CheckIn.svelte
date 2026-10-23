@@ -6,6 +6,7 @@
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
+  import TdeeChart from '../components/TdeeChart.svelte'
 
   // --- Weekly Check-in ---
   let weeklyLoading = $state(false)
@@ -13,6 +14,21 @@
   let weeklySuccess = $state('')
   let checkinPreview = $state(null)
   let checkinSaved = $state(false)
+  // Insight layer: observed-TDEE trajectory across past check-ins.
+  let checkinHistory = $state([])
+  let historyLoading = $state(false)
+
+  async function loadCheckinHistory() {
+    historyLoading = true
+    try {
+      checkinHistory = (await api.listCheckinHistory()) ?? []
+    } catch {
+      // Endpoint may not exist on older servers — degrade to the empty state.
+      checkinHistory = []
+    } finally {
+      historyLoading = false
+    }
+  }
 
   async function loadCheckinPreview() {
     weeklyError = ''
@@ -40,6 +56,7 @@
       weeklySuccess = 'Check-in accepted — targets updated'
       checkinSaved = true
       await loadCheckinPreview()
+      await loadCheckinHistory()
     } catch (e) {
       weeklyError = e.message
     } finally {
@@ -57,6 +74,7 @@
       weeklySuccess = 'Check-in skipped — targets unchanged'
       checkinSaved = true
       await loadCheckinPreview()
+      await loadCheckinHistory()
     } catch (e) {
       weeklyError = e.message
     } finally {
@@ -276,6 +294,7 @@
     loadProfile()
     loadLastMeasuredBF()
     loadCheckinPreview()
+    loadCheckinHistory()
   })
 </script>
 
@@ -568,8 +587,8 @@
               <div class="text-lg font-semibold text-cyan-400">{checkinPreview.observedTdee ?? '—'} kcal</div>
               <div class="text-xs text-gray-400">
                 Method: {checkinPreview.tdeeMethod ?? '—'} · 
-                Confidence: {checkinPreview.confidence ?? '—'} · 
-                Data: {checkinPreview.daysOfData ?? 0} days
+                Confidence: {checkinPreview.tdeeConfidence ?? checkinPreview.confidence ?? '—'} · 
+                Data: {checkinPreview.daysOfData ?? checkinPreview.lookbackDays ?? 0} days
               </div>
             </div>
 
@@ -606,6 +625,14 @@
           </div>
         </Card>
       {/if}
+
+      <Card title="TDEE Trajectory">
+        {#if historyLoading}
+          <div class="p-4"><Spinner /></div>
+        {:else}
+          <TdeeChart history={checkinHistory} />
+        {/if}
+      </Card>
     </div>
   {/if}
 </div>

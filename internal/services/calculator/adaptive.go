@@ -14,7 +14,79 @@ const (
 	RLSForgettingFactor   = 0.98
 	DefaultFallbackTDEE   = 2500.0
 	MaxWeeklyCalorieSwing = 500.0
+
+	// MinWeightTrendDays is the burn-in period before the dashboard reports a
+	// weight trend. Below this, weightTrendKg stays 0 (insufficient data).
+	MinWeightTrendDays = 7
 )
+
+// LinearRegression fits values to y = m*x + b using the 0-based index as x.
+// It returns the slope, intercept and the value predicted at x = len(values).
+// Shared by the adaptive TDEE tiering and the dashboard weight trend so both
+// use the same regression implementation.
+func LinearRegression(values []float64) (m, b, predicted float64) {
+	n := float64(len(values))
+	if n < 2 {
+		if n == 1 {
+			return 0, values[0], values[0]
+		}
+		return 0, 0, 0
+	}
+	var sumX, sumY float64
+	for i, v := range values {
+		sumX += float64(i)
+		sumY += v
+	}
+	meanX := sumX / n
+	meanY := sumY / n
+	var num, den float64
+	for i, v := range values {
+		x := float64(i)
+		num += (x - meanX) * (v - meanY)
+		den += (x - meanX) * (x - meanX)
+	}
+	var mval float64
+	if den != 0 {
+		mval = num / den
+	}
+	b = meanY - mval*meanX
+	predicted = mval*n + b
+	return mval, b, predicted
+}
+
+// ComputeWeightTrend fits a least-squares line over the weight observations on
+// or after since. trendKg is the fitted value at the newest observation and
+// rateKgPerWeek is the slope expressed per week. days reports how many weight
+// observations fed the fit, even during burn-in (when trendKg is 0).
+//
+// biometrics must be ordered oldest to newest, which is how the store returns
+// them. Observations outside the plausible human range (20-300 kg) are skipped
+// to match the dashboard's existing weight-trend filtering.
+func ComputeWeightTrend(biometrics []models.BiometricLog, since string) (trendKg, rateKgPerWeek float64, days int) {
+	weights := make([]float64, 0, len(biometrics))
+	for _, bio := range biometrics {
+		if bio.Date < since {
+			continue
+		}
+		if bio.WeightKg <= 20 || bio.WeightKg >= 300 {
+			continue
+		}
+		weights = append(weights, bio.WeightKg)
+	}
+
+	days = len(weights)
+	if days < MinWeightTrendDays {
+		return 0, 0, days
+	}
+
+	slope, intercept, _ := LinearRegression(weights)
+	// Observations are 0-based, so the newest one is at x = days-1.
+	// Evaluate the fit there; LinearRegression's third return value is an
+	// x = n one-day-forward forecast and must not be used as the level.
+	trendKg = slope*float64(days-1) + intercept
+	// rateKgPerWeek assumes one weigh-in per day; sparse weighing understates it.
+	return trendKg, slope * 7, days
+}
 
 // ComputeObservedTDEE implements tiered adaptive TDEE estimation.
 // bodyFatPct is optional (0 means unavailable) — used for Katch-McArdle estimated TDEE.
@@ -47,36 +119,6 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 	}
 
 	// helper functions
-	linearRegression := func(values []float64) (m, b, predicted float64) {
-		n := float64(len(values))
-		if n < 2 {
-			if n == 1 {
-				return 0, values[0], values[0]
-			}
-			return 0, 0, 0
-		}
-		var sumX, sumY float64
-		for i, v := range values {
-			sumX += float64(i)
-			sumY += v
-		}
-		meanX := sumX / n
-		meanY := sumY / n
-		var num, den float64
-		for i, v := range values {
-			x := float64(i)
-			num += (x - meanX) * (v - meanY)
-			den += (x - meanX) * (x - meanX)
-		}
-		var mval float64
-		if den != 0 {
-			mval = num / den
-		}
-		b = meanY - mval*meanX
-		predicted = mval*n + b
-		return mval, b, predicted
-	}
-
 	rlsFilter := func(values []float64, lambda float64) float64 {
 		if len(values) == 0 {
 			return 0
@@ -109,7 +151,7 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 
 	switch {
 	case days < 7:
-		_, _, pred := linearRegression(calories)
+		_, _, pred := LinearRegression(calories)
 		if pred <= 0 {
 			pred = DefaultFallbackTDEE
 		}

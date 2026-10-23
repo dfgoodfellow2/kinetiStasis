@@ -264,17 +264,36 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	since30 := todayTime.AddDate(0, 0, -constants.DefaultReadinessLookbackDays).Format(constants.DateFormat)
 	since90 := todayTime.AddDate(0, 0, -constants.DefaultTDEELookbackDays).Format(constants.DateFormat)
 
+	// The weight trend uses the profile's TDEE lookback window, which can be
+	// longer than the 30-day readiness window. Fetch the widest span once and
+	// derive the 30-day slice in memory.
+	trendLookback := profile.TDEELookbackDays
+	if trendLookback <= 0 {
+		trendLookback = constants.DefaultTDEELookbackDays
+	}
+	sinceTrend := todayTime.AddDate(0, 0, -trendLookback).Format(constants.DateFormat)
+	bioSince := since30
+	if sinceTrend < bioSince {
+		bioSince = sinceTrend
+	}
+
 	nut90, err := h.s.FetchNutritionLogs(r.Context(), claims.UserID, since90)
 	if err != nil {
 		slog.Error("fetch nutrition logs for dashboard", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	bio30, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since30)
+	bioAll, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, bioSince)
 	if err != nil {
 		slog.Error("fetch biometric logs for dashboard", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
+	}
+	var bio30 []models.BiometricLog
+	for _, b := range bioAll {
+		if b.Date >= since30 {
+			bio30 = append(bio30, b)
+		}
 	}
 	workouts7, err := h.s.FetchWorkouts(r.Context(), claims.UserID, since7)
 	if err != nil {
@@ -348,6 +367,12 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	weekly := metrics.WeeklyStats(nut30, bio30, workouts30, today)
 	todaySummary := metrics.TodaySummary(today, nut90, targets)
 
+	// Insight layer: least-squares weight trend from the adaptive engine's
+	// regression helper (level at the newest observation, not a forecast) and
+	// a single-pass 60-day nutrition streak calendar.
+	weightTrendKg, weightRateKgPerWeek, trendDays := calculator.ComputeWeightTrend(bioAll, sinceTrend)
+	loggedDays, loggingStreak, longestStreak := metrics.LoggingStreaks(nut90, today, 60)
+
 	// weight trend from bio30
 	var weightTrend []struct {
 		Date     string  `json:"date"`
@@ -391,15 +416,21 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dash := models.DashboardData{
-		Today:            todaySummary,
-		TDEE:             tdeeRes,
-		Macros:           macros,
-		Readiness:        readinessRes,
-		WeeklyStats:      weekly,
-		WeightTrend:      weightTrend,
-		TodayBio:         todayBio,
-		GripPersonalBest: gripPB,
-		WorkoutToday:     workoutToday,
+		Today:               todaySummary,
+		TDEE:                tdeeRes,
+		Macros:              macros,
+		Readiness:           readinessRes,
+		WeeklyStats:         weekly,
+		WeightTrend:         weightTrend,
+		TodayBio:            todayBio,
+		GripPersonalBest:    gripPB,
+		WorkoutToday:        workoutToday,
+		WeightTrendKg:       weightTrendKg,
+		WeightRateKgPerWeek: weightRateKgPerWeek,
+		TrendDays:           trendDays,
+		LoggingStreak:       loggingStreak,
+		LongestStreak:       longestStreak,
+		LoggedDays:          loggedDays,
 	}
 
 	// include check-in readiness (last checkin)

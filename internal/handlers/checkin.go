@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"log/slog"
@@ -128,6 +129,8 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		TDEEMethod:           tdeeRes.Method,
 		DaysOfData:           tdeeRes.DaysOfData,
 		LowConfidenceWarning: lowConfidenceClamp,
+		TDEEConfidence:       tdeeRes.Confidence,
+		LookbackDays:         tdeeRes.LookbackDays,
 
 		WeightStart:  weightStart,
 		WeightEnd:    weightEnd,
@@ -172,6 +175,13 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	in.CreatedAt = now
+
+	// Capture the adaptive estimate produced for this run. The engine is the
+	// single source of truth: whatever it returned here is persisted verbatim.
+	tdeeRes := h.estimateTDEEForCheckin(r.Context(), claims.UserID)
+	in.ObservedTDEE = tdeeRes.ObservedTDEE
+	in.TDEEConfidence = tdeeRes.Confidence
+	in.LookbackDays = tdeeRes.LookbackDays
 
 	// Insert check-in log
 	if err := h.s.CreateCheckinLog(r.Context(), &in); err != nil {
@@ -225,4 +235,61 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusCreated, in)
+}
+
+// estimateTDEEForCheckin resolves the adaptive TDEE snapshot using the same
+// inputs as Preview: the profile's lookback window, nutrition/biometric logs
+// and the most recent biometric body-fat percentage. Missing data yields the
+// engine's own fallback result (or a zero result when no profile exists).
+func (h *CheckinHandler) estimateTDEEForCheckin(ctx context.Context, userID string) models.TDEEResult {
+	profile, err := h.s.FetchProfile(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("fetch profile for checkin tdee snapshot", "err", err)
+		}
+		return models.TDEEResult{}
+	}
+
+	lookback := profile.TDEELookbackDays
+	if lookback <= 0 {
+		lookback = constants.DefaultTDEELookbackDays
+	}
+	since := time.Now().UTC().AddDate(0, 0, -lookback).Format(constants.DateFormat)
+
+	nutLogs, err := h.s.FetchNutritionLogs(ctx, userID, since)
+	if err != nil {
+		slog.Warn("fetch nutrition logs for checkin tdee snapshot", "err", err)
+		return models.TDEEResult{}
+	}
+	bioLogs, err := h.s.FetchBiometricLogs(ctx, userID, since)
+	if err != nil {
+		slog.Warn("fetch biometric logs for checkin tdee snapshot", "err", err)
+		return models.TDEEResult{}
+	}
+
+	var bodyFatPct float64
+	for i := len(bioLogs) - 1; i >= 0; i-- {
+		if bioLogs[i].BodyFatPct > 0 {
+			bodyFatPct = bioLogs[i].BodyFatPct
+			break
+		}
+	}
+
+	return calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, bodyFatPct)
+}
+
+// GET /v1/checkin/history — recent check-ins with their persisted TDEE snapshot.
+func (h *CheckinHandler) History(w http.ResponseWriter, r *http.Request) {
+	claims := auth.ClaimsFromCtx(r)
+
+	history, err := h.s.FetchCheckinHistory(r.Context(), claims.UserID, 50)
+	if err != nil {
+		slog.Error("fetch checkin history", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+	if history == nil {
+		history = []models.CheckinHistoryEntry{}
+	}
+	respond.JSON(w, http.StatusOK, history)
 }

@@ -2,6 +2,52 @@ import { today } from './utils.js'
 
 const BASE = '/v1'
 
+/**
+ * API response shapes.
+ *
+ * The client is plain JS, so these JSDoc typedefs are the single source of
+ * truth for consumers (Dashboard/CheckIn/Targets components). Keep them in
+ * sync with internal/models/domain.go.
+ *
+ * @typedef {Object} DashboardData
+ * @property {Object} today              TodaySummary { consumed, targets, ... }
+ * @property {Object} tdee               TDEEResult
+ * @property {Object} macros             MacroResult (includes goalLabel, e.g. "cut_20")
+ * @property {Object} readiness          ReadinessResult
+ * @property {Object} weeklyStats        WeeklyStats (legacy dailyLogged/currentStreak)
+ * @property {Array<{date: string, weightKg: number}>} weightTrend Raw weigh-ins, oldest→newest
+ * @property {number} weightTrendKg        EMA trend weight in kg (0 = insufficient data)
+ * @property {number} weightRateKgPerWeek  Weekly rate of change in kg (negative = losing)
+ * @property {number} trendDays            Days of data backing the trend
+ * @property {number} loggingStreak        Consecutive logged days ending today
+ * @property {number} longestStreak        Longest logging streak in the window
+ * @property {boolean[]} loggedDays        Calendar window, oldest→newest, last = today (60 entries)
+ *
+ * @typedef {Object} CheckinPreview
+ * @property {number} observedTdee
+ * @property {string} tdeeConfidence       New field; older servers call this `confidence`
+ * @property {number} lookbackDays
+ * @property {string} confidence           Legacy alias of tdeeConfidence
+ * @property {number} recommendedCalories
+ *
+ * @typedef {Object} CheckinHistoryEntry
+ * @property {string} checkInDate
+ * @property {number} observedTdee
+ * @property {string} tdeeConfidence
+ * @property {number} lookbackDays
+ * @property {number} resultingCalories
+ *
+ * @typedef {Object} TargetSnapshot
+ * @property {string} effectiveDate
+ * @property {number} calories
+ * @property {number} proteinG
+ * @property {number} carbsG
+ * @property {number} fatG
+ * @property {number} fiberG
+ * @property {number} waterMl
+ * @property {boolean} eatBackExercise
+ */
+
 async function req(method, path, body, extraHeaders = {}) {
   const opts = {
     method,
@@ -60,7 +106,7 @@ export const api = {
   getProfile: () => req('GET', '/profile'),
   updateProfile: (p) => req('PUT', '/profile', p),
 
-  // Dashboard
+  // Dashboard — returns DashboardData (see typedef above)
   getDashboard: () => req('GET', `/dashboard?date=${today()}`),
 
   // Nutrition
@@ -90,6 +136,9 @@ export const api = {
   // Targets
   getTargets: () => req('GET', '/targets'),
   putTargets: (t) => req('PUT', '/targets', t),
+  // Newest-first TargetSnapshot[]; each snapshot holds the *previous* values
+  // at the moment of the change.
+  listTargetHistory: () => req('GET', '/targets/history'),
 
   // Saved meals & templates
   listSaved: () => req('GET', '/meals/saved'),
@@ -119,8 +168,12 @@ export const api = {
   exportCombined: (from, to) => req('GET', `/export/combined?from=${from}&to=${to}`, undefined, { Accept: 'application/json' }),
 
   // Weekly Check-in
+  // Returns CheckinPreview (see typedef above). tdeeConfidence may arrive as
+  // the legacy `confidence` field, so read both with `?.` fallbacks.
   getCheckinPreview: () => req('GET', '/checkin'),
   postCheckin: (data) => req('POST', '/checkin', data),
+  // Returns CheckinHistoryEntry[] (order not guaranteed; sort by checkInDate).
+  listCheckinHistory: () => req('GET', '/checkin/history'),
   // Macro distribution
   distributeMacros: (calories) => req('POST', '/calc/macros/distribute', { calories }),
 }

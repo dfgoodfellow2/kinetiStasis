@@ -146,7 +146,7 @@ func (s *SQLiteStore) FetchLastCheckin(ctx context.Context, userID string) (last
 
 func (s *SQLiteStore) GetLastCheckin(ctx context.Context, userID string) (models.CheckInLog, error) {
 	var out models.CheckInLog
-	err := s.db.QueryRowContext(ctx, `SELECT id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, userID).Scan(&out.ID, &out.UserID, &out.CheckInDate, &out.WeightBefore, &out.WeightAfter, &out.CaloriesBefore, &out.CaloriesAfter, &out.Reason, &out.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at, observed_tdee, tdee_confidence, lookback_days FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, userID).Scan(&out.ID, &out.UserID, &out.CheckInDate, &out.WeightBefore, &out.WeightAfter, &out.CaloriesBefore, &out.CaloriesAfter, &out.Reason, &out.CreatedAt, &out.ObservedTDEE, &out.TDEEConfidence, &out.LookbackDays)
 	if err != nil {
 		return out, fmt.Errorf("get last checkin: %w", err)
 	}
@@ -155,11 +155,34 @@ func (s *SQLiteStore) GetLastCheckin(ctx context.Context, userID string) (models
 
 // CreateCheckinLog inserts a new check-in row.
 func (s *SQLiteStore) CreateCheckinLog(ctx context.Context, c *models.CheckInLog) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO check_in_logs (id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at) VALUES (?,?,?,?,?,?,?,?,?)`, c.ID, c.UserID, c.CheckInDate, c.WeightBefore, c.WeightAfter, c.CaloriesBefore, c.CaloriesAfter, c.Reason, c.CreatedAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO check_in_logs (id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at, observed_tdee, tdee_confidence, lookback_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, c.ID, c.UserID, c.CheckInDate, c.WeightBefore, c.WeightAfter, c.CaloriesBefore, c.CaloriesAfter, c.Reason, c.CreatedAt, c.ObservedTDEE, c.TDEEConfidence, c.LookbackDays)
 	if err != nil {
 		return fmt.Errorf("create checkin log: %w", err)
 	}
 	return nil
+}
+
+// FetchCheckinHistory returns the most recent check-ins for a user, newest
+// first. ResultingCalories is the post-check-in calorie target that was
+// persisted for each event.
+func (s *SQLiteStore) FetchCheckinHistory(ctx context.Context, userID string, limit int) ([]models.CheckinHistoryEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT check_in_date, observed_tdee, tdee_confidence, lookback_days, COALESCE(calories_after,0) FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT ?`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("fetch checkin history: %w", err)
+	}
+	defer rows.Close()
+	var out []models.CheckinHistoryEntry
+	for rows.Next() {
+		var e models.CheckinHistoryEntry
+		if err := rows.Scan(&e.CheckInDate, &e.ObservedTDEE, &e.TDEEConfidence, &e.LookbackDays, &e.ResultingCalories); err != nil {
+			return nil, fmt.Errorf("scan checkin history row: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 // FindUserByUsername returns a user by username.

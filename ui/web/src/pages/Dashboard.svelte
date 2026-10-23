@@ -6,6 +6,7 @@
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import VitalsRing from '../components/VitalsRing.svelte'
+  import StreakRing from '../components/StreakRing.svelte'
   import WeightSparkline from '../components/WeightSparkline.svelte'
   import Alert from '../components/Alert.svelte'
 
@@ -27,6 +28,47 @@
   }
 
   onMount(load)
+
+  // ── Weight trend (insight layer) ────────────────────────────────────────────
+  // Contract: dashboard supplies weightTrendKg (EMA level, 0 = insufficient),
+  // weightRateKgPerWeek (negative = losing), trendDays, loggingStreak,
+  // longestStreak and loggedDays (60 bools, oldest→newest, last = today).
+  let weightPoints = $derived(
+    (data?.weightTrend ?? []).filter(p => p && isFinite(p.weightKg))
+  )
+  let latestRawKg = $derived.by(() => {
+    if (!weightPoints.length) return data?.todayBio?.weightKg ?? 0
+    const sorted = [...weightPoints].sort((a, b) => a.date.localeCompare(b.date))
+    return sorted[sorted.length - 1].weightKg
+  })
+  let trendKg = $derived(Number(data?.weightTrendKg ?? 0))
+  let rateKgWk = $derived(Number(data?.weightRateKgPerWeek ?? 0))
+  let trendDays = $derived(Number(data?.trendDays ?? 0))
+  let trendReady = $derived(trendKg !== 0 && trendDays >= 7)
+  let goalLabel = $derived(String(data?.macros?.goalLabel ?? '').toLowerCase())
+
+  // Colour the rate by whether it moves toward the user's goal. Falls back to
+  // neutral gray when the goal is unknown or maintenance.
+  function rateColor(kg) {
+    if (!trendReady || kg === 0) return 'text-gray-400'
+    if (goalLabel.includes('cut')) return kg < 0 ? 'text-emerald-400' : 'text-red-400'
+    if (goalLabel.includes('bulk')) return kg > 0 ? 'text-emerald-400' : 'text-red-400'
+    return 'text-gray-400'
+  }
+
+  // Signed display value with a true minus sign; keeps units conversion.
+  function signedWeight(kg) {
+    if (!isFinite(kg)) return '—'
+    const v = dispWeight(Math.abs(kg), store.units)
+    const sign = kg > 0 ? '+' : kg < 0 ? '−' : ''
+    return `${sign}${v}`
+  }
+
+  // Prefer the new insight fields; fall back to legacy weeklyStats so the UI
+  // still renders against older servers.
+  let loggingStreak = $derived(Number(data?.loggingStreak ?? data?.weeklyStats?.currentStreak ?? 0))
+  let longestStreak = $derived(Number(data?.longestStreak ?? data?.weeklyStats?.longestStreak ?? 0))
+  let loggedDays = $derived(data?.loggedDays ?? data?.weeklyStats?.dailyLogged ?? [])
 
   // Water is stored in ml; display ml below 1 L, otherwise litres (same as LogMeal labels it in ml).
   function fmtWater(ml) {
@@ -90,14 +132,20 @@ let checklist = $derived(data ? [
       <!-- Vitals Card (same as before) -->
       <Card title="Vitals">
         <div class="flex flex-col items-center gap-3">
-            <VitalsRing
-            consumed={data.today?.consumed?.calories ?? 0}
-            target={data.today?.targets?.calories ?? 0}
+          <StreakRing
+            loggedDays={loggedDays}
+            loggingStreak={loggingStreak}
+            longestStreak={longestStreak}
             size={160}
-            dailyLogged={data.weeklyStats?.dailyLogged ?? []}
-            currentStreak={data.weeklyStats?.currentStreak ?? 0}
-            longestStreak={data.weeklyStats?.longestStreak ?? 0}
-          />
+          >
+            <!-- VitalsRing's own 30-day ring is disabled; StreakRing owns it. -->
+            <VitalsRing
+              consumed={data.today?.consumed?.calories ?? 0}
+              target={data.today?.targets?.calories ?? 0}
+              size={160}
+              dailyLogged={[]}
+            />
+          </StreakRing>
           <!-- Macro summary below ring -->
           <div class="w-full grid grid-cols-4 gap-2 text-center text-sm mt-1">
               <div>
@@ -113,9 +161,9 @@ let checklist = $derived(data ? [
                 <div class="text-gray-500 text-xs">Fat</div>
               </div>
             <div>
-              <div class="text-cyan-400 font-semibold flex items-center gap-1">
-                {data.weeklyStats?.currentStreak ?? 0}
-                {#if data.weeklyStats?.todayLogged}
+              <div class="font-semibold flex items-center gap-1 {loggingStreak >= 30 ? 'text-amber-400' : 'text-cyan-400'}">
+                {loggingStreak}
+                {#if loggedDays.length && loggedDays[loggedDays.length - 1]}
                   <span class="text-orange-400">🔥</span>
                 {/if}
               </div>
@@ -232,6 +280,29 @@ let checklist = $derived(data ? [
     <!-- Row 2: Weight Trend + Weekly Stats -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Card title="Weight Trend (30 days)">
+        <div class="flex flex-col items-center text-center mb-2">
+          {#if trendReady}
+            <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
+            <div class="text-3xl font-bold text-gray-100">
+              {dispWeight(trendKg, store.units)}
+              <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
+            </div>
+            <div class="text-sm font-semibold {rateColor(rateKgWk)}">
+              {signedWeight(rateKgWk)} {weightUnit(store.units)}/wk
+            </div>
+          {:else}
+            <div class="text-lg font-semibold text-gray-300">
+              Trend forming
+              <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
+            </div>
+          {/if}
+          <div class="text-xs text-gray-400 mt-1">
+            Raw weight:
+            <span class="font-semibold text-gray-200">
+              {latestRawKg > 0 ? dispWeight(latestRawKg, store.units) : '—'} {weightUnit(store.units)}
+            </span>
+          </div>
+        </div>
         <WeightSparkline points={data.weightTrend ?? []} units={store.units} />
       </Card>
 

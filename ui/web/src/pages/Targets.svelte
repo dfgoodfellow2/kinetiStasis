@@ -9,11 +9,30 @@
   let error = $state('')
   let success = $state('')
   let tdee = $state(null)
+  // Insight layer: target-change timeline.
+  let targetHistory = $state([])
+  let historyLoading = $state(false)
+  let savedTargets = $state(null)
+
+  async function loadTargetHistory() {
+    historyLoading = true
+    try {
+      targetHistory = (await api.listTargetHistory()) ?? []
+    } catch {
+      // Endpoint may not exist on older servers — degrade to empty state.
+      targetHistory = []
+    } finally {
+      historyLoading = false
+    }
+  }
 
   onMount(async () => {
     try {
       const t = await api.getTargets()
-      if (t) targets = { ...targets, ...t }
+      if (t) {
+        targets = { ...targets, ...t }
+        savedTargets = { ...targets }
+      }
     } catch (e) {
       error = 'Failed to load targets: ' + (e.message || e)
     }
@@ -22,6 +41,7 @@
     } catch (e) {
       if (!error) error = 'Failed to load TDEE suggestion: ' + (e.message || e)
     }
+    loadTargetHistory()
   })
 
   async function submit() {
@@ -29,15 +49,18 @@
     success = ''
     loading = true
     try {
-      await api.putTargets({
+      const payload = {
         calories:  Number(targets.calories)  || 0,
         proteinG: Number(targets.proteinG) || 0,
         carbsG:   Number(targets.carbsG)   || 0,
         fatG:     Number(targets.fatG)     || 0,
         fiberG:   Number(targets.fiberG)   || 0,
         waterMl:  Number(targets.waterMl)  || 0,
-      })
+      }
+      const saved = await api.putTargets(payload)
+      savedTargets = saved ?? payload
       success = 'Targets updated'
+      await loadTargetHistory()
     } catch (e) {
       error = e.message
     } finally {
@@ -46,6 +69,51 @@
   }
 
   let distLoading = $state(false)
+
+  // ── Timeline helpers ────────────────────────────────────────────────────────
+  // GET /targets/history returns snapshots of the *previous* values, newest
+  // first. So the "new" side of entry i is the next-newer snapshot, and for
+  // the head it is the live targets. That reconstructs each change cleanly.
+  function num(v) {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  function waterLabel(ml) {
+    const n = num(ml)
+    return n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')} L` : `${Math.round(n)} ml`
+  }
+
+  function deltaClass(d) {
+    if (d < 0) return 'text-emerald-400'
+    if (d > 0) return 'text-amber-400'
+    return 'text-gray-500'
+  }
+
+  function signed(n) {
+    return n > 0 ? `+${n}` : `${n}`
+  }
+
+  let timeline = $derived.by(() => {
+    const rows = Array.isArray(targetHistory) ? targetHistory : []
+    if (!rows.length) return []
+    return rows.slice(0, 10).map((snap, i) => {
+      const newer = i === 0 ? savedTargets : rows[i - 1]
+      if (!newer) return null
+      const fromCal = num(snap?.calories)
+      const toCal = num(newer?.calories)
+      return {
+        date: snap?.effectiveDate ?? '',
+        fromCal,
+        toCal,
+        delta: Math.round(toCal - fromCal),
+        waterChanged: num(newer?.waterMl) !== num(snap?.waterMl),
+        waterTo: num(newer?.waterMl),
+        eatBackChanged: Boolean(newer?.eatBackExercise) !== Boolean(snap?.eatBackExercise),
+        eatBackOn: Boolean(newer?.eatBackExercise)
+      }
+    }).filter(Boolean)
+  })
 
   async function autoDistribute() {
     error = ''
@@ -127,4 +195,29 @@
   <div>
     <button class="btn-primary" onclick={submit} disabled={loading}>{loading ? 'Saving…' : 'Save Targets'}</button>
   </div>
+</div>
+
+<div class="max-w-screen-xl mx-auto mt-4 bg-gray-800 p-4 rounded border border-gray-700">
+  <h3 class="text-sm font-bold text-gray-300 mb-3">Target change timeline</h3>
+  {#if historyLoading}
+    <div class="text-sm text-gray-500">Loading…</div>
+  {:else if timeline.length === 0}
+    <p class="text-sm text-gray-500">No target changes yet — save a new target to start the timeline.</p>
+  {:else}
+    <ul class="space-y-2">
+      {#each timeline as row}
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm border-t border-gray-700/60 first:border-t-0 first:pt-0 pt-2">
+          <span class="font-mono text-xs text-gray-500 shrink-0">{row.date}</span>
+          <span class="font-mono font-semibold {deltaClass(row.delta)} shrink-0">{signed(row.delta)} kcal</span>
+          <span class="text-xs text-gray-500 font-mono">{Math.round(row.fromCal)} → <span class="text-gray-300">{Math.round(row.toCal)}</span></span>
+          {#if row.waterChanged}
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">water→{waterLabel(row.waterTo)}</span>
+          {/if}
+          {#if row.eatBackChanged}
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300">eat-back {row.eatBackOn ? 'on' : 'off'}</span>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
 </div>

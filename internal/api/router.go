@@ -151,6 +151,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 			checkinH := handlers.NewCheckinHandler(s)
 			r.Get("/checkin", checkinH.Preview)
 			r.Post("/checkin", checkinH.Create)
+			r.Get("/checkin/history", checkinH.History)
 
 			// AI parsing — strict rate limit
 			r.Route("/parse", func(r chi.Router) {

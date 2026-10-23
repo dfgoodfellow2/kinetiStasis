@@ -4,6 +4,12 @@
   // Props
   export let points = []
   export let units = 'imperial'
+  // Initial view: 'raw' | 'trend'. The pill toggles it locally afterwards.
+  export let series = 'raw'
+  // Span (days) used for the display-only EMA smoothing.
+  export let trendWindow = 7
+
+  let mode = series === 'trend' ? 'trend' : 'raw'
 
   // Filter out points with invalid weightKg and ensure sorted by date (oldest -> newest)
   $: validPoints = points.filter(p => p.weightKg !== undefined && p.weightKg !== null && isFinite(p.weightKg))
@@ -16,9 +22,38 @@
     raw: p.weightKg
   }))
 
+  // The API only ships raw weigh-ins today. Until the server exposes a full
+  // EMA series, smooth the sparkline here for DISPLAY ONLY. Headline trend
+  // numbers (Dashboard's weightTrendKg / weightRateKgPerWeek) always come
+  // from the server — never from this client-side smoothing.
+  function ema(values, alpha) {
+    const out = []
+    let prev = null
+    for (const v of values) {
+      prev = prev === null ? v : prev + alpha * (v - prev)
+      out.push(prev)
+    }
+    return out
+  }
+
+  $: alpha = 2 / (Math.max(trendWindow, 2) + 1)
+  $: trendSeries = (() => {
+    if (!displayPoints.length) return []
+    const smooth = ema(displayPoints.map(p => p.raw), alpha)
+    return displayPoints.map((p, i) => ({
+      date: p.date,
+      raw: smooth[i],
+      weight: dispWeight(smooth[i], units)
+    }))
+  })()
+
+  // Active series drives both the path and the min/max labels.
+  $: active = mode === 'trend' ? trendSeries : displayPoints
+  $: hasSeries = active.length >= 2
+
   // Calculate min/max for scaling (use raw kg values then convert for display labels)
-  $: minWeight = displayPoints.length ? Math.min(...displayPoints.map(p => p.raw)) : 0
-  $: maxWeight = displayPoints.length ? Math.max(...displayPoints.map(p => p.raw)) : 0
+  $: minWeight = active.length ? Math.min(...active.map(p => p.raw)) : 0
+  $: maxWeight = active.length ? Math.max(...active.map(p => p.raw)) : 0
   $: range = Math.max(maxWeight - minWeight, 0.1)
 
   // SVG dimensions
@@ -28,16 +63,23 @@
 
   // Generate SVG path
   $: pathData = (() => {
-    if (displayPoints.length < 2) return ''
-    const pts = displayPoints.map((p, i) => {
-      const x = padding + (i / (displayPoints.length - 1)) * (width - 2 * padding)
+    if (active.length < 2) return ''
+    const pts = active.map((p, i) => {
+      const x = padding + (i / (active.length - 1)) * (width - 2 * padding)
       const y = height - padding - ((p.raw - minWeight) / range) * (height - 2 * padding)
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`
     })
     return pts.join(' ')
   })()
 
-  // Current weight (already converted for display)
+  // Last point for the end dot
+  $: lastIdx = active.length - 1
+  $: lastX = active.length ? padding + (lastIdx / Math.max(active.length - 1, 1)) * (width - 2 * padding) : 0
+  $: lastY = active.length
+    ? height - padding - ((active[lastIdx].raw - minWeight) / range) * (height - 2 * padding)
+    : 0
+
+  // Last raw reading — kept unsmoothed so the big number matches the scale.
   $: current = displayPoints.length ? displayPoints[displayPoints.length - 1].weight : 0
 
   // Simple trend detection
@@ -52,30 +94,44 @@
 </script>
 
 <div class="flex flex-col items-center text-gray-100">
-  <!-- Current weight -->
-  <div class="text-2xl font-bold text-gray-100">
-    {current} <span class="text-sm font-normal text-gray-400">{weightUnit(units)}</span>
+  <!-- Current weight + raw/trend toggle -->
+  <div class="flex items-center justify-between w-full max-w-[280px] gap-2">
+    <div class="text-2xl font-bold text-gray-100">
+      {current} <span class="text-sm font-normal text-gray-400">{weightUnit(units)}</span>
+    </div>
+    {#if displayPoints.length >= 2}
+      <div class="inline-flex items-center rounded-full bg-gray-700 p-0.5 text-[11px]" role="group" aria-label="Sparkline series">
+        <button
+          type="button"
+          class="px-2 py-0.5 rounded-full transition-colors {mode === 'raw' ? 'bg-gray-500 text-white' : 'text-gray-400 hover:text-gray-200'}"
+          aria-pressed={mode === 'raw'}
+          onclick={() => mode = 'raw'}
+        >Raw</button>
+        <button
+          type="button"
+          class="px-2 py-0.5 rounded-full transition-colors {mode === 'trend' ? 'bg-gray-500 text-white' : 'text-gray-400 hover:text-gray-200'}"
+          aria-pressed={mode === 'trend'}
+          onclick={() => mode = 'trend'}
+        >Trend</button>
+      </div>
+    {/if}
   </div>
 
   <!-- Sparkline SVG -->
-  {#if displayPoints.length >= 2}
-    <svg {width} {height} class="w-full max-w-[280px] mt-2" role="img" aria-label="Weight sparkline">
+  {#if hasSeries}
+    <svg {width} {height} class="w-full max-w-[280px] mt-2" role="img" aria-label="Weight {mode} sparkline">
       <!-- Line -->
       <path
         d={pathData}
         fill="none"
-        stroke="#10b981"
+        stroke={mode === 'trend' ? '#38bdf8' : '#10b981'}
         stroke-width="2"
         stroke-linecap="round"
         stroke-linejoin="round"
+        stroke-dasharray={mode === 'trend' ? '5 3' : undefined}
       />
       <!-- End dot -->
-      {#if displayPoints.length > 0}
-        {@const lastIdx = displayPoints.length - 1}
-        {@const x = padding + (lastIdx / (displayPoints.length - 1)) * (width - 2 * padding)}
-        {@const y = height - padding - ((displayPoints[lastIdx].raw - minWeight) / range) * (height - 2 * padding)}
-        <circle cx={x} cy={y} r="4" fill="#10b981" />
-      {/if}
+      <circle cx={lastX} cy={lastY} r="4" fill={mode === 'trend' ? '#38bdf8' : '#10b981'} />
     </svg>
   {:else}
     <div class="h-20 flex items-center justify-center text-gray-500 text-sm">
@@ -88,6 +144,10 @@
     <span>Min: {dispWeight(minWeight, units)} {weightUnit(units)}</span>
     <span>Max: {dispWeight(maxWeight, units)} {weightUnit(units)}</span>
   </div>
+
+  {#if mode === 'trend'}
+    <div class="text-[10px] text-gray-600 mt-0.5">Display-only EMA · headline trend comes from the server</div>
+  {/if}
 </div>
 
 <!-- Optional: small trend indicator (hidden visually but left for reference) -->

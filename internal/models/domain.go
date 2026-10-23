@@ -205,6 +205,21 @@ type CheckInLog struct {
 	CaloriesAfter  int     `json:"caloriesAfter"`
 	Reason         string  `json:"reason"`
 	CreatedAt      string  `json:"createdAt"`
+
+	// Adaptive TDEE snapshot captured at check-in time. These are persisted
+	// exactly as returned by the adaptive engine for that run.
+	ObservedTDEE   float64 `json:"observedTdee"`
+	TDEEConfidence string  `json:"tdeeConfidence"`
+	LookbackDays   int     `json:"lookbackDays"`
+}
+
+// CheckinHistoryEntry is the lean response shape for GET /v1/checkin/history.
+type CheckinHistoryEntry struct {
+	CheckInDate       string  `json:"checkInDate"`
+	ObservedTDEE      float64 `json:"observedTdee"`
+	TDEEConfidence    string  `json:"tdeeConfidence"`
+	LookbackDays      int     `json:"lookbackDays"`
+	ResultingCalories int     `json:"resultingCalories"`
 }
 
 // CheckinPreview is returned by GET /v1/checkin
@@ -220,6 +235,10 @@ type CheckinPreview struct {
 	TDEEMethod           string  `json:"tdeeMethod"`
 	DaysOfData           int     `json:"daysOfData"`
 	LowConfidenceWarning bool    `json:"lowConfidenceWarning"`
+	// TDEEConfidence and LookbackDays mirror the engine result under the
+	// names used by the check-in history API.
+	TDEEConfidence string `json:"tdeeConfidence"`
+	LookbackDays   int    `json:"lookbackDays"`
 
 	// Weight trend (display context only)
 	WeightStart  float64 `json:"weightStart"`
@@ -373,6 +392,18 @@ type DashboardData struct {
 	TodayBio         *BiometricLog `json:"todayBio"`
 	GripPersonalBest float64       `json:"gripPersonalBest"`
 	WorkoutToday     bool          `json:"workoutToday"`
+
+	// Weight trend derived from the adaptive engine's linear regression.
+	// WeightTrendKg is 0 when there are fewer than seven weight observations.
+	WeightTrendKg       float64 `json:"weightTrendKg"`
+	WeightRateKgPerWeek float64 `json:"weightRateKgPerWeek"`
+	TrendDays           int     `json:"trendDays"`
+
+	// 60-day nutrition logging calendar and streaks.
+	LoggingStreak int    `json:"loggingStreak"`
+	LongestStreak int    `json:"longestStreak"`
+	LoggedDays    []bool `json:"loggedDays"`
+
 	// Check-in readiness
 	CanChangeTargets bool `json:"canChangeTargets"`
 	DaysUntilCheckin int  `json:"daysUntilCheckin"`

@@ -203,3 +203,56 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 
 	return ws
 }
+
+// LoggingStreaks derives a nutrition-logging calendar and streak counts in a
+// single pass over the supplied logs.
+//
+// loggedDays has window entries ordered oldest -> newest, so the final element
+// always represents today; true means at least one nutrition log exists for
+// that date. The current streak ends today when today is logged, otherwise it
+// counts consecutive logged days back from yesterday. longestStreak is the
+// longest consecutive run inside the same window.
+func LoggingStreaks(nutritionLogs []models.NutritionLog, today string, window int) (loggedDays []bool, currentStreak, longestStreak int) {
+	if window <= 0 {
+		window = 60
+	}
+	loggedDays = make([]bool, window)
+
+	todayTime, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return loggedDays, 0, 0
+	}
+
+	loggedDates := make(map[string]bool, len(nutritionLogs))
+	for _, n := range nutritionLogs {
+		if n.Date != "" {
+			loggedDates[n.Date] = true
+		}
+	}
+
+	run := 0
+	for i := 0; i < window; i++ {
+		date := todayTime.AddDate(0, 0, -(window - 1 - i)).Format("2006-01-02")
+		if loggedDates[date] {
+			loggedDays[i] = true
+			run++
+			if run > longestStreak {
+				longestStreak = run
+			}
+		} else {
+			run = 0
+		}
+	}
+
+	// Walk backwards from today, or from yesterday when today has not been
+	// logged yet, so the streak survives an unlogged current day.
+	start := window - 1
+	if !loggedDays[start] {
+		start--
+	}
+	for i := start; i >= 0 && loggedDays[i]; i-- {
+		currentStreak++
+	}
+
+	return loggedDays, currentStreak, longestStreak
+}
