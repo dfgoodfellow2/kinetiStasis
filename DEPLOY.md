@@ -47,10 +47,13 @@ fly secrets set JWT_SECRET="$(openssl rand -hex 32)"
 fly secrets set GEMINI_API_KEY="your-key"
 fly secrets set BUCKET_NAME="your-bucket"
 fly secrets set AWS_REGION="auto"
-fly secrets set AWS_ENDPOINT_URL_S3="https://fly.storage.tigris.dev"
+fly secrets set AWS_ENDPOINT_URL_S3="https://t3.storage.dev"
 fly secrets set AWS_ACCESS_KEY_ID="your-key-id"
 fly secrets set AWS_SECRET_ACCESS_KEY="your-secret"
 ```
+
+Both Tigris endpoints work: `https://t3.storage.dev` is the current global endpoint (used in
+production), and `https://fly.storage.tigris.dev` also works for fly-provisioned buckets.
 
 ### 5. Deploy
 
