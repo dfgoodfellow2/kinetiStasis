@@ -173,6 +173,97 @@ type TDEEResult struct {
 	Method        string  `json:"method"`
 }
 
+// MacroResult is the response from POST /v1/calc/macros/distribute.
+type MacroResult struct {
+	Calories float64 `json:"calories"`
+	ProteinG float64 `json:"proteinG"`
+	CarbsG   float64 `json:"carbsG"`
+	FatG     float64 `json:"fatG"`
+	FiberG   float64 `json:"fiberG"`
+	WaterMl  float64 `json:"waterMl"`
+}
+
+// CheckinPreview is returned by GET /v1/checkin.
+type CheckinPreview struct {
+	// Readiness gating
+	CanCheckIn           bool `json:"canCheckIn"`
+	DaysSinceLastCheckIn int  `json:"daysSinceLastCheckIn"`
+
+	// Adaptive TDEE result
+	ObservedTDEE         float64 `json:"observedTdee"`
+	EstimatedTDEE        float64 `json:"estimatedTdee"`
+	Confidence           string  `json:"confidence"`
+	TDEEMethod           string  `json:"tdeeMethod"`
+	DaysOfData           int     `json:"daysOfData"`
+	LowConfidenceWarning bool    `json:"lowConfidenceWarning"`
+
+	// Weight trend (display context only)
+	WeightStart  float64 `json:"weightStart"`
+	WeightEnd    float64 `json:"weightEnd"`
+	WeightChange float64 `json:"weightChange"`
+
+	// Current nutritional state
+	CurrentCalories float64 `json:"currentCalories"`
+	EatBackExercise bool    `json:"eatBackExercise"`
+
+	// Recommendation from the adaptive engine
+	RecommendedCalories int     `json:"recommendedCalories"`
+	CalorieAdjustment   float64 `json:"calorieAdjustment"`
+}
+
+// CheckInLog is the request/response body of POST /v1/checkin.
+// A zero CaloriesAfter records the check-in without changing targets.
+type CheckInLog struct {
+	ID             string  `json:"id"`
+	UserID         string  `json:"userId"`
+	CheckInDate    string  `json:"checkInDate"`
+	WeightBefore   float64 `json:"weightBefore"`
+	WeightAfter    float64 `json:"weightAfter"`
+	CaloriesBefore float64 `json:"caloriesBefore"`
+	CaloriesAfter  float64 `json:"caloriesAfter"`
+	Reason         string  `json:"reason"`
+	CreatedAt      string  `json:"createdAt"`
+}
+
+// TargetSnapshot is a historical record of targets on a given date.
+type TargetSnapshot struct {
+	ID              string  `json:"id"`
+	UserID          string  `json:"userId"`
+	EffectiveDate   string  `json:"effectiveDate"`
+	Calories        float64 `json:"calories"`
+	ProteinG        float64 `json:"proteinG"`
+	CarbsG          float64 `json:"carbsG"`
+	FatG            float64 `json:"fatG"`
+	FiberG          float64 `json:"fiberG"`
+	WaterMl         float64 `json:"waterMl"`
+	EatBackExercise bool    `json:"eatBackExercise"`
+	CreatedAt       string  `json:"createdAt"`
+}
+
+// SavedMeal is a named, reusable meal with its macro breakdown.
+type SavedMeal struct {
+	ID        string  `json:"id"`
+	UserID    string  `json:"userId"`
+	Name      string  `json:"name"`
+	Calories  float64 `json:"calories"`
+	ProteinG  float64 `json:"proteinG"`
+	CarbsG    float64 `json:"carbsG"`
+	FatG      float64 `json:"fatG"`
+	FiberG    float64 `json:"fiberG"`
+	CreatedAt string  `json:"createdAt"`
+	UpdatedAt string  `json:"updatedAt"`
+}
+
+// MealTemplate is a named collection of saved meals.
+type MealTemplate struct {
+	ID        string      `json:"id"`
+	UserID    string      `json:"userId"`
+	Name      string      `json:"name"`
+	Meals     []SavedMeal `json:"meals"`
+	CreatedAt string      `json:"createdAt"`
+	UpdatedAt string      `json:"updatedAt"`
+}
+
 type ReadinessResult struct {
 	Level         string   `json:"level"`
 	Message       string   `json:"message"`

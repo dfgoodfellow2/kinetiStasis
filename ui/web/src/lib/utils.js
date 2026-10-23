@@ -5,7 +5,9 @@ export function today() {
 export function daysAgo(n) {
   const d = new Date()
   d.setDate(d.getDate() - n)
-  return d.toISOString().slice(0, 10)
+  // Use the same local-time formatting as today() so the two never disagree
+  // about which calendar day it is around midnight.
+  return d.toLocaleDateString('sv')
 }
 
 export function progressBar(current, max, width = 20) {

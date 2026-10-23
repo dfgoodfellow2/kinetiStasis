@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
+
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 )
 
 type contextKey string
@@ -17,12 +18,12 @@ func RequireAuth(secret []byte) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie(AccessCookieName)
 			if err != nil {
-				writeJSONError(w, http.StatusUnauthorized, "missing access token")
+				respond.Error(w, http.StatusUnauthorized, "missing access token")
 				return
 			}
 			claims, err := ParseAccessToken(secret, cookie.Value)
 			if err != nil {
-				writeJSONError(w, http.StatusUnauthorized, "invalid or expired token")
+				respond.Error(w, http.StatusUnauthorized, "invalid or expired token")
 				return
 			}
 			ctx := context.WithValue(r.Context(), claimsKey, claims)
@@ -37,7 +38,7 @@ func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := ClaimsFromCtx(r)
 		if claims == nil || !claims.IsAdmin {
-			writeJSONError(w, http.StatusForbidden, "admin access required")
+			respond.Error(w, http.StatusForbidden, "admin access required")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -49,10 +50,4 @@ func RequireAdmin(next http.Handler) http.Handler {
 func ClaimsFromCtx(r *http.Request) *Claims {
 	c, _ := r.Context().Value(claimsKey).(*Claims)
 	return c
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

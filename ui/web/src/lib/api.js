@@ -1,3 +1,5 @@
+import { today } from './utils.js'
+
 const BASE = '/v1'
 
 async function req(method, path, body, extraHeaders = {}) {
@@ -59,7 +61,7 @@ export const api = {
   updateProfile: (p) => req('PUT', '/profile', p),
 
   // Dashboard
-  getDashboard: () => req('GET', `/dashboard?date=${new Date().toLocaleDateString('sv')}`),
+  getDashboard: () => req('GET', `/dashboard?date=${today()}`),
 
   // Nutrition
   listNutrition: (from, to) => req('GET', `/nutrition/logs?from=${from}&to=${to}`),

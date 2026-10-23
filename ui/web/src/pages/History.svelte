@@ -145,7 +145,7 @@
       await api.deleteMeasurement(date)
       loadMeasurements()
     } catch (e) {
-      console.error('Delete failed:', e)
+      alert(`Delete failed: ${e.message || e}`)
     }
   }
 </script>

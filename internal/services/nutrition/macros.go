@@ -8,6 +8,50 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 )
 
+// Physiology constants for macro, fiber and water targets. They are
+// deliberately exported and single-sourced here so callers (handlers,
+// calculators, exports) can reference the same numbers instead of
+// re-hardcoding them.
+const (
+	// ProteinGPerKgBase is the default g/kg bodyweight protein target.
+	ProteinGPerKgBase = 1.5
+
+	// Lifter protein multipliers, adjusted for body-fat percentage.
+	ProteinGPerKgLifter       = 1.9
+	ProteinGPerKgLifterHighBf = 1.6 // BF% > 25
+	ProteinGPerKgLifterLowBf  = 2.2 // BF% < 12
+
+	// ProteinGPerKgDeficitAdd is added to a lifter's multiplier while cutting.
+	ProteinGPerKgDeficitAdd = 0.3
+
+	// High-carb-priority runners use these multipliers instead.
+	ProteinGPerKgPriorityCarbs    = 1.6
+	ProteinGPerKgPriorityCarbsCut = 1.8
+
+	// Fat minimum: FatMinBaseG plus FatMinPerCmG for every cm above
+	// FatMinHeightThresholdCm.
+	FatMinBaseG             = 30.0
+	FatMinHeightThresholdCm = 150.0
+	FatMinPerCmG            = 0.5
+
+	// Fiber target: 14 g per 1000 kcal, floored at a sex-specific absolute
+	// minimum.
+	FiberGPer1000Kcal  = 14.0
+	FiberAbsMinMaleG   = 36
+	FiberAbsMinFemaleG = 28
+
+	// WaterMlPerKg is the daily water target in millilitres per kg bodyweight.
+	WaterMlPerKg = 35.0
+
+	// NEATFactorLightlyActive is the activity multiplier for the
+	// "lightly_active" profile value.
+	NEATFactorLightlyActive = 1.1
+
+	// DefaultNEATFactor applies when a profile's activity is unrecognised.
+	// It matches the lightly-active multiplier.
+	DefaultNEATFactor = NEATFactorLightlyActive
+)
+
 func EstimateBMRMifflin(weightKg, heightCm float64, age int, isMale bool) float64 {
 	bmr := 10*weightKg + 6.25*heightCm - 5*float64(age)
 	if isMale {
@@ -47,13 +91,13 @@ func ComputeBMR(p models.Profile, weightKg float64) float64 {
 func EstimateTDEEBase(bmr float64, activity string) float64 {
 	neatFactors := map[string]float64{
 		"sedentary":         1.0,
-		"lightly_active":    1.1,
+		"lightly_active":    NEATFactorLightlyActive,
 		"moderately_active": 1.2,
 		"very_active":       1.3,
 	}
 	factor, ok := neatFactors[activity]
 	if !ok {
-		factor = 1.1
+		factor = DefaultNEATFactor
 	}
 	return bmr * factor
 }
@@ -81,41 +125,41 @@ func CalcRunningCalories(weightKg, kmPerWeek float64) int {
 
 func CalcProtein(weightKg float64, isLifter, inDeficit bool, bfPct float64, runningKm int, prioritizeCarbs bool) int {
 	if prioritizeCarbs && runningKm >= 24 {
-		base := 1.6
+		base := ProteinGPerKgPriorityCarbs
 		if inDeficit {
-			base = 1.8
+			base = ProteinGPerKgPriorityCarbsCut
 		}
 		return int(math.Round(weightKg * base))
 	}
 	if isLifter {
-		base := 1.9
+		base := ProteinGPerKgLifter
 		if bfPct > 0 {
 			if bfPct > 25 {
-				base = 1.6
+				base = ProteinGPerKgLifterHighBf
 			} else if bfPct < 12 {
-				base = 2.2
+				base = ProteinGPerKgLifterLowBf
 			}
 		}
 		if inDeficit {
-			base += 0.3
+			base += ProteinGPerKgDeficitAdd
 		}
 		return int(math.Round(weightKg * base))
 	}
-	return int(math.Round(weightKg * 1.5))
+	return int(math.Round(weightKg * ProteinGPerKgBase))
 }
 
 func CalcFatMinimum(heightCm float64) int {
-	if heightCm < 150 {
-		return 30
+	if heightCm < FatMinHeightThresholdCm {
+		return int(FatMinBaseG)
 	}
-	return int(math.Round(30 + (heightCm-150)*0.5))
+	return int(math.Round(FatMinBaseG + (heightCm-FatMinHeightThresholdCm)*FatMinPerCmG))
 }
 
 func CalcFiberTarget(calories int, sex string) int {
-	perCal := int(math.Round(float64(calories) / 1000 * 14))
-	absMin := 36
+	perCal := int(math.Round(float64(calories) / 1000 * FiberGPer1000Kcal))
+	absMin := FiberAbsMinMaleG
 	if sex == "female" {
-		absMin = 28
+		absMin = FiberAbsMinFemaleG
 	}
 	if perCal > absMin {
 		return perCal
@@ -271,7 +315,7 @@ func DistributeMacros(p models.Profile, targetCalories float64, weightKg float64
 	}
 
 	fiberG := CalcFiberTarget(int(math.Round(targetCalories)), p.Sex)
-	waterMl := 35 * weightKg
+	waterMl := WaterMlPerKg * weightKg
 
 	return models.MacroResult{
 		Calories:  targetCalories,

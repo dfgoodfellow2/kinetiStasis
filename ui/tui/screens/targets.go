@@ -32,8 +32,10 @@ type TargetsModel struct {
 	tdee    client.TDEEResult
 	// targets is the last server response. PUT /targets replaces the whole
 	// record, so the save path starts from this value and only overwrites the
-	// six form-edited fields (preserving e.g. eatBackExercise).
+	// six form-edited fields.
 	targets client.Targets
+	// eatBack mirrors targets.eatBackExercise and is edited by the toggle.
+	eatBack bool
 }
 
 func NewTargets(c *client.Client) *TargetsModel {
@@ -84,6 +86,12 @@ func (m *TargetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus = (m.focus + 1) % len(m.inputs)
 			m.inputs[m.focus].Focus()
 			return m, nil
+		case "e":
+			if !m.loading {
+				m.eatBack = !m.eatBack
+				m.msg = fmt.Sprintf("Eat back exercise calories: %s", yesNo(m.eatBack))
+			}
+			return m, nil
 		case "u":
 			// Apply TDEE as calorie target
 			if m.tdee.ObservedTDEE > 0 {
@@ -112,6 +120,7 @@ func (m *TargetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				t.FatG, _ = strconv.ParseFloat(m.inputs[3].Value(), 64)
 				t.FiberG, _ = strconv.ParseFloat(m.inputs[4].Value(), 64)
 				t.WaterMl, _ = strconv.ParseFloat(m.inputs[5].Value(), 64)
+				t.EatBackExercise = m.eatBack
 				err := m.client.PutTargets(t)
 				return targetsSavedMsg{err: err}
 			}
@@ -128,6 +137,7 @@ func (m *TargetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		t := msg.targets
 		m.targets = t
+		m.eatBack = t.EatBackExercise
 		m.tdee = msg.tdee
 		m.inputs[0].SetValue(fmt.Sprintf("%.0f", t.Calories))
 		m.inputs[1].SetValue(fmt.Sprintf("%.0f", t.ProteinG))
@@ -180,6 +190,8 @@ func (m *TargetsModel) View() string {
 		b.WriteString(in.View() + "\n")
 	}
 
+	b.WriteString(styles.Label.Render("Eat back exercise calories: ") + yesNo(m.eatBack) + "\n")
+
 	b.WriteString("\n")
 	if m.err != "" {
 		b.WriteString(styles.Error.Render(m.err) + "\n")
@@ -188,6 +200,13 @@ func (m *TargetsModel) View() string {
 		b.WriteString(styles.Success.Render(m.msg) + "\n")
 	}
 
-	b.WriteString(styles.Help.Render("Tab: next field • u: use TDEE • Enter: save • Esc: menu"))
+	b.WriteString(styles.Help.Render("Tab: next field • e: toggle eat-back • u: use TDEE • Enter: save • Esc: menu"))
 	return b.String()
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "yes"
+	}
+	return "no"
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/units"
 )
 
 // MechanicalWorkVolume sums load_lbs × reps × sets across all sets in an entry.
@@ -236,7 +237,7 @@ func METToCalories(met, weightLbs, minutes float64) float64 {
 	if met <= 0 || weightLbs <= 0 || minutes <= 0 {
 		return 0
 	}
-	kg := weightLbs * 0.45359237
+	kg := units.LbsToKilograms(weightLbs)
 	kcalPerMin := (met * 3.5 * kg) / 200.0
 	return kcalPerMin * minutes
 }

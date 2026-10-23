@@ -1,7 +1,7 @@
 package units
 
 const (
-	LbsToKg  = 0.453592
+	LbsToKg  = 0.45359237
 	KgToLbs  = 2.20462
 	CmToInch = 0.393701
 	InchToCm = 2.54

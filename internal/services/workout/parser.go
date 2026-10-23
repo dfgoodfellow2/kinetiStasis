@@ -7,6 +7,7 @@ import (
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/met"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/units"
 )
 
 // ParseYAML parses a workout YAML string into a ParsedWorkout.
@@ -286,7 +287,7 @@ func ParseYAML(text string) (models.ParsedWorkout, error) {
 			entry.Sets = append(entry.Sets, models.ExerciseSet{
 				Reps:       rx.reps,
 				LoadLbs:    loadLbs,
-				LoadKg:     loadLbs * 0.45359237,
+				LoadKg:     units.LbsToKilograms(loadLbs),
 				TUTSeconds: tutPerSet,
 			})
 		}

@@ -8,6 +8,37 @@ import (
 	unitsconv "github.com/dfgoodfellow2/diet-tracker/v2/internal/services/units"
 )
 
+// nutritionRowStyle selects how writeNutritionDayRow renders a day's nutrition
+// values.
+type nutritionRowStyle int
+
+const (
+	nutritionTableRow nutritionRowStyle = iota
+	nutritionBulletRow
+)
+
+// writeNutritionDayRow is the single renderer for a day's nutrition values.
+// It emits either a Markdown table row (NutritionMarkdown) or a bullet block
+// (CombinedMarkdown), always including fiber and water so the two exports
+// cannot drift apart.
+func writeNutritionDayRow(b *strings.Builder, n models.NutritionLog, style nutritionRowStyle) {
+	if style == nutritionTableRow {
+		notes := strings.ReplaceAll(n.MealNotes, "\n", " ")
+		// escape pipe characters
+		notes = strings.ReplaceAll(notes, "|", "\\|")
+		b.WriteString(fmt.Sprintf("| %s | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %s |\n",
+			n.Date, n.Calories, n.ProteinG, n.CarbsG, n.FatG, n.FiberG, n.WaterMl, notes))
+		return
+	}
+
+	b.WriteString(fmt.Sprintf("- Calories: %.0f (P: %.0f g, C: %.0f g, F: %.0f g, Fiber: %.0f g)\n",
+		n.Calories, n.ProteinG, n.CarbsG, n.FatG, n.FiberG))
+	b.WriteString(fmt.Sprintf("- Water: %.0f ml\n", n.WaterMl))
+	if n.MealNotes != "" {
+		b.WriteString(fmt.Sprintf("- Meals: %s\n", n.MealNotes))
+	}
+}
+
 // NutritionMarkdown generates a Markdown table of daily nutrition logs between from/to dates.
 func NutritionMarkdown(logs []models.NutritionLog, targets models.Targets, from, to string) string {
 	var b strings.Builder
@@ -32,12 +63,7 @@ func NutritionMarkdown(logs []models.NutritionLog, targets models.Targets, from,
 		totalFiber += l.FiberG
 		totalWater += l.WaterMl
 
-		notes := strings.ReplaceAll(l.MealNotes, "\n", " ")
-		// escape pipe characters
-		notes = strings.ReplaceAll(notes, "|", "\\|")
-
-		b.WriteString(fmt.Sprintf("| %s | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f | %s |\n",
-			l.Date, l.Calories, l.ProteinG, l.CarbsG, l.FatG, l.FiberG, l.WaterMl, notes))
+		writeNutritionDayRow(&b, l, nutritionTableRow)
 	}
 
 	if count == 0 {
@@ -223,6 +249,18 @@ func WorkoutsCSV(workouts []models.WorkoutEntry, from, to, units string) string 
 	return b.String()
 }
 
+// CombinedCSV renders the combined export as CSV. Nutrition and workout
+// records have disjoint columns, so the honest minimal representation is the
+// nutrition CSV section followed by the workout CSV section, each with its own
+// header row. Both sections are filtered to the same date range.
+func CombinedCSV(logs []models.NutritionLog, workouts []models.WorkoutEntry, from, to, units string) string {
+	var b strings.Builder
+	b.WriteString(NutritionCSV(logs, from, to))
+	b.WriteString("\n")
+	b.WriteString(WorkoutsCSV(workouts, from, to, units))
+	return b.String()
+}
+
 // CombinedMarkdown generates a single Markdown document combining nutrition + biometrics + workouts grouped by date
 func CombinedMarkdown(logs []models.NutritionLog, biometrics []models.BiometricLog, workouts []models.WorkoutEntry, targets models.Targets, from, to, units string) string {
 	var b strings.Builder
@@ -330,13 +368,7 @@ func CombinedMarkdown(logs []models.NutritionLog, biometrics []models.BiometricL
 			}
 		}
 		if nut, ok := nutMap[d]; ok {
-			b.WriteString(fmt.Sprintf("- Calories: %.0f (P: %.0f g, C: %.0f g, F: %.0f g)\n", nut.Calories, nut.ProteinG, nut.CarbsG, nut.FatG))
-			if nut.WaterMl > 0 {
-				b.WriteString(fmt.Sprintf("- Water: %.0f ml\n", nut.WaterMl))
-			}
-			if nut.MealNotes != "" {
-				b.WriteString(fmt.Sprintf("- Meals: %s\n", nut.MealNotes))
-			}
+			writeNutritionDayRow(&b, nut, nutritionBulletRow)
 		}
 		if ws, ok := workMap[d]; ok {
 			for _, w := range ws {

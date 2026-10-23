@@ -41,6 +41,15 @@ const (
 	pfCount
 )
 
+// pfMacro is a non-text pseudo-field appended after the text inputs: a
+// cycling selector for the server-managed macroDistribution preference.
+const (
+	pfMacro = pfCount
+	pfTotal = pfCount + 1
+)
+
+var macroDistributions = []string{"keto", "low_carb", "balanced", "high_carb"}
+
 var profileLabels = [pfCount]string{
 	"Name",
 	"Birthdate (YYYY-MM-DD)",
@@ -72,13 +81,15 @@ type ProfileModel struct {
 	offset  int // for scrolling through many fields
 	// profile is the last profile loaded from the server. PUT /profile has
 	// replace semantics, so we rebuild the request from this value and only
-	// overwrite the form-edited fields. This keeps server-only fields such as
-	// macroDistribution intact on save.
+	// overwrite the form-edited fields.
 	profile client.Profile
+	// macroDist is the currently selected macro distribution (keto,
+	// low_carb, balanced, high_carb); it is submitted on save.
+	macroDist string
 }
 
 func NewProfile(c *client.Client) *ProfileModel {
-	m := &ProfileModel{client: c, loading: true}
+	m := &ProfileModel{client: c, loading: true, macroDist: "balanced"}
 	m.spin = spinner.New()
 	m.spin.Spinner = spinner.Dot
 	for i := 0; i < pfCount; i++ {
@@ -106,9 +117,13 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return m, func() tea.Msg { return msgs.NavigateMsg{Screen: "menu"} }
 		case "tab":
-			m.inputs[m.focus].Blur()
-			m.focus = (m.focus + 1) % pfCount
-			m.inputs[m.focus].Focus()
+			if m.focus < pfCount {
+				m.inputs[m.focus].Blur()
+			}
+			m.focus = (m.focus + 1) % pfTotal
+			if m.focus < pfCount {
+				m.inputs[m.focus].Focus()
+			}
 			// scroll window
 			if m.focus >= m.offset+8 {
 				m.offset = m.focus - 7
@@ -117,15 +132,29 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "shift+tab":
-			m.inputs[m.focus].Blur()
-			m.focus = (m.focus - 1 + pfCount) % pfCount
-			m.inputs[m.focus].Focus()
+			if m.focus < pfCount {
+				m.inputs[m.focus].Blur()
+			}
+			m.focus = (m.focus - 1 + pfTotal) % pfTotal
+			if m.focus < pfCount {
+				m.inputs[m.focus].Focus()
+			}
 			if m.focus < m.offset {
 				m.offset = m.focus
 			} else if m.focus >= m.offset+8 {
 				m.offset = m.focus - 7
 			}
 			return m, nil
+		case "left", "h":
+			if m.focus == pfMacro {
+				m.cycleMacro(-1)
+				return m, nil
+			}
+		case "right", "l", " ":
+			if m.focus == pfMacro {
+				m.cycleMacro(1)
+				return m, nil
+			}
 		case "enter":
 			if m.loading {
 				return m, nil
@@ -160,6 +189,7 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				p.TDEELookbackDays, _ = strconv.Atoi(m.inputs[pfTDEELookback].Value())
 				p.SleepQualityMax, _ = strconv.ParseFloat(m.inputs[pfSleepQualityMax].Value(), 64)
 				p.Units = m.inputs[pfUnits].Value()
+				p.MacroDistribution = m.macroDist
 				err := m.client.UpdateProfile(p)
 				return profileLoadedMsg{err: err}
 			}
@@ -199,6 +229,10 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputs[pfTDEELookback].SetValue(fmt.Sprintf("%d", p.TDEELookbackDays))
 		m.inputs[pfSleepQualityMax].SetValue(fmt.Sprintf("%.1f", p.SleepQualityMax))
 		m.inputs[pfUnits].SetValue(p.Units)
+		m.macroDist = p.MacroDistribution
+		if m.macroDist == "" {
+			m.macroDist = "balanced"
+		}
 		return m, nil
 	}
 	for i := range m.inputs {
@@ -218,10 +252,19 @@ func (m *ProfileModel) View() string {
 	}
 	// show a window of 8 fields at a time (scrollable)
 	end := m.offset + 8
-	if end > pfCount {
-		end = pfCount
+	if end > pfTotal {
+		end = pfTotal
 	}
 	for i := m.offset; i < end; i++ {
+		if i == pfMacro {
+			value := fmt.Sprintf("< %s >", m.macroDist)
+			if i == m.focus {
+				s += styles.Label.Render("Macro distribution: ") + styles.Highlight.Render(value) + " <\n"
+			} else {
+				s += styles.Label.Render("Macro distribution: ") + value + "\n"
+			}
+			continue
+		}
 		label := styles.Label.Render(profileLabels[i] + ": ")
 		if i == m.focus {
 			s += label + m.inputs[i].View() + " <\n"
@@ -229,11 +272,11 @@ func (m *ProfileModel) View() string {
 			s += label + m.inputs[i].View() + "\n"
 		}
 	}
-	s += fmt.Sprintf("\n(%d/%d fields — Tab/Shift+Tab to navigate)\n", m.focus+1, pfCount)
+	s += fmt.Sprintf("\n(%d/%d fields — Tab/Shift+Tab to navigate)\n", m.focus+1, pfTotal)
 	if m.msg != "" {
 		s += styles.Success.Render(m.msg) + "\n"
 	}
-	s += styles.Help.Render("Tab/Shift+Tab: navigate • Enter: save • Esc: menu")
+	s += styles.Help.Render("Tab/Shift+Tab: navigate • ←/→: cycle macro distribution • Enter: save • Esc: menu")
 	return s
 }
 
@@ -250,7 +293,29 @@ func validateBirthdateInput(v string) error {
 	if err != nil || bd.Format("2006-01-02") != v {
 		return fmt.Errorf("birthdate must be in YYYY-MM-DD format")
 	}
+	today := time.Now().UTC()
+	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+	if bd.After(today) {
+		return fmt.Errorf("birthdate cannot be in the future")
+	}
+	if bd.Before(today.AddDate(-120, 0, 0)) {
+		return fmt.Errorf("birthdate cannot be more than 120 years ago")
+	}
 	return nil
+}
+
+// cycleMacro advances the macroDistribution selector by delta, wrapping around
+// the four server-supported values.
+func (m *ProfileModel) cycleMacro(delta int) {
+	idx := 2 // balanced
+	for i, v := range macroDistributions {
+		if v == m.macroDist {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + delta + len(macroDistributions)) % len(macroDistributions)
+	m.macroDist = macroDistributions[idx]
 }
 
 // small helpers used by other screens too — keep them here

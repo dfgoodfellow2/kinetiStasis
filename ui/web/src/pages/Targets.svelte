@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
+  import { autoDistribute as calculateMacros } from '../lib/macros.js'
   import Alert from '../components/Alert.svelte'
 
   let targets = $state({ calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '' })
@@ -12,12 +13,15 @@
   onMount(async () => {
     try {
       const t = await api.getTargets()
-    if (t) targets = { ...targets, ...t }
-    } catch {}
+      if (t) targets = { ...targets, ...t }
+    } catch (e) {
+      error = 'Failed to load targets: ' + (e.message || e)
+    }
     try {
-      const res = await api.getTDEE(30)
-      tdee = res
-    } catch {}
+      tdee = await api.getTDEE(30)
+    } catch (e) {
+      if (!error) error = 'Failed to load TDEE suggestion: ' + (e.message || e)
+    }
   })
 
   async function submit() {
@@ -53,14 +57,14 @@
     }
     distLoading = true
     try {
-      const result = await api.distributeMacros(cal)
+      const result = await calculateMacros(cal)
       targets = {
         ...targets,
-        proteinG: String(Math.round(result.proteinG)),
-        carbsG: String(Math.round(result.carbsG)),
-        fatG: String(Math.round(result.fatG)),
-        fiberG: String(Math.round(result.fiberG)),
-        waterMl: String(Math.round(result.waterMl)),
+        proteinG: String(result.proteinG),
+        carbsG: String(result.carbsG),
+        fatG: String(result.fatG),
+        fiberG: String(result.fiberG),
+        waterMl: String(result.waterMl),
       }
       success = 'Macros auto-calculated'
     } catch (e) {

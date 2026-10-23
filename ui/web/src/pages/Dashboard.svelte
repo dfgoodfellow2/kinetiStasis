@@ -7,16 +7,19 @@
   import Spinner from '../components/Spinner.svelte'
   import VitalsRing from '../components/VitalsRing.svelte'
   import WeightSparkline from '../components/WeightSparkline.svelte'
+  import Alert from '../components/Alert.svelte'
 
   let data = $state(null)
   let loading = $state(true)
+  let error = $state('')
 
   async function load() {
     loading = true
+    error = ''
     try {
       data = await api.getDashboard()
     } catch (e) {
-      console.error('Dashboard load failed:', e)
+      error = 'Dashboard load failed: ' + (e.message || e)
       data = null
     } finally {
       loading = false
@@ -72,6 +75,8 @@ let checklist = $derived(data ? [
 
 // (workout streak is provided by the API in data.weeklyStats.currentStreak)
 </script>
+
+{#if error}<Alert type="error" message={error} />{/if}
 
 {#if loading}
   <Spinner />

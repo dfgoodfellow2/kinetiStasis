@@ -38,13 +38,9 @@ func writeExport(w http.ResponseWriter, r *http.Request, content, filename, mime
 	}
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(content)); err != nil {
-		// best-effort log — do not treat as fatal for response flow
-		// use structured logger if available
-		// fallback to standard library printing
-		// but avoid importing log/slog here; keep simple
-		return
+		slog.Error("write export response", "err", err, "filename", filename)
 	}
 }
 
@@ -157,7 +153,19 @@ func (h *ExportHandler) Combined(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		targets = models.Targets{}
 	}
-	content := export.CombinedMarkdown(nut, bio, workouts, targets, from, to, profile.Units)
-	filename := fmt.Sprintf("combined-%s-%s.md", from, to)
-	writeExport(w, r, content, filename, "text/markdown")
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "md"
+	}
+	var content, filename, mime string
+	if format == "csv" {
+		content = export.CombinedCSV(nut, workouts, from, to, profile.Units)
+		filename = fmt.Sprintf("combined-%s-%s.csv", from, to)
+		mime = "text/csv"
+	} else {
+		content = export.CombinedMarkdown(nut, bio, workouts, targets, from, to, profile.Units)
+		filename = fmt.Sprintf("combined-%s-%s.md", from, to)
+		mime = "text/markdown"
+	}
+	writeExport(w, r, content, filename, mime)
 }

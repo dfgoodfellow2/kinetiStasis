@@ -172,10 +172,6 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// prepare json blobs
-	_, _ = json.Marshal(in.Exercises)
-	_, _ = json.Marshal(in.Metadata)
-
 	if err := h.s.UpsertWorkout(r.Context(), &in); err != nil {
 		slog.Error("upsert workout", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
@@ -213,8 +209,6 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, _ = json.Marshal(in.Exercises)
-	_, _ = json.Marshal(in.Metadata)
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	in.UserID = claims.UserID
 	in.Date = date

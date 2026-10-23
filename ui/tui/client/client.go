@@ -48,6 +48,12 @@ type WeeklyStats = models.WeeklyStats
 type TodaySummary = models.TodaySummary
 type WeightPoint = models.WeightPoint
 type DashboardData = models.DashboardData
+type MacroResult = models.MacroResult
+type CheckinPreview = models.CheckinPreview
+type CheckInLog = models.CheckInLog
+type TargetSnapshot = models.TargetSnapshot
+type SavedMeal = models.SavedMeal
+type MealTemplate = models.MealTemplate
 
 func New(baseURL, sessionDir string) *Client {
 	_ = os.MkdirAll(sessionDir, 0o700)
@@ -348,11 +354,8 @@ func (c *Client) ListMeasurements(from, to string) ([]models.BodyMeasurement, er
 }
 
 func (c *Client) ExportContent(kind, from, to, format string) (string, error) {
-	// build URL with query params
-	u := c.baseURL + "/v1/export/" + kind + "?from=" + url.QueryEscape(from) + "&to=" + url.QueryEscape(to) + "&format=" + url.QueryEscape(format)
-	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	u := "/v1/export/" + kind + "?from=" + url.QueryEscape(from) + "&to=" + url.QueryEscape(to) + "&format=" + url.QueryEscape(format)
+	resp, err := c.do("GET", u, nil)
 	if err != nil {
 		return "", err
 	}
@@ -451,4 +454,157 @@ func (c *Client) DeleteWorkout(date, slot string) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) GetCheckin() (models.CheckinPreview, error) {
+	var out models.CheckinPreview
+	resp, err := c.do("GET", "/v1/checkin", nil)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) CreateCheckin(in models.CheckInLog) (models.CheckInLog, error) {
+	var out models.CheckInLog
+	resp, err := c.do("POST", "/v1/checkin", in)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) DistributeMacros(calories float64) (models.MacroResult, error) {
+	var out models.MacroResult
+	resp, err := c.do("POST", "/v1/calc/macros/distribute", map[string]float64{"calories": calories})
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) GetReadiness() (models.ReadinessResult, error) {
+	var out models.ReadinessResult
+	resp, err := c.do("GET", "/v1/calc/readiness", nil)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) GetTargetsHistory() ([]models.TargetSnapshot, error) {
+	resp, err := c.do("GET", "/v1/targets/history", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []models.TargetSnapshot
+	return out, decode(resp, &out)
+}
+
+func (c *Client) GetWorkout(date, slot string) (models.WorkoutEntry, error) {
+	var out models.WorkoutEntry
+	resp, err := c.do("GET", "/v1/workouts/"+url.PathEscape(date)+"/"+url.PathEscape(slot), nil)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) UpdateWorkout(date, slot string, w models.WorkoutEntry) (models.WorkoutEntry, error) {
+	var out models.WorkoutEntry
+	resp, err := c.do("PUT", "/v1/workouts/"+url.PathEscape(date)+"/"+url.PathEscape(slot), w)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) GetBiometricByDate(date string) (models.BiometricLog, error) {
+	var out models.BiometricLog
+	resp, err := c.do("GET", "/v1/biometrics/"+url.PathEscape(date), nil)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) UpdateBiometric(date string, b models.BiometricLog) (models.BiometricLog, error) {
+	var out models.BiometricLog
+	resp, err := c.do("PUT", "/v1/biometrics/"+url.PathEscape(date), b)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) DeleteBiometric(date string) error {
+	resp, err := c.do("DELETE", "/v1/biometrics/"+url.PathEscape(date), nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return checkHTTPResponse(resp)
+}
+
+func (c *Client) UpdateMeasurement(date string, m models.BodyMeasurement) (models.BodyMeasurement, error) {
+	var out models.BodyMeasurement
+	resp, err := c.do("PUT", "/v1/measurements/"+url.PathEscape(date), m)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) ListSaved() ([]models.SavedMeal, error) {
+	resp, err := c.do("GET", "/v1/meals/saved", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []models.SavedMeal
+	return out, decode(resp, &out)
+}
+
+func (c *Client) PostSaved(m models.SavedMeal) (models.SavedMeal, error) {
+	var out models.SavedMeal
+	resp, err := c.do("POST", "/v1/meals/saved", m)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) DeleteSaved(id string) error {
+	resp, err := c.do("DELETE", "/v1/meals/saved/"+url.PathEscape(id), nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return checkHTTPResponse(resp)
+}
+
+func (c *Client) ListTemplates() ([]models.MealTemplate, error) {
+	resp, err := c.do("GET", "/v1/meals/templates", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []models.MealTemplate
+	return out, decode(resp, &out)
+}
+
+func (c *Client) PostTemplate(t models.MealTemplate) (models.MealTemplate, error) {
+	var out models.MealTemplate
+	resp, err := c.do("POST", "/v1/meals/templates", t)
+	if err != nil {
+		return out, err
+	}
+	return out, decode(resp, &out)
+}
+
+func (c *Client) DeleteTemplate(id string) error {
+	resp, err := c.do("DELETE", "/v1/meals/templates/"+url.PathEscape(id), nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return checkHTTPResponse(resp)
 }

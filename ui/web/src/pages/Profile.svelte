@@ -60,7 +60,9 @@
                 profile.runningKm = String(kmToMi(p.runningKm))
             }
       }
-    } catch {}
+    } catch (e) {
+      profileError = 'Failed to load profile: ' + (e.message || e)
+    }
     await loadTargets()
   })
 
@@ -104,73 +106,22 @@
     }
   }
 
-  // ── Targets modal ───────────────────────────────────────
-  let showTargets = $state(false)
+  // ── Targets (read-only; edited on the Targets page) ─────
   let targets = $state({ calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '' })
-  let tdee = $state(null)
-  let targetsLoading = $state(false)
   let targetsError = $state('')
-  let targetsSuccess = $state('')
 
   async function loadTargets() {
     try {
       const t = await api.getTargets()
       if (t) targets = { ...targets, ...t }
-    } catch {}
-    try {
-      const res = await api.getTDEE(30)
-      tdee = res
-    } catch {}
-  }
-
-  async function submitTargets() {
-    targetsError = ''
-    targetsSuccess = ''
-    targetsLoading = true
-    try {
-      await api.putTargets({
-        calories:  Number(targets.calories)  || 0,
-        proteinG: Number(targets.proteinG) || 0,
-        carbsG:   Number(targets.carbsG)   || 0,
-        fatG:     Number(targets.fatG)     || 0,
-        fiberG:   Number(targets.fiberG)   || 0,
-        waterMl:  Number(targets.waterMl)  || 0,
-      })
-      targetsSuccess = 'Targets updated'
     } catch (e) {
-      targetsError = e.message
-    } finally {
-      targetsLoading = false
+      targetsError = 'Failed to load targets: ' + (e.message || e)
     }
   }
 
-  let distTargetsLoading = $state(false)
-
-  async function autoDistributeTargets() {
-    targetsError = ''
-    targetsSuccess = ''
-    const cal = Number(targets.calories)
-    if (!cal || cal <= 0) {
-      targetsError = 'Set a calorie target first'
-      return
-    }
-    distTargetsLoading = true
-    try {
-      const result = await api.distributeMacros(cal)
-      targets = {
-        ...targets,
-        proteinG: String(Math.round(result.proteinG)),
-        carbsG: String(Math.round(result.carbsG)),
-        fatG: String(Math.round(result.fatG)),
-        fiberG: String(Math.round(result.fiberG)),
-        waterMl: String(Math.round(result.waterMl)),
-      }
-      targetsSuccess = 'Macros auto-calculated from ' + (profile.macroDistribution || 'balanced') + ' distribution'
-    } catch (e) {
-      targetsError = e.message
-    } finally {
-      distTargetsLoading = false
-    }
+  function targetText(value, unit = '') {
+    if (value === '' || value === null || value === undefined) return '—'
+    return unit ? `${value} ${unit}` : String(value)
   }
 
   // ── Export ──────────────────────────────────────────────
@@ -307,13 +258,50 @@
     </label>
   </div>
 
+  <!-- Current targets (read-only) -->
+  <div class="pt-2 border-t border-gray-700">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-emerald-400 font-semibold text-sm">Current Targets</h3>
+      <button class="text-xs text-emerald-400 underline" onclick={() => setCurrentPage('targets')}>
+        Edit on Targets page →
+      </button>
+    </div>
+    {#if targetsError}<Alert type="error" message={targetsError} />{/if}
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+      <div>
+        <div class="text-xs text-gray-500">Calories</div>
+        <div class="text-white font-mono">{targetText(targets.calories, 'kcal')}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-500">Protein</div>
+        <div class="text-white font-mono">{targetText(targets.proteinG, 'g')}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-500">Carbs</div>
+        <div class="text-white font-mono">{targetText(targets.carbsG, 'g')}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-500">Fat</div>
+        <div class="text-white font-mono">{targetText(targets.fatG, 'g')}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-500">Fiber</div>
+        <div class="text-white font-mono">{targetText(targets.fiberG, 'g')}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-500">Water</div>
+        <div class="text-white font-mono">{targetText(targets.waterMl, 'ml')}</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Action row -->
   <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-700">
     <button class="btn-primary" onclick={submitProfile} disabled={profileLoading}>
       {profileLoading ? 'Saving…' : 'Save Profile'}
     </button>
-    <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={() => showTargets = true}>
-      🎯 Targets
+    <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={() => setCurrentPage('targets')}>
+      🎯 Edit Targets
     </button>
     <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={openExport}>
       📤 Export
@@ -321,87 +309,3 @@
   </div>
 </div>
 
-<!-- ── Targets modal ──────────────────────────────────────── -->
-{#if showTargets}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-    role="presentation"
-    onclick={() => showTargets = false}
-    onkeydown={(e) => { if (e.key === 'Escape') showTargets = false }}
-  >
-    <div
-      class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md mx-4 p-5"
-      role="dialog"
-      aria-modal="true"
-      tabindex="0"
-      onclick={(e) => e.stopPropagation()}
-    >
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-emerald-400 font-bold text-lg">🎯 Targets</h3>
-        <button class="text-gray-400 hover:text-white text-xl leading-none" onclick={() => showTargets = false}>✕</button>
-      </div>
-
-      {#if targetsError}<Alert type="error" message={targetsError} />{/if}
-      {#if targetsSuccess}<Alert type="success" message={targetsSuccess} />{/if}
-
-      {#if tdee}
-        <div class="bg-gray-700 p-3 rounded text-sm space-y-1 mb-4">
-          <div class="text-emerald-400 font-semibold">Suggested from your data</div>
-          <div>Observed TDEE: <span class="text-white font-mono">{Math.round(tdee.observedTdee ?? 0)} kcal</span></div>
-          <div>Estimated TDEE: <span class="text-white font-mono">{Math.round(tdee.estimatedTdee ?? 0)} kcal</span></div>
-          <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.daysOfData ?? 0} days of data</div>
-          <button
-            class="mt-2 text-xs text-emerald-400 underline"
-            onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
-          >Use observed TDEE as calorie target</button>
-          <button
-            class="mt-2 text-xs text-cyan-400 underline"
-            onclick={autoDistributeTargets}
-            disabled={distTargetsLoading}
-          >🤖 Auto-Calculate from calories</button>
-        </div>
-      {/if}
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-gray-400" for="pt-calories">Calories (kcal)</label>
-            <input class="input" id="pt-calories" type="number" placeholder="e.g. 2200" bind:value={targets.calories} />
-          </div>
-          <div>
-            <label class="text-xs text-gray-400" for="pt-protein">Protein (g)</label>
-            <input class="input" id="pt-protein" type="number" placeholder="e.g. 180" bind:value={targets.proteinG} />
-          </div>
-          <div>
-            <label class="text-xs text-gray-400" for="pt-carbs">Carbs (g)</label>
-            <input class="input" id="pt-carbs" type="number" placeholder="e.g. 220" bind:value={targets.carbsG} />
-          </div>
-          <div>
-            <label class="text-xs text-gray-400" for="pt-fat">Fat (g)</label>
-            <input class="input" id="pt-fat" type="number" placeholder="e.g. 70" bind:value={targets.fatG} />
-          </div>
-          <div>
-            <label class="text-xs text-gray-400" for="pt-fiber">Fiber (g)</label>
-            <input class="input" id="pt-fiber" type="number" placeholder="e.g. 30" bind:value={targets.fiberG} />
-          </div>
-          <div>
-            <label class="text-xs text-gray-400" for="pt-water">Water (ml)</label>
-            <input class="input" id="pt-water" type="number" placeholder="e.g. 2500" bind:value={targets.waterMl} />
-          </div>
-        </div>
-
-        <div class="mt-3">
-          <button class="bg-cyan-700 px-3 py-2 rounded-lg text-sm hover:bg-cyan-600 w-full" onclick={autoDistributeTargets} disabled={distTargetsLoading}>
-            {distTargetsLoading ? 'Calculating…' : '🤖 Auto-Calculate Macros'}
-          </button>
-        </div>
-
-      <div class="flex gap-3 mt-4">
-        <button class="btn-primary" onclick={submitTargets} disabled={targetsLoading}>
-          {targetsLoading ? 'Saving…' : 'Save Targets'}
-        </button>
-        <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm" onclick={() => showTargets = false}>Cancel</button>
-      </div>
-    </div>
-  </div>
-{/if}
