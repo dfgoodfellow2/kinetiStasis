@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
   import { store } from '../lib/stores.svelte.js'
-  import { fmt0, fmt1, today, dispWeight, weightUnit } from '../lib/utils.js'
+  import { fmt0, fmt1, today, dispWeight, weightUnit, dispLoad, loadUnit } from '../lib/utils.js'
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import VitalsRing from '../components/VitalsRing.svelte'
@@ -25,6 +25,17 @@
 
   onMount(load)
 
+  // Water is stored in ml; display ml below 1 L, otherwise litres (same as LogMeal labels it in ml).
+  function fmtWater(ml) {
+    if (ml === undefined || ml === null || !isFinite(ml)) return '—'
+    return ml >= 1000 ? `${fmt1(ml / 1000)} L` : `${fmt0(ml)} ml`
+  }
+
+  function waterPct(consumed, target) {
+    if (!target || target <= 0) return 0
+    return Math.max(0, Math.min(100, (consumed / target) * 100))
+  }
+
   // Checklist: each item has a label, whether it's done, and a value string
 let checklist = $derived(data ? [
     {
@@ -45,7 +56,7 @@ let checklist = $derived(data ? [
     {
       key: 'Grip',
       done: (data.todayBio?.gripKg ?? 0) > 0,
-      value: (data.todayBio?.gripKg ?? 0) > 0 ? `${fmt1(data.todayBio.gripKg)} kg` : 'Pending'
+      value: (data.todayBio?.gripKg ?? 0) > 0 ? `${dispLoad(data.todayBio.gripKg, store.units)} ${loadUnit(store.units)}` : 'Pending'
     },
     {
       key: 'BOLT',
@@ -155,6 +166,18 @@ let checklist = $derived(data ? [
               <span class="font-tabular-nums font-semibold">
                 {fmt1(data.today?.consumed?.fatG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.fatG != null}<span class="text-yellow-400">{fmt1(data.today.targets.fatG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
               </span>
+            </div>
+            <!-- Water (cyan-400 accent) -->
+            <div>
+              <div class="flex justify-between items-center">
+                <span class="text-gray-400">Water</span>
+                <span class="font-tabular-nums font-semibold">
+                  {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
+                </span>
+              </div>
+              <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden mt-1.5">
+                <div class="h-full bg-cyan-400 rounded-full" style="width: {waterPct(data.today?.consumed?.waterMl ?? 0, data.today?.targets?.waterMl ?? 0)}%"></div>
+              </div>
             </div>
           </div>
         </Card>

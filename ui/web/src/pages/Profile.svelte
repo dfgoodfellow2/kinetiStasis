@@ -1,8 +1,8 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
-  import { copyToClipboard, dispHeightCm, heightFtInToCm, kmToMi, miToKm, distUnit, today, daysAgo } from '../lib/utils.js'
-  import { setUnits, setSleepQualityMax } from '../lib/stores.svelte.js'
+  import { dispHeightCm, heightFtInToCm, kmToMi, miToKm, distUnit } from '../lib/utils.js'
+  import { setUnits, setSleepQualityMax, setCurrentPage } from '../lib/stores.svelte.js'
   import Alert from '../components/Alert.svelte'
 
   // ── Profile ─────────────────────────────────────────────
@@ -173,59 +173,9 @@
     }
   }
 
-  // ── Export modal ────────────────────────────────────────
-  let showExport = $state(false)
-  let expFrom = $state(daysAgo(7))
-  let expTo = $state(today())
-  let expFormat = $state('md')
-  let expContent = $state('')
-  let expError = $state('')
-  let expSuccess = $state('')
-  let expCopied = $state(false)
-
-  async function exportNutrition() {
-    expError = ''
-    try {
-      const res = await api.exportNutrition(expFrom, expTo, expFormat)
-      expContent = res.content || ''
-    } catch (e) { expError = e.message }
-  }
-
-  async function exportWorkouts() {
-    expError = ''
-    try {
-      const res = await api.exportWorkouts(expFrom, expTo, expFormat)
-      expContent = res.content || ''
-    } catch (e) { expError = e.message }
-  }
-
-  async function exportCombined() {
-    expError = ''
-    try {
-      const res = await api.exportCombined(expFrom, expTo)
-      expContent = res.content || ''
-    } catch (e) { expError = e.message }
-  }
-
-  async function doCopy() {
-    const ok = await copyToClipboard(expContent)
-    if (ok) {
-      expCopied = true
-      setTimeout(() => expCopied = false, 2000)
-    } else {
-      expError = 'Copy failed'
-      setTimeout(() => expError = '', 2000)
-    }
-  }
-
-  function doDownload() {
-    if (!expContent) return
-    const blob = new Blob([expContent], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = 'export.md'
-    document.body.appendChild(a); a.click(); a.remove()
-    URL.revokeObjectURL(url)
+  // ── Export ──────────────────────────────────────────────
+  function openExport() {
+    setCurrentPage('export')
   }
 </script>
 
@@ -365,7 +315,7 @@
     <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={() => showTargets = true}>
       🎯 Targets
     </button>
-    <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={() => showExport = true}>
+    <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={openExport}>
       📤 Export
     </button>
   </div>
@@ -451,70 +401,6 @@
           {targetsLoading ? 'Saving…' : 'Save Targets'}
         </button>
         <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm" onclick={() => showTargets = false}>Cancel</button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- ── Export modal ───────────────────────────────────────── -->
-{#if showExport}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-    role="presentation"
-    onclick={() => showExport = false}
-    onkeydown={(e) => { if (e.key === 'Escape') showExport = false }}
-  >
-    <div
-      class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-lg mx-4 p-5 max-h-[90vh] overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      tabindex="0"
-      onclick={(e) => e.stopPropagation()}
-    >
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-emerald-400 font-bold text-lg">📤 Export</h3>
-        <button class="text-gray-400 hover:text-white text-xl leading-none" onclick={() => showExport = false}>✕</button>
-      </div>
-
-      {#if expError}<Alert type="error" message={expError} />{/if}
-      {#if expSuccess}<Alert type="success" message={expSuccess} />{/if}
-
-      <div class="space-y-3">
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-gray-400" for="pe-from">From</label>
-            <input class="input" id="pe-from" type="date" bind:value={expFrom} />
-          </div>
-          <div>
-            <label class="text-xs text-gray-400" for="pe-to">To</label>
-            <input class="input" id="pe-to" type="date" bind:value={expTo} />
-          </div>
-        </div>
-        <div>
-          <label class="text-xs text-gray-400" for="pe-format">Format</label>
-          <select class="input" id="pe-format" bind:value={expFormat}>
-            <option value="md">Markdown</option>
-            <option value="csv">CSV</option>
-          </select>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <button class="btn-primary text-sm" onclick={exportNutrition}>Nutrition</button>
-          <button class="btn-primary text-sm" onclick={exportWorkouts}>Workouts</button>
-          <button class="btn-primary text-sm" onclick={exportCombined}>Combined</button>
-          <button class="btn-secondary text-sm" class:btn-success={expCopied} onclick={doCopy} disabled={!expContent}>{expCopied ? '✓ Copied!' : 'Copy'}</button>
-          <button class="btn-secondary text-sm" onclick={doDownload} disabled={!expContent}>Download</button>
-          <button class="btn-secondary text-sm" onclick={() => expContent = ''} disabled={!expContent}>Clear</button>
-        </div>
-
-        {#if expContent}
-          <pre class="whitespace-pre-wrap bg-gray-900 p-3 rounded border border-gray-700 text-xs max-h-64 overflow-y-auto">{expContent}</pre>
-        {/if}
-      </div>
-
-      <div class="mt-4">
-        <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm" onclick={() => showExport = false}>Close</button>
       </div>
     </div>
   </div>

@@ -2,10 +2,16 @@
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
   import { store, setCurrentPage, setEditData, clearEditData } from '../lib/stores.svelte.js'
-  import { daysAgo, today, fmt0, dispWeight, weightUnit, dispLength, lengthUnit, dispLoad, loadUnit, dispDist, distUnit } from '../lib/utils.js'
+  import { daysAgo, today, fmt0, fmt1, dispWeight, weightUnit, dispLength, lengthUnit, dispLoad, loadUnit, dispDist, distUnit } from '../lib/utils.js'
   import Spinner from '../components/Spinner.svelte'
 
   let tab = $state('nutrition')
+
+  // Water is stored in ml; display ml below 1 L, otherwise litres (matches Dashboard/LogMeal).
+  function fmtWater(ml) {
+    if (ml === undefined || ml === null || !isFinite(ml)) return '—'
+    return ml >= 1000 ? `${fmt1(ml / 1000)} L` : `${fmt0(ml)} ml`
+  }
 
   // --- Nutrition ---
   let nutLogs = $state([])
@@ -169,6 +175,7 @@
               <th class="pr-4">Protein</th>
               <th class="pr-4">Carbs</th>
               <th class="pr-4">Fat</th>
+              <th class="pr-4">Water</th>
               <th>Notes</th>
             </tr>
           </thead>
@@ -180,6 +187,7 @@
                 <td class="pr-4">{fmt0(row.proteinG)}g</td>
                 <td class="pr-4">{fmt0(row.carbsG)}g</td>
                 <td class="pr-4">{fmt0(row.fatG)}g</td>
+                <td class="pr-4">{row.waterMl ? fmtWater(row.waterMl) : '—'}</td>
                 <td class="text-gray-400 text-xs">{row.mealNotes ?? ''}</td>
                 <td class="py-2">
                   <button class="text-gray-400 hover:text-emerald-400 mr-3" onclick={() => editNut(row)} title="Edit">✏️</button>

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
   import { store, clearEditData } from '../lib/stores.svelte.js'
-  import { today, daysAgo, dispWeight, weightUnit, inputWeight, dispLength, lengthUnit, inputLength, inputLoad, dispLoad, loadUnit } from '../lib/utils.js'
+  import { today, daysAgo, dispWeight, weightUnit, inputWeight, dispLength, lengthUnit, inputLength, inputLoad, dispLoad, loadUnit, kgToLbs } from '../lib/utils.js'
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
@@ -22,6 +22,12 @@
       checkinPreview = null
       weeklyError = e.message
     }
+  }
+
+  // Weight change is a delta: keep 2 decimals for metric, convert with kgToLbs for imperial.
+  function dispWeightDelta(kg, units) {
+    if (kg === undefined || kg === null || !isFinite(kg)) return '—'
+    return units === 'imperial' ? kgToLbs(kg) : kg.toFixed(2)
   }
 
   async function acceptCheckin() {
@@ -571,17 +577,17 @@
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight Start</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightStart != null ? checkinPreview.weightStart.toFixed(1) : '—'} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightStart != null ? dispWeight(checkinPreview.weightStart, store.units) : '—'} {weightUnit(store.units)}</div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight End</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightEnd != null ? checkinPreview.weightEnd.toFixed(1) : '—'} kg</div>
+                <div class="text-lg font-semibold">{checkinPreview.weightEnd != null ? dispWeight(checkinPreview.weightEnd, store.units) : '—'} {weightUnit(store.units)}</div>
               </div>
             </div>
 
             <div class="bg-gray-700 rounded-lg p-3">
               <div class="text-xs text-gray-400">Weight Change</div>
-              <div class="text-lg font-semibold">{checkinPreview.weightChange != null ? checkinPreview.weightChange.toFixed(2) : '—'} kg</div>
+              <div class="text-lg font-semibold">{dispWeightDelta(checkinPreview.weightChange, store.units)} {weightUnit(store.units)}</div>
             </div>
 
             <!-- Recommendation -->
