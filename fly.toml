@@ -25,8 +25,8 @@ primary_region = 'iad'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  # keeps one machine warm — morning check-ins skip the cold start; replica backup observability in /v1/health
-  min_machines_running = 1
+  # Seasonal toggle: 0 = stop when idle (cold ~2s start on first request — $0 compute off-season); set 1 during active training months to stay warm. Apply via fly deploy.
+  min_machines_running = 0
 
   [http_service.concurrency]
     type = 'requests'
