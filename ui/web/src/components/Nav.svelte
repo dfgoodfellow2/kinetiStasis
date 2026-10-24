@@ -25,6 +25,7 @@
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'checkin' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('checkin')} type="button">Check-In</button>
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'workoutlog' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('workoutlog')} type="button">Workout</button>
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'history' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('history')} type="button">History</button>
+      <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'guide' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('guide')} type="button"><span aria-hidden="true">📖</span> Guide</button>
        <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'profile' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('profile')} type="button"><Icon name="profile" /> Profile</button>
 
       <button class="ml-2 btn-primary text-sm" onclick={doLogout} type="button">Logout</button>

@@ -13,6 +13,7 @@
   import Measurements from './pages/Measurements.svelte'
   import Export from './pages/Export.svelte'
   import Targets from './pages/Targets.svelte'
+  import Guide from './pages/Guide.svelte'
   import Nav from './components/Nav.svelte'
   import BottomNav from './components/BottomNav.svelte'
 
@@ -90,6 +91,8 @@
       <Export />
     {:else if store.currentPage === 'targets'}
       <Targets />
+    {:else if store.currentPage === 'guide'}
+      <Guide />
     {/if}
   </main>
 {/if}
