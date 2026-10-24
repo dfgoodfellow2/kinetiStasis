@@ -282,22 +282,24 @@ let checklist = $derived(data ? [
             </div>
             <!-- Water (cyan-400 accent) -->
             <div>
-              <div class="flex justify-between items-center gap-2">
+              <!-- Value row: same pattern as the macro rows so columns line up -->
+              <div class="flex justify-between items-center">
                 <span class="text-gray-400">Water</span>
-                <span class="flex items-center gap-2">
-                  <span class="font-tabular-nums font-semibold">
-                    {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
-                  </span>
-                  <button
-                    class="text-xs leading-none bg-cyan-900/40 border border-cyan-700 text-cyan-300 hover:bg-cyan-900/70 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-md"
-                    onclick={addWater}
-                    disabled={waterBusy}
-                    title="Add 250 ml of water to today"
-                  >+ 250 ml</button>
+                <span class="font-tabular-nums font-semibold">
+                  {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
                 </span>
               </div>
-              <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden mt-1.5">
-                <div class="h-full bg-cyan-400 rounded-full" style="width: {waterPct(data.today?.consumed?.waterMl ?? 0, data.today?.targets?.waterMl ?? 0)}%"></div>
+              <!-- Bar + quick-add chip share one line; the bar takes the rest -->
+              <div class="flex items-center gap-2 mt-1.5">
+                <div class="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div class="h-full bg-cyan-400 rounded-full" style="width: {waterPct(data.today?.consumed?.waterMl ?? 0, data.today?.targets?.waterMl ?? 0)}%"></div>
+                </div>
+                <button
+                  class="text-xs leading-none bg-cyan-900/40 border border-cyan-700 text-cyan-300 hover:bg-cyan-900/70 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-md shrink-0"
+                  onclick={addWater}
+                  disabled={waterBusy}
+                  title="Add 250 ml of water to today"
+                >+ 250 ml</button>
               </div>
               {#if waterUndo}
                 <button
