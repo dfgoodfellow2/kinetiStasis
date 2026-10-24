@@ -13,7 +13,7 @@
   const DRAFT_KEY = 'draft:checkin:daily'
 
   function emptyDailyForm() {
-    return { date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '' }
+    return { date: today(), weightKg: '', gripKg: '', boltScore: '', sleepHours: '', sleepQuality: '', subjective: '', notes: '', waterMl: '' }
   }
 
   // --- Weekly Check-in ---
@@ -105,7 +105,7 @@
   // Draft the daily check-in form only.
   function hasDraftContent(f) {
     if (!f || typeof f !== 'object') return false
-    return ['weightKg', 'gripKg', 'boltScore', 'sleepHours', 'sleepQuality', 'subjective', 'notes']
+    return ['weightKg', 'gripKg', 'boltScore', 'sleepHours', 'sleepQuality', 'subjective', 'notes', 'waterMl']
       .some((k) => String(f[k] ?? '').trim() !== '')
   }
 
@@ -128,6 +128,10 @@
     dailyError = ''
     dailySuccess = ''
     dailyLoading = true
+    // Capture before the form resets so the water merge can still run.
+    const date = dailyForm.date
+    const waterMl = Number(dailyForm.waterMl) || 0
+    let bioSaved = false
     try {
       await api.postBiometric({
         date: dailyForm.date,
@@ -139,6 +143,7 @@
         subjectiveFeel: Number(dailyForm.subjective)    || 0,
         notes:           dailyForm.notes || '',
       })
+      bioSaved = true
       dailySuccess = 'Check-in saved'
       clearDraft(DRAFT_KEY)
       draftRestored = false
@@ -146,9 +151,21 @@
       dailyForm = emptyDailyForm()
     } catch (e) {
       dailyError = e.message
-    } finally {
-      dailyLoading = false
     }
+    // Water is a separate additive nutrition-log merge and is attempted
+    // regardless of the biometric result; its failure never hides a biometric
+    // success message.
+    if (waterMl > 0) {
+      try {
+        await api.postNutrition({ date, waterMl })
+        if (!bioSaved) dailyForm.waterMl = ''
+      } catch (e) {
+        dailyError = (bioSaved ? 'Check-in saved, but water log failed: ' : '') + (e.message || e)
+        // Keep the amount in the form so it can be retried without re-typing.
+        dailyForm.waterMl = String(waterMl)
+      }
+    }
+    dailyLoading = false
   }
 
   // --- Measurements tab ---
@@ -314,7 +331,8 @@
           sleepHours: String(row.sleepHours ?? ''),
           sleepQuality: String(row.sleepQuality ?? ''),
           subjective: String(row.subjective ?? ''),
-          notes: row.notes ?? ''
+          notes: row.notes ?? '',
+          waterMl: ''
         }
         tab = 'daily'
       } else if (store.editData.type === 'measurement') {
@@ -405,6 +423,11 @@
         <div>
           <label class="text-xs text-gray-400" for="ci-subjective">Subjective Feel (1–10)</label>
           <input class="input" id="ci-subjective" type="number" min="1" max="10" bind:value={dailyForm.subjective} />
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400" for="ci-water">Water (ml)</label>
+          <input class="input" id="ci-water" type="number" min="0" max="20000" step="50" placeholder="e.g. 500" bind:value={dailyForm.waterMl} />
         </div>
 
         <div class="col-span-2">

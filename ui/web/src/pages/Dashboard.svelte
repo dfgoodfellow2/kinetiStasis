@@ -15,20 +15,78 @@
   let loading = $state(true)
   let error = $state('')
 
-  async function load() {
-    loading = true
+  // Water quick-add state (session-only, one undo level).
+  let waterBusy = $state(false)
+  let waterError = $state('')
+  let waterUndo = $state(false)
+
+  // `silent` refreshes the payload in place without blanking the page with the
+  // initial-load spinner (used after the water quick-add / undo).
+  async function load(silent = false) {
+    if (!silent) loading = true
     error = ''
     try {
       data = await api.getDashboard()
     } catch (e) {
-      error = 'Dashboard load failed: ' + (e.message || e)
-      data = null
+      const msg = 'Dashboard load failed: ' + (e.message || e)
+      if (silent) waterError = msg
+      else {
+        error = msg
+        data = null
+      }
     } finally {
-      loading = false
+      if (!silent) loading = false
     }
   }
 
-  onMount(load)
+  onMount(() => load())
+
+  // Optimistically move the water figure so the bar responds immediately; the
+  // silent refresh then reconciles with the server.
+  function bumpWater(delta) {
+    if (!data) return
+    if (!data.today) data.today = {}
+    if (!data.today.consumed) data.today.consumed = {}
+    data.today.consumed.waterMl = Math.max(0, (data.today.consumed.waterMl ?? 0) + delta)
+  }
+
+  async function addWater() {
+    waterError = ''
+    waterUndo = false
+    waterBusy = true
+    try {
+      // POST merges additively: +250 ml into today's log.
+      await api.postNutrition({ date: today(), waterMl: 250 })
+      bumpWater(250)
+      waterUndo = true
+      await load(true)
+    } catch (e) {
+      waterError = 'Water add failed: ' + (e.message || e)
+    } finally {
+      waterBusy = false
+    }
+  }
+
+  async function undoWater() {
+    waterError = ''
+    waterBusy = true
+    try {
+      // Full-replace using the fetched day so nothing else is touched.
+      const day = await api.getNutrition(today())
+      if (!day) throw new Error('no nutrition log for today')
+      await api.putNutrition(today(), {
+        ...day,
+        waterMl: Math.max(0, (day.waterMl || 0) - 250),
+      })
+      waterUndo = false
+      await load(true)
+    } catch (e) {
+      waterError = 'Undo failed: ' + (e.message || e)
+      waterUndo = false
+    } finally {
+      waterBusy = false
+    }
+  }
 
   // ── Weight trend (insight layer) ────────────────────────────────────────────
   // Contract: dashboard supplies weightTrendKg (EMA level, 0 = insufficient),
@@ -120,6 +178,7 @@ let checklist = $derived(data ? [
 </script>
 
 {#if error}<Alert type="error" message={error} />{/if}
+{#if waterError}<Alert type="error" message={waterError} />{/if}
 
 {#if loading}
   <Spinner />
@@ -223,15 +282,30 @@ let checklist = $derived(data ? [
             </div>
             <!-- Water (cyan-400 accent) -->
             <div>
-              <div class="flex justify-between items-center">
+              <div class="flex justify-between items-center gap-2">
                 <span class="text-gray-400">Water</span>
-                <span class="font-tabular-nums font-semibold">
-                  {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
+                <span class="flex items-center gap-2">
+                  <span class="font-tabular-nums font-semibold">
+                    {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
+                  </span>
+                  <button
+                    class="text-xs leading-none bg-cyan-900/40 border border-cyan-700 text-cyan-300 hover:bg-cyan-900/70 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-md"
+                    onclick={addWater}
+                    disabled={waterBusy}
+                    title="Add 250 ml of water to today"
+                  >+ 250 ml</button>
                 </span>
               </div>
               <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden mt-1.5">
                 <div class="h-full bg-cyan-400 rounded-full" style="width: {waterPct(data.today?.consumed?.waterMl ?? 0, data.today?.targets?.waterMl ?? 0)}%"></div>
               </div>
+              {#if waterUndo}
+                <button
+                  class="text-xs text-cyan-400 hover:text-cyan-300 underline mt-1.5 disabled:opacity-50"
+                  onclick={undoWater}
+                  disabled={waterBusy}
+                >Undo last add</button>
+              {/if}
             </div>
           </div>
         </Card>
