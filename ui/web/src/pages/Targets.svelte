@@ -3,8 +3,9 @@
   import { api } from '../lib/api.js'
   import { autoDistribute as calculateMacros } from '../lib/macros.js'
   import Alert from '../components/Alert.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
 
-  let targets = $state({ calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '' })
+  let targets = $state({ calories: '', proteinG: '', carbsG: '', fatG: '', fiberG: '', waterMl: '', eatBackExercise: false })
   let loading = $state(false)
   let error = $state('')
   let success = $state('')
@@ -56,6 +57,7 @@
         fatG:     Number(targets.fatG)     || 0,
         fiberG:   Number(targets.fiberG)   || 0,
         waterMl:  Number(targets.waterMl)  || 0,
+        eatBackExercise: Boolean(targets.eatBackExercise),
       }
       const saved = await api.putTargets(payload)
       savedTargets = saved ?? payload
@@ -190,6 +192,14 @@
       <label class="text-xs text-gray-400" for="tgt-water">Water (ml)</label>
        <input class="input" id="tgt-water" type="number" placeholder="e.g. 2500" bind:value={targets.waterMl} />
     </div>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <label class="flex items-center space-x-2 text-sm text-gray-300">
+      <input type="checkbox" bind:checked={targets.eatBackExercise} />
+      <span>Eat back exercise calories</span>
+    </label>
+    <InfoTip label="eat-back" text="When on, calories burned in workouts are added back to your daily target. Off = burn them and don't replace them." />
   </div>
 
   <div>

@@ -9,6 +9,7 @@
   import StreakRing from '../components/StreakRing.svelte'
   import WeightSparkline from '../components/WeightSparkline.svelte'
   import Alert from '../components/Alert.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
 
   let data = $state(null)
   let loading = $state(true)
@@ -235,7 +236,11 @@ let checklist = $derived(data ? [
           </div>
         </Card>
 
-        <Card title="Readiness">
+        <Card>
+          <div class="flex items-center gap-1.5 mb-3">
+            <h2 class="text-lg font-bold text-emerald-400">Readiness</h2>
+            <InfoTip label="readiness" text="How today's grip + BOLT compare to YOUR recent baseline. Small dips are normal; consecutive low days escalate to yellow/red — a red day means back off." />
+          </div>
           {@const level = data.readiness?.level ?? 'green'}
           {@const velocity = data.readiness?.velocityTrend ?? 'stable'}
           {@const bulbColor = level === 'green' ? 'bg-green-500' : level === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'}
@@ -281,19 +286,24 @@ let checklist = $derived(data ? [
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Card title="Weight Trend (30 days)">
         <div class="flex flex-col items-center text-center mb-2">
+          <div class="flex items-center justify-center gap-1.5">
+            {#if trendReady}
+              <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
+              <div class="text-3xl font-bold text-gray-100">
+                {dispWeight(trendKg, store.units)}
+                <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
+              </div>
+            {:else}
+              <div class="text-lg font-semibold text-gray-300">
+                Trend forming
+                <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
+              </div>
+            {/if}
+            <InfoTip label="trend weight" text="The smoothed weight the engine trusts — raw scale weight bounces with food, water, and salt." />
+          </div>
           {#if trendReady}
-            <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
-            <div class="text-3xl font-bold text-gray-100">
-              {dispWeight(trendKg, store.units)}
-              <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
-            </div>
             <div class="text-sm font-semibold {rateColor(rateKgWk)}">
               {signedWeight(rateKgWk)} {weightUnit(store.units)}/wk
-            </div>
-          {:else}
-            <div class="text-lg font-semibold text-gray-300">
-              Trend forming
-              <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
             </div>
           {/if}
           <div class="text-xs text-gray-400 mt-1">

@@ -8,6 +8,7 @@
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
   import TdeeChart from '../components/TdeeChart.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
 
   const DRAFT_KEY = 'draft:checkin:daily'
 
@@ -376,12 +377,18 @@
         </div>
 
         <div>
-          <label class="text-xs text-gray-400" for="ci-grip">Grip Strength ({loadUnit(store.units)})</label>
+          <div class="flex items-center gap-1">
+            <label class="text-xs text-gray-400" for="ci-grip">Grip Strength ({loadUnit(store.units)})</label>
+            <InfoTip label="grip strength" text="Hand-dynamometer grip in kg — same time of day, best of 2-3 tries. Grip dips when your nervous system is run down." />
+          </div>
           <input class="input" id="ci-grip" type="number" step="0.1" bind:value={dailyForm.gripKg} />
         </div>
 
         <div>
-          <label class="text-xs text-gray-400" for="ci-bolt">BOLT Score (s)</label>
+          <div class="flex items-center gap-1">
+            <label class="text-xs text-gray-400" for="ci-bolt">BOLT Score (s)</label>
+            <InfoTip label="BOLT" text="Body-Oxygen Level Test: seconds you can hold your breath after a normal exhale. Sit calmly, exhale normally through the nose, pinch, count to the first real urge to breathe." />
+          </div>
           <input class="input" id="ci-bolt" type="number" bind:value={dailyForm.boltScore} />
         </div>
 

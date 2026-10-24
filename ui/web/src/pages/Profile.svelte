@@ -4,6 +4,7 @@
   import { dispHeightCm, heightFtInToCm, kmToMi, miToKm, distUnit } from '../lib/utils.js'
   import { setUnits, setSleepQualityMax, setCurrentPage } from '../lib/stores.svelte.js'
   import Alert from '../components/Alert.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
 
   // ── Profile ─────────────────────────────────────────────
   let profile = $state({
@@ -192,7 +193,10 @@
       </select>
     </div>
     <div>
-      <label class="text-xs text-gray-400" for="pf-macro-dist">Macro Distribution</label>
+      <div class="flex items-center gap-1">
+        <label class="text-xs text-gray-400" for="pf-macro-dist">Macro Distribution</label>
+        <InfoTip label="macro distribution" text="How leftover calories split between carbs and fat: keto (~30g carbs), low_carb (~100g), balanced (~40% fat), high_carb (smaller fat share)." />
+      </div>
       <select class="input" id="pf-macro-dist" bind:value={profile.macroDistribution}>
         <option value="balanced">Balanced</option>
         <option value="keto">Keto (very low carb, high fat)</option>
@@ -252,10 +256,13 @@
       <input type="checkbox" bind:checked={profile.isLifter} />
       <span>I am a lifter</span>
     </label>
-    <label class="flex items-center space-x-2 text-sm">
-      <input type="checkbox" bind:checked={profile.prioritizeCarbs} />
-      <span>Prioritize carbs</span>
-    </label>
+    <div class="flex items-center gap-1">
+      <label class="flex items-center space-x-2 text-sm">
+        <input type="checkbox" bind:checked={profile.prioritizeCarbs} />
+        <span>Prioritize carbs</span>
+      </label>
+      <InfoTip label="prioritize carbs" text="Keeps carbohydrate higher on training days — protein still comes first." />
+    </div>
   </div>
 
   <!-- Current targets (read-only) -->

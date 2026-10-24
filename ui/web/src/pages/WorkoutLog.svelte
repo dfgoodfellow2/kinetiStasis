@@ -7,6 +7,7 @@
   import Alert from '../components/Alert.svelte'
   import AITab from '../components/AITab.svelte'
   import YAMLTab from '../components/YAMLTab.svelte'
+  import InfoTip from '../components/InfoTip.svelte'
 
   // ── Tab (persisted) ─────────────────────────────────────
   const TAB_KEY = 'workout_tab'
@@ -540,7 +541,10 @@
       <input class="input" id="wo-max-hr" type="number" bind:value={workout.maxHr} />
     </div>
     <div>
-      <label class="text-xs text-gray-400" for="wo-cal">Calories burned</label>
+      <div class="flex items-center gap-1">
+        <label class="text-xs text-gray-400" for="wo-cal">Calories burned</label>
+        <InfoTip label="calories burned" text="Leave 0 and the app estimates the burn for you (MET-based) from the exercises and duration." />
+      </div>
       <input class="input" id="wo-cal" type="number" bind:value={workout.caloriesBurned} />
     </div>
     <div class="col-span-2">
@@ -593,7 +597,10 @@
             <input class="input" id="ex-{idx}-tempo" bind:value={ex.tempo} placeholder="2-0-2-0" />
           </div>
           <div>
-            <label class="text-xs text-gray-400" for="ex-{idx}-rpe">RPE</label>
+            <div class="flex items-center gap-1">
+              <label class="text-xs text-gray-400" for="ex-{idx}-rpe">RPE</label>
+              <InfoTip label="RPE" text="Rate of Perceived Exertion, 1-10: how hard it FELT. 5-6 = could keep going, 8 = a few reps left, 10 = nothing left." />
+            </div>
             <input class="input" id="ex-{idx}-rpe" type="number" min="1" max="10" bind:value={ex.rpe} />
           </div>
           <div>
