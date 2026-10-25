@@ -252,36 +252,97 @@
 
   // Downscale a photo to <=1024px on its long edge and re-encode as JPEG.
   // Resolves { imageBase64, mimeType, previewUrl }; base64 is raw (no prefix).
+  //
+  // Decode uses a fallback chain because iPhone cameras default to HEIC, which
+  // iOS Safari may refuse to decode before any upload — most visibly in
+  // standalone PWA mode, and with behaviour that varies by iOS version. Each
+  // route below covers a different failure mode:
+  //   1. createImageBitmap (honours EXIF orientation; newest, most reliable)
+  //   2. blob object URL + <img> (the historical path; works on older Safari)
+  //   3. FileReader data URL + <img> (some iOS builds decode data URLs when
+  //      blob URLs fail)
+  // Only if all three fail do we surface an actionable error to the user.
   function downscaleImage(file, maxDim = 1024, quality = 0.85) {
-    return new Promise((resolve, reject) => {
+    function encode(source, sourceWidth, sourceHeight) {
+      const scale = Math.min(1, maxDim / Math.max(sourceWidth, sourceHeight))
+      const width = Math.max(1, Math.round(sourceWidth * scale))
+      const height = Math.max(1, Math.round(sourceHeight * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Could not process image')
+      ctx.drawImage(source, 0, 0, width, height)
+      const dataUrl = canvas.toDataURL('image/jpeg', quality)
+      const base64 = dataUrl.replace(/^data:image\/(?:jpeg|jpg);base64,/, '')
+      return { imageBase64: base64, mimeType: 'image/jpeg', previewUrl: dataUrl }
+    }
+
+    function loadImageElement(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(new Error('image decode failed'))
+        img.src = src
+      })
+    }
+
+    // Attempt 1: createImageBitmap. Feature-detect first; older Safari also
+    // rejects the options argument, so retry with defaults.
+    async function viaBitmap() {
+      if (typeof createImageBitmap !== 'function') {
+        throw new Error('createImageBitmap unavailable')
+      }
+      let bitmap
+      try {
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      } catch {
+        bitmap = await createImageBitmap(file)
+      }
+      try {
+        return encode(bitmap, bitmap.width, bitmap.height)
+      } finally {
+        if (typeof bitmap.close === 'function') bitmap.close()
+      }
+    }
+
+    // Attempt 2: blob object URL (must be revoked on every path).
+    async function viaBlobUrl() {
       const objectUrl = URL.createObjectURL(file)
-      const img = new Image()
-      img.onload = () => {
+      try {
+        const img = await loadImageElement(objectUrl)
+        return encode(img, img.naturalWidth, img.naturalHeight)
+      } finally {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }
+
+    // Attempt 3: FileReader data URL.
+    async function viaDataUrl() {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result)
+          else reject(new Error('unexpected FileReader result'))
+        }
+        reader.onerror = () => reject(reader.error || new Error('FileReader failed'))
+        reader.readAsDataURL(file)
+      })
+      const img = await loadImageElement(dataUrl)
+      return encode(img, img.naturalWidth, img.naturalHeight)
+    }
+
+    return (async () => {
+      const attempts = [viaBitmap, viaBlobUrl, viaDataUrl]
+      for (const attempt of attempts) {
         try {
-          const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight))
-          const width = Math.max(1, Math.round(img.naturalWidth * scale))
-          const height = Math.max(1, Math.round(img.naturalHeight * scale))
-          const canvas = document.createElement('canvas')
-          canvas.width = width
-          canvas.height = height
-          const ctx = canvas.getContext('2d')
-          if (!ctx) throw new Error('Could not process image')
-          ctx.drawImage(img, 0, 0, width, height)
-          const dataUrl = canvas.toDataURL('image/jpeg', quality)
-          const base64 = dataUrl.replace(/^data:image\/(?:jpeg|jpg);base64,/, '')
-          resolve({ imageBase64: base64, mimeType: 'image/jpeg', previewUrl: dataUrl })
-        } catch (e) {
-          reject(e)
-        } finally {
-          URL.revokeObjectURL(objectUrl)
+          return await attempt()
+        } catch {
+          // Fall through to the next decode strategy.
         }
       }
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl)
-        reject(new Error('Could not read that image'))
-      }
-      img.src = objectUrl
-    })
+      throw new Error("Couldn't process that photo on this device. iPhone tip: Settings → Camera → Formats → 'Most Compatible', or pick the photo from Photos instead of the camera.")
+    })()
   }
 
   async function onPhotoSelected(event) {
