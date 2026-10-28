@@ -253,10 +253,18 @@
   // Downscale a photo to <=1024px on its long edge and re-encode as JPEG.
   // Resolves { imageBase64, mimeType, previewUrl }; base64 is raw (no prefix).
   //
-  // Decode uses a fallback chain because iPhone cameras default to HEIC, which
-  // iOS Safari may refuse to decode before any upload — most visibly in
-  // standalone PWA mode, and with behaviour that varies by iOS version. Each
-  // route below covers a different failure mode:
+  // iPhone cameras default to HEIC, which Safari — and especially standalone
+  // PWA mode — may refuse to decode, with behaviour that varies by iOS version.
+  // The photo input solves this up front: its restrictive `accept` list
+  // (image/jpeg,image/png,image/webp) means iOS's Photos/camera pipeline
+  // transcodes HEIC to JPEG at pick time, natively, exactly as native apps get
+  // HEIC support from the OS codecs. We therefore receive an already-compatible
+  // JPEG and never see raw HEIC. Because of that OS-side transcode, the user no
+  // longer needs the Settings → Camera → Formats → 'Most Compatible' setting.
+  //
+  // This decode chain stays as the safety net for anything that still slips
+  // through (webp/png variants, odd iOS builds, edge-case files). Each route
+  // covers a different failure mode:
   //   1. createImageBitmap (honours EXIF orientation; newest, most reliable)
   //   2. blob object URL + <img> (the historical path; works on older Safari)
   //   3. FileReader data URL + <img> (some iOS builds decode data URLs when
@@ -620,7 +628,7 @@
           id="lm-photo"
           class="hidden"
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           capture="environment"
           onchange={onPhotoSelected}
         />
