@@ -403,23 +403,25 @@ let checklist = $derived(data ? [
         </div>
       </Card>
 
-      <!-- Weekly Stats: rows spread evenly; balance lines stay last -->
+      <!-- Weekly Stats: rows spread evenly; derived rows sit under their source stats -->
       <Card title="Weekly Stats">
         <div class="card-body flex flex-col justify-evenly gap-1">
           <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgCalories ?? 0)}</span></div>
-          <div class="text-sm text-gray-300">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
-          <div class="text-sm text-gray-300">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
-          <div class="text-sm text-gray-300">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
           {#if energyBalanceReady}
             <div class="text-sm text-gray-300">
               vs Target: <span class="font-semibold text-gray-100">{fmt0(targetCal)} kcal</span>
               <span class="text-gray-500">→</span>
               <span class="font-semibold {deltaColor(calDelta)}">{signedKcal(calDelta)} kcal/day</span>
             </div>
+          {/if}
+          <div class="text-sm text-gray-300">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
+          <div class="text-sm text-gray-300">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
+          {#if energyBalanceReady}
             <div class="text-sm text-gray-300">
               Expected from balance: <span class="font-semibold {deltaColor(calDelta)}">≈ {signedKgPerWeek(expectedKgPerWeek(calDelta))} kg/wk</span>
             </div>
           {/if}
+          <div class="text-sm text-gray-300">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
         </div>
       </Card>
 
