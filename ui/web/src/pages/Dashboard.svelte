@@ -229,25 +229,28 @@ let checklist = $derived(data ? [
 {:else}
   <div class="max-w-screen-xl mx-auto space-y-4">
 
-    <!-- Row 1: Vitals + Checklist + Targets (each card keeps natural height) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-      <!-- Vitals Card (same as before) -->
+    <!-- Row 1: Vitals + Checklist + Targets (equal heights: the row stretches,
+         then each card distributes its own content top-to-bottom) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Vitals Card: ring centered in the free space, macros pinned to the bottom -->
       <Card title="Vitals">
-        <div class="flex flex-col items-center gap-3">
-          <StreakRing
-            loggedDays={loggedDays}
-            loggingStreak={loggingStreak}
-            longestStreak={longestStreak}
-            size={160}
-          >
-            <!-- VitalsRing's own 30-day ring is disabled; StreakRing owns it. -->
-            <VitalsRing
-              consumed={data.today?.consumed?.calories ?? 0}
-              target={data.today?.targets?.calories ?? 0}
+        <div class="card-body flex flex-col items-center gap-3">
+          <div class="flex-1 w-full flex items-center justify-center">
+            <StreakRing
+              loggedDays={loggedDays}
+              loggingStreak={loggingStreak}
+              longestStreak={longestStreak}
               size={160}
-              dailyLogged={[]}
-            />
-          </StreakRing>
+            >
+              <!-- VitalsRing's own 30-day ring is disabled; StreakRing owns it. -->
+              <VitalsRing
+                consumed={data.today?.consumed?.calories ?? 0}
+                target={data.today?.targets?.calories ?? 0}
+                size={160}
+                dailyLogged={[]}
+              />
+            </StreakRing>
+          </div>
           <!-- Macro summary below ring -->
           <div class="w-full grid grid-cols-5 gap-2 text-center text-sm mt-1">
               <div>
@@ -283,9 +286,9 @@ let checklist = $derived(data ? [
         </div>
       </Card>
 
-      <!-- Checklist Card (same as before) -->
+      <!-- Checklist Card: six rows spread evenly over the full card height -->
       <Card title="Checklist — Today">
-        <ul class="space-y-2">
+        <ul class="card-body flex flex-col justify-evenly gap-2">
           {#each checklist as item}
             <li class="flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -298,167 +301,178 @@ let checklist = $derived(data ? [
         </ul>
       </Card>
 
-      <!-- Targets -->
-      <div>
-        <Card title="Targets">
-          <div class="space-y-3 text-sm">
-            <!-- Calories -->
-            <div class="flex justify-between items-center">
-              <span class="text-gray-400">Calories</span>
-              <span class="font-tabular-nums font-semibold">
-                {fmt0(data.today?.consumed?.calories ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.calories != null}<span class="text-orange-400">{fmt0(data.today.targets.calories)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">kcal</span>
-              </span>
-            </div>
-            <!-- Protein (emerald-400 like Vitals) -->
-            <div class="flex justify-between items-center">
-              <span class="text-gray-400">Protein</span>
-              <span class="font-tabular-nums font-semibold">
-                {fmt1(data.today?.consumed?.proteinG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.proteinG != null}<span class="text-emerald-400">{fmt1(data.today.targets.proteinG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
-              </span>
-            </div>
-            <!-- Carbs (blue-400 like Vitals) -->
-            <div class="flex justify-between items-center">
-              <span class="text-gray-400">Carbs</span>
-              <span class="font-tabular-nums font-semibold">
-                {fmt1(data.today?.consumed?.carbsG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.carbsG != null}<span class="text-blue-400">{fmt1(data.today.targets.carbsG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
-              </span>
-            </div>
-            <!-- Fat (yellow-400 like Vitals) -->
-            <div class="flex justify-between items-center">
-              <span class="text-gray-400">Fat</span>
-              <span class="font-tabular-nums font-semibold">
-                {fmt1(data.today?.consumed?.fatG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.fatG != null}<span class="text-yellow-400">{fmt1(data.today.targets.fatG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
-              </span>
-            </div>
-            <!-- Water (cyan-400 accent) -->
-            <div>
-              <!-- Value row: same pattern as the macro rows so columns line up -->
-              <div class="flex justify-between items-center">
-                <span class="text-gray-400">Water</span>
-                <span class="font-tabular-nums font-semibold">
-                  {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
-                </span>
-              </div>
-              <!-- Bar + quick-add chip share one line; the bar takes the rest -->
-              <div class="flex items-center gap-2 mt-1.5">
-                <div class="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                  <div class="h-full bg-cyan-400 rounded-full" style="width: {waterPct(data.today?.consumed?.waterMl ?? 0, data.today?.targets?.waterMl ?? 0)}%"></div>
-                </div>
-                <button
-                  class="text-xs leading-none bg-cyan-900/40 border border-cyan-700 text-cyan-300 hover:bg-cyan-900/70 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-md shrink-0"
-                  onclick={addWater}
-                  disabled={waterBusy}
-                  title="Add 250 ml of water to today"
-                >+ 250 ml</button>
-              </div>
-              {#if waterUndo}
-                <button
-                  class="text-xs text-cyan-400 hover:text-cyan-300 underline mt-1.5 disabled:opacity-50"
-                  onclick={undoWater}
-                  disabled={waterBusy}
-                >Undo last add</button>
-              {/if}
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-
-    <!-- Row 2: Weight Trend + Weekly Stats + Readiness -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
-      <Card title="Weight Trend (30 days)">
-        <div class="flex flex-col items-center text-center mb-2">
-          <div class="flex items-center justify-center gap-1.5">
-            {#if trendReady}
-              <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
-              <div class="text-3xl font-bold text-gray-100">
-                {dispWeight(trendKg, store.units)}
-                <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
-              </div>
-            {:else if weightPoints.length}
-              <div class="text-lg font-semibold text-gray-300">
-                Trend forming
-                <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
-              </div>
-            {/if}
-            <InfoTip label="trend weight" text="The smoothed weight the engine trusts — raw scale weight bounces with food, water, and salt." />
-          </div>
-          {#if trendReady}
-            <div class="text-sm font-semibold {rateColor(rateKgWk)}">
-              {signedWeight(rateKgWk)} {weightUnit(store.units)}/wk
-            </div>
-          {/if}
-          <div class="text-xs text-gray-400 mt-1">
-            Raw weight:
-            <span class="font-semibold text-gray-200">
-              {latestRawKg > 0 ? dispWeight(latestRawKg, store.units) : '—'} {weightUnit(store.units)}
+      <!-- Targets: five value rows + water bar spread over the full height -->
+      <Card title="Targets">
+        <div class="card-body flex flex-col justify-between gap-2 text-sm">
+          <!-- Calories -->
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">Calories</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt0(data.today?.consumed?.calories ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.calories != null}<span class="text-orange-400">{fmt0(data.today.targets.calories)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">kcal</span>
             </span>
           </div>
+          <!-- Protein (emerald-400 like Vitals) -->
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">Protein</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt1(data.today?.consumed?.proteinG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.proteinG != null}<span class="text-emerald-400">{fmt1(data.today.targets.proteinG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
+            </span>
+          </div>
+          <!-- Carbs (blue-400 like Vitals) -->
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">Carbs</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt1(data.today?.consumed?.carbsG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.carbsG != null}<span class="text-blue-400">{fmt1(data.today.targets.carbsG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
+            </span>
+          </div>
+          <!-- Fat (yellow-400 like Vitals) -->
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">Fat</span>
+            <span class="font-tabular-nums font-semibold">
+              {fmt1(data.today?.consumed?.fatG ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.fatG != null}<span class="text-yellow-400">{fmt1(data.today.targets.fatG)}</span>{:else}<span class="text-gray-500">—</span>{/if}<span class="text-gray-500 text-xs ml-1">g</span>
+            </span>
+          </div>
+          <!-- Water (cyan-400 accent) — last element -->
+          <div>
+            <!-- Value row: same pattern as the macro rows so columns line up -->
+            <div class="flex justify-between items-center">
+              <span class="text-gray-400">Water</span>
+              <span class="font-tabular-nums font-semibold">
+                {fmtWater(data.today?.consumed?.waterMl ?? 0)}<span class="text-gray-500"> / </span>{#if data.today?.targets?.waterMl != null}<span class="text-cyan-400">{fmtWater(data.today.targets.waterMl)}</span>{:else}<span class="text-gray-500">—</span>{/if}
+              </span>
+            </div>
+            <!-- Bar + quick-add chip share one line; the bar takes the rest -->
+            <div class="flex items-center gap-2 mt-1.5">
+              <div class="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div class="h-full bg-cyan-400 rounded-full" style="width: {waterPct(data.today?.consumed?.waterMl ?? 0, data.today?.targets?.waterMl ?? 0)}%"></div>
+              </div>
+              <button
+                class="text-xs leading-none bg-cyan-900/40 border border-cyan-700 text-cyan-300 hover:bg-cyan-900/70 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-1 rounded-md shrink-0"
+                onclick={addWater}
+                disabled={waterBusy}
+                title="Add 250 ml of water to today"
+              >+ 250 ml</button>
+            </div>
+            {#if waterUndo}
+              <button
+                class="text-xs text-cyan-400 hover:text-cyan-300 underline mt-1.5 disabled:opacity-50"
+                onclick={undoWater}
+                disabled={waterBusy}
+              >Undo last add</button>
+            {/if}
+          </div>
         </div>
-        <WeightSparkline points={data.weightTrend ?? []} units={store.units} />
+      </Card>
+    </div>
+
+    <!-- Row 2: Weight Trend + Weekly Stats + Readiness (equal heights per row;
+         md: Weight/Weekly share a row, Readiness spans both columns beneath) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- Weight Trend: whole block vertically centered -->
+      <Card title="Weight Trend (30 days)">
+        <div class="card-body flex flex-col justify-center">
+          <div class="flex flex-col items-center text-center mb-2">
+            <div class="flex items-center justify-center gap-1.5">
+              {#if trendReady}
+                <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
+                <div class="text-3xl font-bold text-gray-100">
+                  {dispWeight(trendKg, store.units)}
+                  <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
+                </div>
+              {:else if weightPoints.length}
+                <div class="text-lg font-semibold text-gray-300">
+                  Trend forming
+                  <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
+                </div>
+              {/if}
+              <InfoTip label="trend weight" text="The smoothed weight the engine trusts — raw scale weight bounces with food, water, and salt." />
+            </div>
+            {#if trendReady}
+              <div class="text-sm font-semibold {rateColor(rateKgWk)}">
+                {signedWeight(rateKgWk)} {weightUnit(store.units)}/wk
+              </div>
+            {/if}
+            <div class="text-xs text-gray-400 mt-1">
+              Raw weight:
+              <span class="font-semibold text-gray-200">
+                {latestRawKg > 0 ? dispWeight(latestRawKg, store.units) : '—'} {weightUnit(store.units)}
+              </span>
+            </div>
+          </div>
+          <WeightSparkline points={data.weightTrend ?? []} units={store.units} />
+        </div>
       </Card>
 
+      <!-- Weekly Stats: rows spread evenly; balance lines stay last -->
       <Card title="Weekly Stats">
-        <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgCalories ?? 0)}</span></div>
-        <div class="text-sm text-gray-300 mt-1">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
-        <div class="text-sm text-gray-300 mt-1">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
-        <div class="text-sm text-gray-300 mt-1">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
-        {#if energyBalanceReady}
-          <div class="text-sm text-gray-300 mt-1">
-            vs Target: <span class="font-semibold text-gray-100">{fmt0(targetCal)} kcal</span>
-            <span class="text-gray-500">→</span>
-            <span class="font-semibold {deltaColor(calDelta)}">{signedKcal(calDelta)} kcal/day</span>
-          </div>
-          <div class="text-sm text-gray-300 mt-1">
-            Expected from balance: <span class="font-semibold {deltaColor(calDelta)}">≈ {signedKgPerWeek(expectedKgPerWeek(calDelta))} kg/wk</span>
-          </div>
-        {/if}
+        <div class="card-body flex flex-col justify-evenly gap-1">
+          <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgCalories ?? 0)}</span></div>
+          <div class="text-sm text-gray-300">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
+          <div class="text-sm text-gray-300">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
+          <div class="text-sm text-gray-300">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
+          {#if energyBalanceReady}
+            <div class="text-sm text-gray-300">
+              vs Target: <span class="font-semibold text-gray-100">{fmt0(targetCal)} kcal</span>
+              <span class="text-gray-500">→</span>
+              <span class="font-semibold {deltaColor(calDelta)}">{signedKcal(calDelta)} kcal/day</span>
+            </div>
+            <div class="text-sm text-gray-300">
+              Expected from balance: <span class="font-semibold {deltaColor(calDelta)}">≈ {signedKgPerWeek(expectedKgPerWeek(calDelta))} kg/wk</span>
+            </div>
+          {/if}
+        </div>
       </Card>
-      <div class="md:col-span-2 lg:col-span-1">
+
+      <!-- Readiness spans 2 cols at md; inside, the cluster is vertically centered -->
+      <div class="md:col-span-2 lg:col-span-1 grid grid-rows-1">
         <Card>
-          <div class="flex items-center gap-1.5 mb-3">
-            <h2 class="text-lg font-bold text-emerald-400">Readiness</h2>
-            <InfoTip label="readiness" text="How today's grip + BOLT compare to YOUR recent baseline. Small dips are normal; consecutive low days escalate to yellow/red — a red day means back off." />
-          </div>
           {@const level = data.readiness?.level ?? 'green'}
           {@const velocity = data.readiness?.velocityTrend ?? 'stable'}
           {@const bulbColor = level === 'green' ? 'bg-green-500' : level === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'}
           {@const arrowIcon = velocity === 'improving' ? '↑' : velocity === 'declining' ? '↓' : '→'}
           {@const arrowColor = velocity === 'improving' ? 'text-green-400' : velocity === 'declining' ? 'text-red-400' : 'text-gray-400'}
-          <div class="grid grid-cols-2 gap-3">
-            <!-- Left: current readiness display -->
-            <div class="flex flex-col items-center justify-center gap-1">
-              <div class="flex items-center justify-center gap-3">
-                <div class="flex flex-col items-center">
-                  <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
-                  <span class="text-xs text-gray-400 mt-1">Rz: {readinessEmpty ? '—' : (data.readiness?.rz ?? 0).toFixed(2)}</span>
-                </div>
-                <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
-              </div>
-              <div class="text-xs text-gray-400">
-                {#if readinessEmpty}
-                  <span class="text-gray-500">No readings yet</span>
-                {:else}
-                  Trend: <span class="font-semibold">{velocity}</span>
-                {/if}
-              </div>
+          <div class="h-full flex flex-col">
+            <div class="flex items-center gap-1.5 mb-3">
+              <h2 class="text-lg font-bold text-emerald-400">Readiness</h2>
+              <InfoTip label="readiness" text="How today's grip + BOLT compare to YOUR recent baseline. Small dips are normal; consecutive low days escalate to yellow/red — a red day means back off." />
             </div>
-            <!-- Right: SD / EMA values -->
-            <div class="border-l border-gray-700 pl-3 space-y-2 text-xs">
-              <div>
-                <div class="text-gray-500 mb-0.5">Grip</div>
-                <div class="font-tabular-nums text-gray-200">
-                  SD: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.gripSD ?? 0).toFixed(2)}</span>
-                  <span class="text-gray-600 mx-1">|</span>
-                  EMA: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.gripEMA ?? 0).toFixed(2)}</span>
+            <div class="flex-1 flex flex-col justify-center">
+              <div class="grid grid-cols-2 gap-3">
+                <!-- Left: current readiness display -->
+                <div class="flex flex-col items-center justify-center gap-1">
+                  <div class="flex items-center justify-center gap-3">
+                    <div class="flex flex-col items-center">
+                      <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
+                      <span class="text-xs text-gray-400 mt-1">Rz: {readinessEmpty ? '—' : (data.readiness?.rz ?? 0).toFixed(2)}</span>
+                    </div>
+                    <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
+                  </div>
+                  <div class="text-xs text-gray-400">
+                    {#if readinessEmpty}
+                      <span class="text-gray-500">No readings yet</span>
+                    {:else}
+                      Trend: <span class="font-semibold">{velocity}</span>
+                    {/if}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div class="text-gray-500 mb-0.5">BOLT</div>
-                <div class="font-tabular-nums text-gray-200">
-                  SD: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.boltSD ?? 0).toFixed(2)}</span>
-                  <span class="text-gray-600 mx-1">|</span>
-                  EMA: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.boltEMA ?? 0).toFixed(2)}</span>
+                <!-- Right: SD / EMA values -->
+                <div class="border-l border-gray-700 pl-3 space-y-2 text-xs">
+                  <div>
+                    <div class="text-gray-500 mb-0.5">Grip</div>
+                    <div class="font-tabular-nums text-gray-200">
+                      SD: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.gripSD ?? 0).toFixed(2)}</span>
+                      <span class="text-gray-600 mx-1">|</span>
+                      EMA: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.gripEMA ?? 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-gray-500 mb-0.5">BOLT</div>
+                    <div class="font-tabular-nums text-gray-200">
+                      SD: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.boltSD ?? 0).toFixed(2)}</span>
+                      <span class="text-gray-600 mx-1">|</span>
+                      EMA: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.boltEMA ?? 0).toFixed(2)}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -469,3 +483,13 @@ let checklist = $derived(data ? [
 
   </div>
 {/if}
+
+<style>
+  /* Card renders its title inside the same padded box as the content, and the
+     title occupies exactly text-lg line-height (1.75rem) + mb-3 (0.75rem).
+     Sizing the body to the remainder lets each card spread its content over the
+     full stretched row height without pushing past the card's bottom padding. */
+  .card-body {
+    height: calc(100% - 2.5rem);
+  }
+</style>
