@@ -2,8 +2,40 @@ package store
 
 import (
 	"context"
+	"errors"
+
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 )
+
+// Store-level sentinel errors let handlers map failures to stable HTTP
+// statuses without leaking database details to clients.
+var (
+	ErrNotFound      = errors.New("store: not found")
+	ErrForbidden     = errors.New("store: forbidden")
+	ErrConflict      = errors.New("store: conflict")
+	ErrAlreadyMember = errors.New("store: already a member")
+	ErrInviteInvalid = errors.New("store: invalid invite")
+	ErrInviteExpired = errors.New("store: invite expired")
+	ErrInviteUsed    = errors.New("store: invite used")
+)
+
+// GroupMemberSummary is the raw per-member row used to build privacy-aware
+// group summaries. It intentionally contains UserID for internal joins but is
+// never serialized directly; handlers project it into models.MemberCard.
+type GroupMemberSummary struct {
+	UserID         string
+	Name           string
+	Role           string
+	ShareClock     bool
+	ShareStreak    bool
+	ShareAdherence bool
+	JoinedAt       string
+	LoggedFood     bool
+	LoggedWeight   bool
+	LoggedWorkout  bool
+	Streak         int
+	AdherencePct   float64
+}
 
 // Store groups all data access sub-interfaces.
 type Store interface {
@@ -15,6 +47,7 @@ type Store interface {
 	CheckinStore
 	MeasurementStore
 	AuthStore
+	GroupStore
 	// For health check
 	PingContext(ctx context.Context) error
 }
@@ -122,4 +155,26 @@ type MealStore interface {
 	FetchMealTemplates(ctx context.Context, userID string) ([]models.MealTemplate, error)
 	CreateMealTemplate(ctx context.Context, t *models.MealTemplate) error
 	DeleteMealTemplate(ctx context.Context, userID, templateID string) error
+
+	// Group-scoped template sharing. Sharing is only allowed by the template
+	// owner; unsharing is allowed by the template owner or the group owner.
+	ShareTemplateToGroup(ctx context.Context, userID, templateID, groupID string) error
+	UnshareTemplate(ctx context.Context, actorID, templateID string) error
+}
+
+// GroupStore handles groups, memberships, invites and group summaries.
+type GroupStore interface {
+	CreateGroup(ctx context.Context, g *models.Group) error
+	ListGroupsForUser(ctx context.Context, userID string) ([]models.Group, error)
+	GetGroup(ctx context.Context, groupID string) (models.Group, error)
+	IsMember(ctx context.Context, groupID, userID string) (bool, error)
+	MemberRole(ctx context.Context, groupID, userID string) (string, error)
+	AddMember(ctx context.Context, groupID, userID, role, joinedAt string) error
+	RemoveMember(ctx context.Context, groupID, userID string) error
+	LeaveGroup(ctx context.Context, groupID, userID string) error
+	DeleteGroup(ctx context.Context, groupID string) error
+	UpdateMySharing(ctx context.Context, groupID, userID string, shareClock, shareStreak, shareAdherence *bool) error
+	CreateInvite(ctx context.Context, inv *models.GroupInvite) error
+	ConsumeInvite(ctx context.Context, code, userID, now string) (string, error)
+	GroupSummarySource(ctx context.Context, groupID, today string) ([]GroupMemberSummary, error)
 }

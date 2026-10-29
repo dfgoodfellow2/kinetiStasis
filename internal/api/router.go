@@ -57,6 +57,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 	workoutsH := handlers.NewWorkoutHandler(s)
 	targetsH := handlers.NewTargetsHandler(s)
 	mealsH := handlers.NewMealsHandler(s)
+	groupsH := handlers.NewGroupsHandler(s)
 	measurementsH := handlers.NewMeasurementsHandler(s)
 	calcH := handlers.NewCalcHandler(s)
 	exportH := handlers.NewExportHandler(s)
@@ -138,6 +139,24 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 			r.Get("/meals/templates", mealsH.ListTemplates)
 			r.Post("/meals/templates", mealsH.CreateTemplate)
 			r.Delete("/meals/templates/{id}", mealsH.DeleteTemplate)
+			r.Post("/meals/templates/{id}/share", groupsH.ShareTemplate)
+			r.Delete("/meals/templates/{id}/share", groupsH.UnshareTemplate)
+
+			// Groups
+			r.Post("/groups", groupsH.Create)
+			r.Get("/groups", groupsH.List)
+			r.Post("/groups/invites", groupsH.CreateInvite)
+			// Joining by invite is a guessable-code surface, so it shares the
+			// stricter limiter used by AI parsing.
+			r.Group(func(r chi.Router) {
+				r.Use(parseLimiter)
+				r.Post("/groups/join", groupsH.Join)
+			})
+			r.Get("/groups/{id}/summary", groupsH.Summary)
+			r.Patch("/groups/{id}/my-sharing", groupsH.UpdateMySharing)
+			r.Delete("/groups/{id}/members/{userId}", groupsH.RemoveMember)
+			r.Post("/groups/{id}/leave", groupsH.Leave)
+			r.Delete("/groups/{id}", groupsH.Delete)
 
 			// Measurements
 			r.Get("/measurements", measurementsH.List)

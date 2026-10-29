@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
+	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/metrics"
 )
 
 // NewSQLiteStore wraps *sql.DB to implement Store interface.
@@ -682,15 +685,26 @@ func (s *SQLiteStore) DeleteSavedMeal(ctx context.Context, userID, mealID string
 }
 
 func (s *SQLiteStore) FetchMealTemplates(ctx context.Context, userID string) ([]models.MealTemplate, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,name,meals_json,created_at,updated_at FROM meal_templates WHERE user_id = ? ORDER BY name ASC`, userID)
+	// Own templates plus templates shared to any group the caller belongs to.
+	// Shared rows carry the owner's profile name for the provenance badge.
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT mt.id, mt.user_id, mt.name, mt.meals_json, mt.created_at, mt.updated_at,
+               mt.group_id,
+               COALESCE((SELECT NULLIF(p.name,'') FROM profiles p WHERE p.user_id = mt.user_id), '')
+        FROM meal_templates mt
+        WHERE mt.user_id = ?
+           OR (mt.group_id <> '' AND mt.group_id IN (
+                   SELECT gm.group_id FROM group_members gm WHERE gm.user_id = ?
+               ))
+        ORDER BY mt.name ASC`, userID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch meal templates: %w", err)
 	}
 	defer rows.Close()
 	var out []models.MealTemplate
 	for rows.Next() {
-		var id, uid, name, mealsJSON, createdAt, updatedAt string
-		if err := rows.Scan(&id, &uid, &name, &mealsJSON, &createdAt, &updatedAt); err != nil {
+		var id, uid, name, mealsJSON, createdAt, updatedAt, groupID, ownerName string
+		if err := rows.Scan(&id, &uid, &name, &mealsJSON, &createdAt, &updatedAt, &groupID, &ownerName); err != nil {
 			return nil, fmt.Errorf("scan meal template row: %w", err)
 		}
 		var meals []models.SavedMeal
@@ -699,7 +713,23 @@ func (s *SQLiteStore) FetchMealTemplates(ctx context.Context, userID string) ([]
 				slog.Warn("unmarshal meals_json failed", "err", err)
 			}
 		}
-		out = append(out, models.MealTemplate{ID: id, UserID: uid, Name: name, Meals: meals, CreatedAt: createdAt, UpdatedAt: updatedAt})
+		sharedBy := ""
+		if uid != userID {
+			sharedBy = ownerName
+			if sharedBy == "" {
+				sharedBy = "Member"
+			}
+		}
+		out = append(out, models.MealTemplate{
+			ID:        id,
+			UserID:    uid,
+			Name:      name,
+			Meals:     meals,
+			GroupID:   groupID,
+			SharedBy:  sharedBy,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		})
 	}
 	return out, nil
 }
@@ -798,4 +828,500 @@ func (s *SQLiteStore) FetchBodyMeasurementsRangeMap(ctx context.Context, userID,
 		}
 	}
 	return m, nil
+}
+
+// --- Groups ---
+
+// CreateGroup inserts a group and its owner membership atomically.
+func (s *SQLiteStore) CreateGroup(ctx context.Context, g *models.Group) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin create group: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO groups (id, name, created_by, created_at, updated_at) VALUES (?,?,?,?,?)`,
+		g.ID, g.Name, g.CreatedBy, g.CreatedAt, g.UpdatedAt,
+	); err != nil {
+		return fmt.Errorf("insert group: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO group_members (group_id, user_id, role, share_clock, share_streak, share_adherence, joined_at)
+         VALUES (?,?,?,1,1,1,?)`,
+		g.ID, g.CreatedBy, "owner", g.CreatedAt,
+	); err != nil {
+		return fmt.Errorf("insert group owner: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit create group: %w", err)
+	}
+	return nil
+}
+
+// ListGroupsForUser returns every group the user belongs to, with my role and
+// member count populated.
+func (s *SQLiteStore) ListGroupsForUser(ctx context.Context, userID string) ([]models.Group, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT g.id, g.name, g.created_by, g.created_at, g.updated_at, gm.role,
+               (SELECT COUNT(*) FROM group_members x WHERE x.group_id = g.id)
+        FROM groups g
+        JOIN group_members gm ON gm.group_id = g.id
+        WHERE gm.user_id = ?
+        ORDER BY g.created_at ASC, g.id ASC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list groups for user: %w", err)
+	}
+	defer rows.Close()
+	var out []models.Group
+	for rows.Next() {
+		var g models.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.MyRole, &g.MemberCount); err != nil {
+			return nil, fmt.Errorf("scan group row: %w", err)
+		}
+		out = append(out, g)
+	}
+	return out, nil
+}
+
+// GetGroup fetches a group without membership projection.
+func (s *SQLiteStore) GetGroup(ctx context.Context, groupID string) (models.Group, error) {
+	var g models.Group
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, created_by, created_at, updated_at,
+                (SELECT COUNT(*) FROM group_members x WHERE x.group_id = groups.id)
+         FROM groups WHERE id = ?`, groupID,
+	).Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount)
+	if err == sql.ErrNoRows {
+		return models.Group{}, ErrNotFound
+	}
+	if err != nil {
+		return models.Group{}, fmt.Errorf("get group: %w", err)
+	}
+	return g, nil
+}
+
+// IsMember reports whether userID belongs to groupID.
+func (s *SQLiteStore) IsMember(ctx context.Context, groupID, userID string) (bool, error) {
+	var exists int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT CASE WHEN EXISTS (SELECT 1 FROM group_members WHERE group_id=? AND user_id=?) THEN 1 ELSE 0 END`,
+		groupID, userID,
+	).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check group membership: %w", err)
+	}
+	return exists == 1, nil
+}
+
+// MemberRole returns the membership role or ErrNotFound.
+func (s *SQLiteStore) MemberRole(ctx context.Context, groupID, userID string) (string, error) {
+	var role string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT role FROM group_members WHERE group_id=? AND user_id=?`, groupID, userID,
+	).Scan(&role)
+	if err == sql.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get member role: %w", err)
+	}
+	return role, nil
+}
+
+// AddMember inserts a membership, returning ErrAlreadyMember when present.
+func (s *SQLiteStore) AddMember(ctx context.Context, groupID, userID, role, joinedAt string) error {
+	if role == "" {
+		role = "member"
+	}
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO group_members (group_id, user_id, role, share_clock, share_streak, share_adherence, joined_at)
+         VALUES (?,?,?,1,1,1,?) ON CONFLICT(group_id, user_id) DO NOTHING`,
+		groupID, userID, role, joinedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("add group member: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrAlreadyMember
+	}
+	return nil
+}
+
+// RemoveMember deletes a membership and unshares templates that the removed
+// member had contributed to the group.
+func (s *SQLiteStore) RemoveMember(ctx context.Context, groupID, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin remove member: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM group_members WHERE group_id=? AND user_id=?`, groupID, userID)
+	if err != nil {
+		return fmt.Errorf("delete group member: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE meal_templates SET group_id='' WHERE group_id=? AND user_id=?`, groupID, userID,
+	); err != nil {
+		return fmt.Errorf("unshare removed member templates: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit remove member: %w", err)
+	}
+	return nil
+}
+
+// LeaveGroup removes the caller. When the owner leaves, ownership transfers to
+// the longest-standing remaining member; if the owner was the last member the
+// group, its memberships, invites and template shares are deleted.
+func (s *SQLiteStore) LeaveGroup(ctx context.Context, groupID, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin leave group: %w", err)
+	}
+	defer tx.Rollback()
+
+	var role string
+	err = tx.QueryRowContext(ctx,
+		`SELECT role FROM group_members WHERE group_id=? AND user_id=?`, groupID, userID,
+	).Scan(&role)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read leaving member role: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	if role == "owner" {
+		var nextUser string
+		err = tx.QueryRowContext(ctx,
+			`SELECT user_id FROM group_members
+             WHERE group_id=? AND user_id<>?
+             ORDER BY joined_at ASC, user_id ASC LIMIT 1`, groupID, userID,
+		).Scan(&nextUser)
+		switch {
+		case err == sql.ErrNoRows:
+			// Last member: unshare all templates and delete the group.
+			if _, err := tx.ExecContext(ctx, `UPDATE meal_templates SET group_id='' WHERE group_id=?`, groupID); err != nil {
+				return fmt.Errorf("unshare deleted group templates: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM invites WHERE group_id=?`, groupID); err != nil {
+				return fmt.Errorf("delete group invites: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM group_members WHERE group_id=?`, groupID); err != nil {
+				return fmt.Errorf("delete group members: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM groups WHERE id=?`, groupID); err != nil {
+				return fmt.Errorf("delete empty group: %w", err)
+			}
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("commit leave last owner: %w", err)
+			}
+			return nil
+		case err != nil:
+			return fmt.Errorf("find next owner: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE group_members SET role='owner' WHERE group_id=? AND user_id=?`, groupID, nextUser,
+		); err != nil {
+			return fmt.Errorf("promote next owner: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE groups SET created_by=?, updated_at=? WHERE id=?`, nextUser, now, groupID,
+		); err != nil {
+			return fmt.Errorf("update group owner: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM group_members WHERE group_id=? AND user_id=?`, groupID, userID); err != nil {
+		return fmt.Errorf("delete leaving member: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE meal_templates SET group_id='' WHERE group_id=? AND user_id=?`, groupID, userID,
+	); err != nil {
+		return fmt.Errorf("unshare leaving member templates: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit leave group: %w", err)
+	}
+	return nil
+}
+
+// DeleteGroup removes a group entirely and makes its shared templates private.
+func (s *SQLiteStore) DeleteGroup(ctx context.Context, groupID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete group: %w", err)
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `SELECT CASE WHEN EXISTS (SELECT 1 FROM groups WHERE id=?) THEN 1 ELSE 0 END`, groupID).Scan(&exists); err != nil {
+		return fmt.Errorf("check group exists: %w", err)
+	}
+	if exists == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meal_templates SET group_id='' WHERE group_id=?`, groupID); err != nil {
+		return fmt.Errorf("unshare group templates: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM invites WHERE group_id=?`, groupID); err != nil {
+		return fmt.Errorf("delete group invites: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM group_members WHERE group_id=?`, groupID); err != nil {
+		return fmt.Errorf("delete group members: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM groups WHERE id=?`, groupID); err != nil {
+		return fmt.Errorf("delete group: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete group: %w", err)
+	}
+	return nil
+}
+
+// UpdateMySharing applies a partial update to the caller's sharing toggles.
+func (s *SQLiteStore) UpdateMySharing(ctx context.Context, groupID, userID string, shareClock, shareStreak, shareAdherence *bool) error {
+	res, err := s.db.ExecContext(ctx, `
+        UPDATE group_members SET
+          share_clock     = COALESCE(?, share_clock),
+          share_streak    = COALESCE(?, share_streak),
+          share_adherence = COALESCE(?, share_adherence)
+        WHERE group_id=? AND user_id=?`,
+		shareClock, shareStreak, shareAdherence, groupID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("update sharing toggles: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CreateInvite stores a single-use code.
+func (s *SQLiteStore) CreateInvite(ctx context.Context, inv *models.GroupInvite) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO invites (code, group_id, created_by, expires_at, used_by, created_at)
+         VALUES (?,?,?,?,?,?)`,
+		inv.Code, inv.GroupID, inv.CreatedBy, inv.ExpiresAt, inv.UsedBy, inv.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create invite: %w", err)
+	}
+	return nil
+}
+
+// ConsumeInvite validates a code and adds the caller to the group in one
+// transaction. The invite is marked used only after membership is inserted.
+func (s *SQLiteStore) ConsumeInvite(ctx context.Context, code, userID, now string) (string, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin consume invite: %w", err)
+	}
+	defer tx.Rollback()
+
+	var groupID, expiresAt, usedBy string
+	err = tx.QueryRowContext(ctx,
+		`SELECT group_id, expires_at, COALESCE(used_by,'') FROM invites WHERE code=?`, code,
+	).Scan(&groupID, &expiresAt, &usedBy)
+	if err == sql.ErrNoRows {
+		return "", ErrInviteInvalid
+	}
+	if err != nil {
+		return "", fmt.Errorf("read invite: %w", err)
+	}
+	if usedBy != "" {
+		return "", ErrInviteUsed
+	}
+	exp, expErr := time.Parse(time.RFC3339, expiresAt)
+	nowT, nowErr := time.Parse(time.RFC3339, now)
+	if expErr == nil && nowErr == nil && !nowT.Before(exp) {
+		return "", ErrInviteExpired
+	}
+
+	var member int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT CASE WHEN EXISTS (SELECT 1 FROM group_members WHERE group_id=? AND user_id=?) THEN 1 ELSE 0 END`,
+		groupID, userID,
+	).Scan(&member); err != nil {
+		return "", fmt.Errorf("check invite membership: %w", err)
+	}
+	if member == 1 {
+		return "", ErrAlreadyMember
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO group_members (group_id, user_id, role, share_clock, share_streak, share_adherence, joined_at)
+         VALUES (?,?,'member',1,1,1,?)`, groupID, userID, now,
+	); err != nil {
+		return "", fmt.Errorf("insert invited member: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE invites SET used_by=? WHERE code=?`, userID, code); err != nil {
+		return "", fmt.Errorf("mark invite used: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit consume invite: %w", err)
+	}
+	return groupID, nil
+}
+
+// GroupSummarySource assembles per-member summary data with visibility toggles
+// intact. The handler is responsible for projecting it into privacy-safe cards.
+func (s *SQLiteStore) GroupSummarySource(ctx context.Context, groupID, today string) ([]GroupMemberSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT gm.user_id, COALESCE(NULLIF(p.name,''), 'Member'), gm.role,
+               gm.share_clock, gm.share_streak, gm.share_adherence, gm.joined_at
+        FROM group_members gm
+        LEFT JOIN profiles p ON p.user_id = gm.user_id
+        WHERE gm.group_id = ?
+        ORDER BY CASE gm.role WHEN 'owner' THEN 0 ELSE 1 END, gm.joined_at ASC, gm.user_id ASC`,
+		groupID)
+	if err != nil {
+		return nil, fmt.Errorf("group summary members: %w", err)
+	}
+	var out []GroupMemberSummary
+	for rows.Next() {
+		var m GroupMemberSummary
+		var clock, streak, adherence int
+		if err := rows.Scan(&m.UserID, &m.Name, &m.Role, &clock, &streak, &adherence, &m.JoinedAt); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan group summary member: %w", err)
+		}
+		m.ShareClock = clock == 1
+		m.ShareStreak = streak == 1
+		m.ShareAdherence = adherence == 1
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate group summary members: %w", err)
+	}
+	rows.Close()
+
+	todayTime, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		todayTime = time.Now().UTC()
+		today = todayTime.Format("2006-01-02")
+	}
+	since := todayTime.AddDate(0, 0, -29).Format("2006-01-02")
+
+	for i := range out {
+		m := &out[i]
+		logs, err := s.FetchNutritionLogsRange(ctx, m.UserID, since, today)
+		if err != nil {
+			return nil, fmt.Errorf("group summary nutrition for %s: %w", m.UserID, err)
+		}
+		loggedDays, streak, _ := metrics.LoggingStreaks(logs, today, 30)
+		m.Streak = streak
+		loggedCount := 0
+		for _, logged := range loggedDays {
+			if logged {
+				loggedCount++
+			}
+		}
+		m.AdherencePct = math.Round(float64(loggedCount)/float64(len(loggedDays))*1000) / 10
+		for _, l := range logs {
+			if l.Date == today && (l.Calories > 0 || l.ProteinG > 0 || l.CarbsG > 0 || l.FatG > 0 || l.FiberG > 0) {
+				m.LoggedFood = true
+				break
+			}
+		}
+
+		var weightCount int
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM biometric_logs WHERE user_id=? AND date=? AND weight_kg > 0`,
+			m.UserID, today,
+		).Scan(&weightCount); err != nil {
+			return nil, fmt.Errorf("group summary weight for %s: %w", m.UserID, err)
+		}
+		m.LoggedWeight = weightCount > 0
+
+		var workoutCount int
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM workouts WHERE user_id=? AND date=?`, m.UserID, today,
+		).Scan(&workoutCount); err != nil {
+			return nil, fmt.Errorf("group summary workout for %s: %w", m.UserID, err)
+		}
+		m.LoggedWorkout = workoutCount > 0
+	}
+	return out, nil
+}
+
+// ShareTemplateToGroup shares a caller-owned template with a group the caller
+// belongs to.
+func (s *SQLiteStore) ShareTemplateToGroup(ctx context.Context, userID, templateID, groupID string) error {
+	if groupID == "" {
+		return ErrNotFound
+	}
+	var ownerID string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT user_id FROM meal_templates WHERE id=?`, templateID,
+	).Scan(&ownerID)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read template owner: %w", err)
+	}
+	if ownerID != userID {
+		return ErrForbidden
+	}
+	member, err := s.IsMember(ctx, groupID, userID)
+	if err != nil {
+		return err
+	}
+	if !member {
+		return ErrForbidden
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE meal_templates SET group_id=?, updated_at=? WHERE id=? AND user_id=?`,
+		groupID, time.Now().UTC().Format(time.RFC3339), templateID, userID,
+	); err != nil {
+		return fmt.Errorf("share template: %w", err)
+	}
+	return nil
+}
+
+// UnshareTemplate makes a template private. Allowed for the template owner or
+// the owner of the group it is shared with.
+func (s *SQLiteStore) UnshareTemplate(ctx context.Context, actorID, templateID string) error {
+	var ownerID, groupID string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT user_id, group_id FROM meal_templates WHERE id=?`, templateID,
+	).Scan(&ownerID, &groupID)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read template share: %w", err)
+	}
+	if groupID == "" {
+		return nil
+	}
+	if actorID != ownerID {
+		role, err := s.MemberRole(ctx, groupID, actorID)
+		if err != nil || role != "owner" {
+			if err == ErrNotFound {
+				return ErrForbidden
+			}
+			if err != nil {
+				return err
+			}
+			return ErrForbidden
+		}
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE meal_templates SET group_id='', updated_at=? WHERE id=?`,
+		time.Now().UTC().Format(time.RFC3339), templateID,
+	); err != nil {
+		return fmt.Errorf("unshare template: %w", err)
+	}
+	return nil
 }

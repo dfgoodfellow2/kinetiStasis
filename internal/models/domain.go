@@ -273,12 +273,88 @@ type SavedMeal struct {
 
 // MealTemplate is a named collection of meal items.
 type MealTemplate struct {
-	ID        string      `json:"id"`
-	UserID    string      `json:"userId"`
-	Name      string      `json:"name"`
-	Meals     []SavedMeal `json:"meals"`
-	CreatedAt string      `json:"createdAt"`
-	UpdatedAt string      `json:"updatedAt"`
+	ID     string      `json:"id"`
+	UserID string      `json:"userId"`
+	Name   string      `json:"name"`
+	Meals  []SavedMeal `json:"meals"`
+	// GroupID is empty for a private template. When set, members of that
+	// group can see and apply the template.
+	GroupID string `json:"groupId,omitempty"`
+	// SharedBy is populated by list queries for templates owned by another
+	// member so the client can render a provenance badge.
+	SharedBy  string `json:"sharedBy,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// Group is a private cohort whose members may share logging signals and meal
+// templates. MyRole and MemberCount are populated by list/get queries.
+type Group struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	CreatedBy   string `json:"createdBy"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+	MyRole      string `json:"myRole,omitempty"`
+	MemberCount int    `json:"memberCount,omitempty"`
+}
+
+// GroupMember is a stored membership row, including the owner-controlled
+// sharing toggles that gate which signals appear in the group summary.
+type GroupMember struct {
+	GroupID        string `json:"groupId"`
+	UserID         string `json:"userId"`
+	Role           string `json:"role"`
+	ShareClock     bool   `json:"shareClock"`
+	ShareStreak    bool   `json:"shareStreak"`
+	ShareAdherence bool   `json:"shareAdherence"`
+	JoinedAt       string `json:"joinedAt"`
+}
+
+// GroupInvite is a single-use join code for a group.
+type GroupInvite struct {
+	Code      string `json:"code"`
+	GroupID   string `json:"groupId"`
+	CreatedBy string `json:"createdBy"`
+	ExpiresAt string `json:"expiresAt"`
+	UsedBy    string `json:"usedBy,omitempty"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// SharedFlags mirrors a member's sharing toggles for the summary response.
+type SharedFlags struct {
+	Clock     bool `json:"clock"`
+	Streak    bool `json:"streak"`
+	Adherence bool `json:"adherence"`
+}
+
+// PresenceFlags reports whether a member logged anything today. It is only
+// included when the member shares their clock.
+type PresenceFlags struct {
+	LoggedFood    bool `json:"loggedFood"`
+	LoggedWeight  bool `json:"loggedWeight"`
+	LoggedWorkout bool `json:"loggedWorkout"`
+}
+
+// MemberCard is the lean, privacy-safe shape returned by a group summary.
+// User IDs and emails are deliberately absent; display names come from the
+// profile and fall back to a generic label. Pointer fields are nil (and are
+// omitted from JSON) when the member has not shared the corresponding signal.
+type MemberCard struct {
+	Name         string         `json:"name"`
+	Role         string         `json:"role"`
+	Shared       *SharedFlags   `json:"shared,omitempty"`
+	Presence     *PresenceFlags `json:"presence,omitempty"`
+	Streak       *int           `json:"streak,omitempty"`
+	AdherencePct *float64       `json:"adherencePct,omitempty"`
+}
+
+// GroupSummary is the response for GET /v1/groups/{id}/summary.
+type GroupSummary struct {
+	GroupID   string       `json:"groupId"`
+	GroupName string       `json:"groupName"`
+	MyRole    string       `json:"myRole"`
+	Members   []MemberCard `json:"members"`
 }
 
 // BodyMeasurement is a set of body circumference measurements on a given date.
