@@ -194,6 +194,7 @@ export const guideSections = [
       'Prioritize carbs (for runners): if you run 24 km per week or more, protein is set a little lower (1.6 g/kg, or 1.8 g/kg in a deficit) and carbs get a floor of 5 g/kg.',
       'Eat-back exercise: when enabled, calories burned in workouts are added back to that day’s target, so a hard session doesn’t quietly eat into your deficit.',
       'Saved meals and templates remember the description too — applying one stacks its description into the notes field with newlines, so nothing you typed is lost.',
+      'Share meal templates with your group so everyone can apply them.',
       {
         tip: 'The priority order is protein first, then fat to its floor, then carbs fill the rest. That’s exactly how the app handles low calories.'
       }
@@ -203,6 +204,26 @@ export const guideSections = [
       'Fat floor: 30 g + 0.5 g per cm of height above 150 cm. Fiber: 14 g per 1,000 kcal, floored at 36 g for men and 28 g for women. Water: 35 ml/kg.',
       'After protein calories are subtracted, keto caps carbs at 30 g and low_carb at 100 g; fat takes the remaining energy but never drops below the fat floor (the floor wins and carbs are trimmed). Balanced gives fat 40% of the post-protein remainder; high_carb gives it 25%. Carbs are whatever energy is left.',
       'Goal multipliers: cut 10/20/30% → 0.90/0.80/0.70; maintenance → 1.0; bulk 10/20% → 1.10/1.20. Katch-McArdle replaces Mifflin-St Jeor for BMR when a body-fat percentage is known: 370 + 21.6 × lean mass (kg).'
+    ]
+  },
+  {
+    id: 'groups-sharing',
+    title: 'Groups & sharing',
+    icon: '👥',
+    body: [
+      'A group is a small circle — family, a training crew, a few friends — who want to see each other keep going without turning it into a leaderboard.',
+      'Invites are single-use and expire after 7 days. Generate a code from the group page and send it directly to the person you want to join.',
+      'Member cards show only what each person has chosen to share: today’s logging presence, logging streaks, and 7-day adherence. Each member sets their own “My sharing” toggles, per group, and nothing is on by default.',
+      'Meal templates can be shared with a group, so everyone can apply the same meals.',
+      {
+        tip: 'Body data — weight, body fat, measurements — is never shareable, by design. A group only ever sees the signals each member explicitly turns on.'
+      }
+    ],
+    underTheHood: [
+      'Invite codes are single-use, 10 characters, and expire 7 days after creation. Joining needs a valid unused code and is rate limited server-side.',
+      'The group summary is built per viewer: a member’s clock, streak, and adherence appear only when that member has the matching sharing toggle on. Unshared signals are omitted from the response, not hidden in the client.',
+      'Shared templates are visible to every group member and carry a “shared by” badge for the owner. The template owner, or the group owner, can unshare them at any time.',
+      'There is no body-data field in the group API. Weight, body fat, measurements, and detailed nutrition are never sent to group members.'
     ]
   },
   {

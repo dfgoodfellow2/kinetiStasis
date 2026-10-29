@@ -365,7 +365,14 @@
         <p class="text-sm text-gray-400">This group could not be loaded.</p>
       </Card>
     {:else}
-      <Card title="Members">
+      <Card>
+        <div class="flex items-center gap-1 mb-3">
+          <h2 class="text-lg font-bold text-emerald-400">Members</h2>
+          <InfoTip
+            label="member cards"
+            text="Cards show only what each member chose to share — presence, streaks, adherence. Never body data."
+          />
+        </div>
         <div class="space-y-2">
           {#each summary.members || [] as m, i (i)}
             <div class="rounded-lg border border-gray-700 bg-gray-900/40 p-3">
@@ -458,7 +465,13 @@
         <Card title="Owner tools">
           <div class="space-y-5">
             <div>
-              <h3 class="text-sm font-semibold text-gray-200 mb-2">Invite someone</h3>
+              <div class="flex items-center gap-1 mb-2">
+                <h3 class="text-sm font-semibold text-gray-200">Invite someone</h3>
+                <InfoTip
+                  label="invites"
+                  text="Only the group owner can generate invites. Share a code directly with someone you trust — anyone with a valid code can join."
+                />
+              </div>
               <div class="flex flex-wrap items-center gap-3">
                 <button class="btn-primary" type="button" onclick={generateInvite} disabled={inviteBusy}>
                   {inviteBusy ? 'Generating…' : 'Generate invite code'}

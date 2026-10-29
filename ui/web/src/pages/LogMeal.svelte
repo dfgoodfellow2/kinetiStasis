@@ -41,6 +41,15 @@
   let templatesLoading = $state(false)
   let openTemplates = $state([])
 
+  // Group-sharing state for owned templates. Shared (non-owned) templates
+  // arrive with a sharedBy name and are badge-only; owned ones expose
+  // share/unshare controls backed by these groups.
+  let myGroups = $state([])
+  let groupsLoaded = $state(false)
+  let sharePickerFor = $state(null)
+  let sharingId = $state(null)
+  let showGroupsHint = $derived(groupsLoaded && myGroups.length === 0 && templates.length > 0)
+
   let recentSaved = $derived(
     [...savedMeals]
       .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
@@ -89,6 +98,64 @@
       error = e.message
     } finally {
       templatesLoading = false
+    }
+  }
+
+  async function loadGroups() {
+    try {
+      const list = await api.listGroups()
+      myGroups = Array.isArray(list) ? list : []
+    } catch {
+      // Template sharing is optional; a failed group read falls back to the
+      // private-template experience instead of blocking the log form.
+      myGroups = []
+    } finally {
+      groupsLoaded = true
+    }
+  }
+
+  function templateGroupName(t) {
+    return myGroups.find((g) => g.id === t.groupId)?.name || 'your group'
+  }
+
+  // One group → share straight away. Two or more → open the inline picker so
+  // the destination is explicit without a blocking window.prompt.
+  function startShare(t) {
+    if (myGroups.length === 1) {
+      shareTemplateToGroup(t, myGroups[0])
+      return
+    }
+    sharePickerFor = sharePickerFor === t.id ? null : t.id
+  }
+
+  async function shareTemplateToGroup(t, g) {
+    error = ''
+    success = ''
+    sharingId = t.id
+    try {
+      await api.shareTemplate(t.id, g.id)
+      await loadTemplates()
+      success = `Shared "${t.name}" with ${g.name}`
+    } catch (e) {
+      error = e.message
+    } finally {
+      sharingId = null
+      sharePickerFor = null
+    }
+  }
+
+  async function unshareOwnedTemplate(t) {
+    error = ''
+    success = ''
+    sharingId = t.id
+    try {
+      await api.unshareTemplate(t.id)
+      await loadTemplates()
+      success = `"${t.name}" is private again`
+    } catch (e) {
+      error = e.message
+    } finally {
+      sharingId = null
     }
   }
 
@@ -170,6 +237,7 @@
   onMount(() => {
     loadSaved()
     loadTemplates()
+    loadGroups()
     // Restore an unsaved manual draft before editData (edit wins).
     const draft = loadDraft(DRAFT_KEY)
     if (hasDraftContent(draft)) {
@@ -582,15 +650,60 @@
         <div class="space-y-2">
           {#each templates as t (t.id)}
             <div class="border border-gray-700 rounded-lg overflow-hidden">
-              <button
-                class="w-full flex items-center justify-between px-3 py-2 bg-gray-700/40 hover:bg-gray-700 text-left"
-                onclick={() => toggleTemplate(t.id)}
-              >
-                <span class="text-sm font-medium">{t.name}</span>
-                <span class="text-xs text-gray-400">
-                  {t.meals?.length ?? 0} meals {openTemplates.includes(t.id) ? '▾' : '▸'}
-                </span>
-              </button>
+              <div class="flex items-center gap-1 bg-gray-700/40 hover:bg-gray-700">
+                <button
+                  class="flex-1 min-w-0 flex items-center justify-between px-3 py-2 text-left"
+                  onclick={() => toggleTemplate(t.id)}
+                >
+                  <span class="text-sm font-medium truncate">{t.name}</span>
+                  <span class="text-xs text-gray-400 shrink-0">
+                    {t.meals?.length ?? 0} meals {openTemplates.includes(t.id) ? '▾' : '▸'}
+                  </span>
+                </button>
+                <div class="flex items-center gap-1 pr-2 shrink-0">
+                  {#if t.sharedBy}
+                    <span class="inline-flex items-center rounded-full border border-gray-600 bg-gray-700 px-2 py-0.5 text-[11px] font-medium text-gray-300">
+                      shared by {t.sharedBy}
+                    </span>
+                  {:else if t.groupId}
+                    <span class="hidden sm:inline text-[11px] text-emerald-300" title="Shared with {templateGroupName(t)}">shared</span>
+                    <button
+                      class="text-xs text-gray-400 hover:text-red-400 px-1.5 py-1"
+                      title="Stop sharing {t.name}"
+                      onclick={() => unshareOwnedTemplate(t)}
+                      disabled={sharingId === t.id}
+                    >
+                      Unshare
+                    </button>
+                  {:else if groupsLoaded && myGroups.length > 0}
+                    <button
+                      class="text-xs text-cyan-400 hover:text-cyan-300 px-1.5 py-1"
+                      title="Share {t.name} with a group"
+                      onclick={() => startShare(t)}
+                      disabled={sharingId === t.id}
+                    >
+                      Share
+                    </button>
+                  {/if}
+                </div>
+              </div>
+              {#if sharePickerFor === t.id && !t.sharedBy && !t.groupId}
+                <div class="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-700 bg-gray-900/40 text-xs">
+                  <span class="text-gray-400">Share with</span>
+                  {#each myGroups as g (g.id)}
+                    <button
+                      class="rounded-full border border-gray-600 bg-gray-700 px-2.5 py-1 hover:border-emerald-600 hover:text-emerald-300"
+                      onclick={() => shareTemplateToGroup(t, g)}
+                      disabled={sharingId === t.id}
+                    >
+                      {g.name}
+                    </button>
+                  {/each}
+                  <button class="ml-auto text-gray-500 hover:text-gray-300" onclick={() => (sharePickerFor = null)}>
+                    Cancel
+                  </button>
+                </div>
+              {/if}
               {#if openTemplates.includes(t.id)}
                 <div class="p-2 flex flex-col gap-1">
                   {#if !t.meals || t.meals.length === 0}
@@ -611,6 +724,9 @@
             </div>
           {/each}
         </div>
+        {#if showGroupsHint}
+          <p class="text-xs text-gray-500 mt-2">Create a group to share meal templates</p>
+        {/if}
       {/if}
     </Card>
   {:else}
