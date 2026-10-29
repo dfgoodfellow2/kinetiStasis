@@ -229,8 +229,8 @@ let checklist = $derived(data ? [
 {:else}
   <div class="max-w-screen-xl mx-auto space-y-4">
 
-    <!-- Row 1: Vitals + Checklist + (Targets/Readiness stacked) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Row 1: Vitals + Checklist + Targets (each card keeps natural height) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
       <!-- Vitals Card (same as before) -->
       <Card title="Vitals">
         <div class="flex flex-col items-center gap-3">
@@ -298,8 +298,8 @@ let checklist = $derived(data ? [
         </ul>
       </Card>
 
-      <!-- Targets + Readiness stacked vertically -->
-      <div class="space-y-4">
+      <!-- Targets -->
+      <div>
         <Card title="Targets">
           <div class="space-y-3 text-sm">
             <!-- Calories -->
@@ -361,7 +361,60 @@ let checklist = $derived(data ? [
             </div>
           </div>
         </Card>
+      </div>
+    </div>
 
+    <!-- Row 2: Weight Trend + Weekly Stats + Readiness -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+      <Card title="Weight Trend (30 days)">
+        <div class="flex flex-col items-center text-center mb-2">
+          <div class="flex items-center justify-center gap-1.5">
+            {#if trendReady}
+              <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
+              <div class="text-3xl font-bold text-gray-100">
+                {dispWeight(trendKg, store.units)}
+                <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
+              </div>
+            {:else if weightPoints.length}
+              <div class="text-lg font-semibold text-gray-300">
+                Trend forming
+                <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
+              </div>
+            {/if}
+            <InfoTip label="trend weight" text="The smoothed weight the engine trusts — raw scale weight bounces with food, water, and salt." />
+          </div>
+          {#if trendReady}
+            <div class="text-sm font-semibold {rateColor(rateKgWk)}">
+              {signedWeight(rateKgWk)} {weightUnit(store.units)}/wk
+            </div>
+          {/if}
+          <div class="text-xs text-gray-400 mt-1">
+            Raw weight:
+            <span class="font-semibold text-gray-200">
+              {latestRawKg > 0 ? dispWeight(latestRawKg, store.units) : '—'} {weightUnit(store.units)}
+            </span>
+          </div>
+        </div>
+        <WeightSparkline points={data.weightTrend ?? []} units={store.units} />
+      </Card>
+
+      <Card title="Weekly Stats">
+        <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgCalories ?? 0)}</span></div>
+        <div class="text-sm text-gray-300 mt-1">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
+        <div class="text-sm text-gray-300 mt-1">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
+        <div class="text-sm text-gray-300 mt-1">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
+        {#if energyBalanceReady}
+          <div class="text-sm text-gray-300 mt-1">
+            vs Target: <span class="font-semibold text-gray-100">{fmt0(targetCal)} kcal</span>
+            <span class="text-gray-500">→</span>
+            <span class="font-semibold {deltaColor(calDelta)}">{signedKcal(calDelta)} kcal/day</span>
+          </div>
+          <div class="text-sm text-gray-300 mt-1">
+            Expected from balance: <span class="font-semibold {deltaColor(calDelta)}">≈ {signedKgPerWeek(expectedKgPerWeek(calDelta))} kg/wk</span>
+          </div>
+        {/if}
+      </Card>
+      <div class="md:col-span-2 lg:col-span-1">
         <Card>
           <div class="flex items-center gap-1.5 mb-3">
             <h2 class="text-lg font-bold text-emerald-400">Readiness</h2>
@@ -412,58 +465,6 @@ let checklist = $derived(data ? [
           </div>
         </Card>
       </div>
-    </div>
-
-    <!-- Row 2: Weight Trend + Weekly Stats -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Card title="Weight Trend (30 days)">
-        <div class="flex flex-col items-center text-center mb-2">
-          <div class="flex items-center justify-center gap-1.5">
-            {#if trendReady}
-              <!-- Primary: server EMA trend level. Raw scale reading is secondary. -->
-              <div class="text-3xl font-bold text-gray-100">
-                {dispWeight(trendKg, store.units)}
-                <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
-              </div>
-            {:else if weightPoints.length}
-              <div class="text-lg font-semibold text-gray-300">
-                Trend forming
-                <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
-              </div>
-            {/if}
-            <InfoTip label="trend weight" text="The smoothed weight the engine trusts — raw scale weight bounces with food, water, and salt." />
-          </div>
-          {#if trendReady}
-            <div class="text-sm font-semibold {rateColor(rateKgWk)}">
-              {signedWeight(rateKgWk)} {weightUnit(store.units)}/wk
-            </div>
-          {/if}
-          <div class="text-xs text-gray-400 mt-1">
-            Raw weight:
-            <span class="font-semibold text-gray-200">
-              {latestRawKg > 0 ? dispWeight(latestRawKg, store.units) : '—'} {weightUnit(store.units)}
-            </span>
-          </div>
-        </div>
-        <WeightSparkline points={data.weightTrend ?? []} units={store.units} />
-      </Card>
-
-      <Card title="Weekly Stats">
-        <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgCalories ?? 0)}</span></div>
-        <div class="text-sm text-gray-300 mt-1">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
-        <div class="text-sm text-gray-300 mt-1">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
-        <div class="text-sm text-gray-300 mt-1">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
-        {#if energyBalanceReady}
-          <div class="text-sm text-gray-300 mt-1">
-            vs Target: <span class="font-semibold text-gray-100">{fmt0(targetCal)} kcal</span>
-            <span class="text-gray-500">→</span>
-            <span class="font-semibold {deltaColor(calDelta)}">{signedKcal(calDelta)} kcal/day</span>
-          </div>
-          <div class="text-sm text-gray-300 mt-1">
-            Expected from balance: <span class="font-semibold {deltaColor(calDelta)}">≈ {signedKgPerWeek(expectedKgPerWeek(calDelta))} kg/wk</span>
-          </div>
-        {/if}
-      </Card>
     </div>
 
   </div>
