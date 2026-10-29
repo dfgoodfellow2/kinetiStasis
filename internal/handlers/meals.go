@@ -84,6 +84,9 @@ func (h *MealsHandler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.UserID = claims.UserID
+	// Templates are always born private; group sharing goes exclusively through
+	// the owner-only share endpoint so a client-supplied groupId is ignored.
+	in.GroupID = ""
 	now := time.Now().UTC().Format(time.RFC3339)
 	if in.ID == "" {
 		in.ID = uuid.New().String()
@@ -109,15 +112,23 @@ func (h *MealsHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	found := false
-	for _, t := range templates {
-		if t.ID == id {
-			found = true
+	// find the template (own or shared to one of the caller's groups) so the
+	// response distinguishes "missing" from "not yours".
+	found := (*models.MealTemplate)(nil)
+	for i := range templates {
+		if templates[i].ID == id {
+			found = &templates[i]
 			break
 		}
 	}
-	if !found {
+	if found == nil {
 		respond.Error(w, http.StatusNotFound, "template not found")
+		return
+	}
+	// Group owners may unshare a template but never delete it; only the owner
+	// may delete.
+	if found.UserID != claims.UserID {
+		respond.Error(w, http.StatusForbidden, "only the template owner can delete a template")
 		return
 	}
 	if err := h.s.DeleteMealTemplate(r.Context(), claims.UserID, id); err != nil {
