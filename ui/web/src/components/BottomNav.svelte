@@ -17,6 +17,18 @@
       <div class="text-xs">Dashboard</div>
     </button>
 
+    <!-- Groups -->
+    <button
+      class={`flex-1 flex flex-col items-center justify-center min-h-[44px] min-w-[44px] ${store.currentPage === 'groups' ? 'text-emerald-400 border-t-2 border-emerald-400' : 'text-gray-400'}`}
+      onclick={() => setCurrentPage('groups')}
+      aria-label="Groups"
+      aria-current={store.currentPage === 'groups' ? 'page' : undefined}
+      type="button"
+    >
+      <span class="text-base" aria-hidden="true">👥</span>
+      <div class="text-xs">Groups</div>
+    </button>
+
     <!-- Log Meal -->
     <button
       class={`flex-1 flex flex-col items-center justify-center min-h-[44px] min-w-[44px] ${store.currentPage === 'logmeal' ? 'text-emerald-400 border-t-2 border-emerald-400' : 'text-gray-400'}`}
@@ -77,16 +89,5 @@
       <div class="text-xs">Profile</div>
     </button>
 
-    <!-- Guide -->
-    <button
-      class={`flex-1 flex flex-col items-center justify-center min-h-[44px] min-w-[44px] ${store.currentPage === 'guide' ? 'text-emerald-400 border-t-2 border-emerald-400' : 'text-gray-400'}`}
-      onclick={() => setCurrentPage('guide')}
-      aria-label="Guide"
-      aria-current={store.currentPage === 'guide' ? 'page' : undefined}
-      type="button"
-    >
-      <span class="text-base" aria-hidden="true">📖</span>
-      <div class="text-xs">Guide</div>
-    </button>
   </div>
 </nav>

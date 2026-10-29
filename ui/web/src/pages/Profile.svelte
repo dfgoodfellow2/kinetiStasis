@@ -302,6 +302,14 @@
     </div>
   </div>
 
+  <!-- Guide link -->
+  <div class="flex items-center justify-between pt-2 border-t border-gray-700">
+    <span class="text-xs text-gray-500">New here, or need a refresher?</span>
+    <button class="text-xs text-emerald-400 underline" onclick={() => setCurrentPage('guide')} type="button">
+      📖 Guide
+    </button>
+  </div>
+
   <!-- Action row -->
   <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-700">
     <button class="btn-primary" onclick={submitProfile} disabled={profileLoading}>

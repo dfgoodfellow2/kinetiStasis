@@ -21,6 +21,7 @@
     <!-- Desktop nav -->
     <div class="hidden md:flex items-center space-x-1">
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'dashboard' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('dashboard')} type="button">Dashboard</button>
+      <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'groups' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('groups')} type="button">Groups</button>
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'logmeal' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('logmeal')} type="button">Log Meal</button>
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'checkin' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('checkin')} type="button">Check-In</button>
       <button class={`px-3 py-2 text-sm rounded-lg ${store.currentPage === 'workoutlog' ? 'text-emerald-400 bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`} onclick={() => setCurrentPage('workoutlog')} type="button">Workout</button>

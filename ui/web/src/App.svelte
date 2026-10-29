@@ -14,6 +14,7 @@
   import Export from './pages/Export.svelte'
   import Targets from './pages/Targets.svelte'
   import Guide from './pages/Guide.svelte'
+  import Groups from './pages/Groups.svelte'
   import Nav from './components/Nav.svelte'
   import BottomNav from './components/BottomNav.svelte'
 
@@ -71,6 +72,8 @@
   <main class="max-w-screen-xl mx-auto px-4 py-6 md:pb-6" style="padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));">
     {#if store.currentPage === 'dashboard'}
       <Dashboard />
+    {:else if store.currentPage === 'groups'}
+      <Groups />
     {:else if store.currentPage === 'logmeal'}
       <LogMeal />
     {:else if store.currentPage === 'checkin'}

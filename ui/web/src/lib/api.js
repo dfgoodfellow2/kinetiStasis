@@ -46,6 +46,55 @@ const BASE = '/v1'
  * @property {number} fiberG
  * @property {number} waterMl
  * @property {boolean} eatBackExercise
+ *
+ * @typedef {Object} Group
+ * @property {string} id
+ * @property {string} name
+ * @property {string} createdBy
+ * @property {string} createdAt
+ * @property {string} updatedAt
+ * @property {'owner'|'member'} [myRole]      Present on list/create/join responses
+ * @property {number} [memberCount]           Present on list/create/join responses
+ *
+ * @typedef {Object} SharedFlags
+ * @property {boolean} clock                  Share today's logging clock
+ * @property {boolean} streak                 Share the logging streak
+ * @property {boolean} adherence              Share 7-day adherence
+ *
+ * @typedef {Object} SharingUpdate
+ * @property {boolean} [shareClock]           PATCH /groups/{id}/my-sharing
+ * @property {boolean} [shareStreak]          Omit keys to leave them unchanged
+ * @property {boolean} [shareAdherence]
+ *
+ * @typedef {Object} PresenceFlags
+ * @property {boolean} loggedFood
+ * @property {boolean} loggedWeight
+ * @property {boolean} loggedWorkout
+ *
+ * @typedef {Object} MemberCard
+ * @property {string} name
+ * @property {'owner'|'member'} role
+ * @property {SharedFlags} [shared]           Omitted when nothing is shared
+ * @property {PresenceFlags} [presence]       Only when the clock is shared
+ * @property {number} [streak]                Only when the streak is shared
+ * @property {number} [adherencePct]          Only when adherence is shared
+ *
+ * @typedef {Object} GroupSummary
+ * @property {string} groupId
+ * @property {string} groupName
+ * @property {'owner'|'member'} myRole
+ * @property {Array<MemberCard>} members
+ * @property {SharedFlags} [mySharing]        The caller's own toggles
+ *
+ * @typedef {Object} GroupMemberInfo
+ * @property {string} userId
+ * @property {string} name
+ * @property {'owner'|'member'} role
+ * @property {string} [joinedAt]
+ *
+ * @typedef {Object} GroupInvite
+ * @property {string} code                    Single-use, 10 chars, no 0/O/1/I
+ * @property {string} expiresAt               RFC3339, 7 days out
  */
 
 async function req(method, path, body, extraHeaders = {}) {
@@ -145,6 +194,31 @@ export const api = {
   postSaved: (m) => req('POST', '/meals/saved', m),
   deleteSaved: (id) => req('DELETE', `/meals/saved/${id}`),
   listTemplates: () => req('GET', '/meals/templates'),
+  // Template sharing — owner-only share, owner or group owner may unshare.
+  // POST body { groupId }; both return { status }.
+  shareTemplate: (id, groupId) => req('POST', `/meals/templates/${id}/share`, { groupId }),
+  unshareTemplate: (id) => req('DELETE', `/meals/templates/${id}/share`),
+
+  // Groups
+  // createGroup/listGroups/joinGroup return Group / Group[] shapes.
+  createGroup: (name) => req('POST', '/groups', { name }),
+  listGroups: () => req('GET', '/groups'),
+  // Owner-only. Returns GroupInvite { code, expiresAt }.
+  createGroupInvite: (groupId) => req('POST', '/groups/invites', { groupId }),
+  // Strict rate limited server-side; errors surface as Error messages:
+  // "invalid invite code", "invite code has expired", "already a member…".
+  joinGroup: (code) => req('POST', '/groups/join', { code }),
+  // Returns GroupSummary. Signals are omitted server-side per member toggles.
+  getGroupSummary: (groupId) => req('GET', `/groups/${groupId}/summary`),
+  // Owner-only roster (includes userId for the remove endpoint).
+  getGroupMembers: (groupId) => req('GET', `/groups/${groupId}/members`),
+  // Partial update — omit keys to leave them unchanged. `flags` is a
+  // SharingUpdate ({ shareClock?, shareStreak?, shareAdherence? }). Returns
+  // { status: "updated" }.
+  updateMySharing: (groupId, flags) => req('PATCH', `/groups/${groupId}/my-sharing`, flags),
+  removeGroupMember: (groupId, userId) => req('DELETE', `/groups/${groupId}/members/${userId}`),
+  leaveGroup: (groupId) => req('POST', `/groups/${groupId}/leave`),
+  deleteGroup: (groupId) => req('DELETE', `/groups/${groupId}`),
 
   // Measurements
   listMeasurements: (from, to) => req('GET', `/measurements?from=${from}&to=${to}`),
