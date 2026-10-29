@@ -256,16 +256,19 @@ type CheckinPreview struct {
 
 // SavedMeal is a named, reusable meal with its macro breakdown.
 type SavedMeal struct {
-	ID        string  `json:"id"`
-	UserID    string  `json:"userId"`
-	Name      string  `json:"name"`
-	Calories  float64 `json:"calories"`
-	ProteinG  float64 `json:"proteinG"`
-	CarbsG    float64 `json:"carbsG"`
-	FatG      float64 `json:"fatG"`
-	FiberG    float64 `json:"fiberG"`
-	CreatedAt string  `json:"createdAt"`
-	UpdatedAt string  `json:"updatedAt"`
+	ID       string  `json:"id"`
+	UserID   string  `json:"userId"`
+	Name     string  `json:"name"`
+	Calories float64 `json:"calories"`
+	ProteinG float64 `json:"proteinG"`
+	CarbsG   float64 `json:"carbsG"`
+	FatG     float64 `json:"fatG"`
+	FiberG   float64 `json:"fiberG"`
+	// Notes is the meal description captured when the meal was saved. Applying
+	// a saved meal restores it alongside the macros.
+	Notes     string `json:"notes"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // MealTemplate is a named collection of meal items.

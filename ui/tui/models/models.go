@@ -250,6 +250,7 @@ type SavedMeal struct {
 	CarbsG    float64 `json:"carbsG"`
 	FatG      float64 `json:"fatG"`
 	FiberG    float64 `json:"fiberG"`
+	Notes     string  `json:"notes"`
 	CreatedAt string  `json:"createdAt"`
 	UpdatedAt string  `json:"updatedAt"`
 }

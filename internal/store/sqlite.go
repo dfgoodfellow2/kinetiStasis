@@ -649,7 +649,7 @@ func (s *SQLiteStore) FetchTargetHistory(ctx context.Context, userID string) ([]
 
 // --- Meals ---
 func (s *SQLiteStore) FetchSavedMeals(ctx context.Context, userID string) ([]models.SavedMeal, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,created_at,updated_at FROM saved_meals WHERE user_id = ? ORDER BY name ASC`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,notes,created_at,updated_at FROM saved_meals WHERE user_id = ? ORDER BY name ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch saved meals: %w", err)
 	}
@@ -657,7 +657,7 @@ func (s *SQLiteStore) FetchSavedMeals(ctx context.Context, userID string) ([]mod
 	var out []models.SavedMeal
 	for rows.Next() {
 		var m models.SavedMeal
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Name, &m.Calories, &m.ProteinG, &m.CarbsG, &m.FatG, &m.FiberG, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Name, &m.Calories, &m.ProteinG, &m.CarbsG, &m.FatG, &m.FiberG, &m.Notes, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan saved meal row: %w", err)
 		}
 		out = append(out, m)
@@ -666,7 +666,7 @@ func (s *SQLiteStore) FetchSavedMeals(ctx context.Context, userID string) ([]mod
 }
 
 func (s *SQLiteStore) CreateSavedMeal(ctx context.Context, m *models.SavedMeal) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO saved_meals (id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`, m.ID, m.UserID, m.Name, m.Calories, m.ProteinG, m.CarbsG, m.FatG, m.FiberG, m.CreatedAt, m.UpdatedAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO saved_meals (id,user_id,name,calories,protein_g,carbs_g,fat_g,fiber_g,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, m.ID, m.UserID, m.Name, m.Calories, m.ProteinG, m.CarbsG, m.FatG, m.FiberG, m.Notes, m.CreatedAt, m.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create saved meal: %w", err)
 	}

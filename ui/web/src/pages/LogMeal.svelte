@@ -92,6 +92,17 @@
     }
   }
 
+  // Append a saved meal's description to the form notes. Descriptions stack
+  // with newlines so a template/quick-add never clobbers what the user typed,
+  // and an already-present description is not duplicated.
+  function appendNote(existing, note) {
+    const next = (note ?? '').trim()
+    const current = existing ?? ''
+    if (!next) return current
+    if (current.includes(next)) return current
+    return current ? current + '\n' + next : next
+  }
+
   // Fill the manual form from a saved meal / template entry. The date is kept
   // as-is so quick-add applies to whichever day is currently selected.
   function applySavedMeal(m) {
@@ -102,6 +113,7 @@
       carbsG: String(m.carbsG ?? ''),
       fatG: String(m.fatG ?? ''),
       fiberG: String(m.fiberG ?? ''),
+      mealNotes: appendNote(form.mealNotes, m.notes),
     }
     success = `Filled from "${m.name}"`
     error = ''
@@ -125,6 +137,7 @@
         carbsG: Number(form.carbsG) || 0,
         fatG: Number(form.fatG) || 0,
         fiberG: Number(form.fiberG) || 0,
+        notes: form.mealNotes || '',
       })
       savedMeals = [...savedMeals, created]
       saveMealName = ''
