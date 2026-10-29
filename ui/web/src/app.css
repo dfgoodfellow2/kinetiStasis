@@ -1,11 +1,52 @@
 @import "tailwindcss";
 
+/* Force the browser's native UI (select popups, date pickers, number
+   spinners, scrollbars, autofill) into dark mode app-wide. */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  color-scheme: dark;
+}
+
 body {
   @apply bg-gray-900 text-gray-100 min-h-screen;
 }
 
+/* Native controls that are not given the `.input` class still need the
+   dark scheme so they don't fall back to light system colors. */
+input,
+select,
+textarea,
+button {
+  color-scheme: dark;
+}
+
 .input {
   @apply w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-emerald-500;
+  color-scheme: dark;
+}
+
+/* Selects: match the text-input theme exactly, including legible option
+   text and the native dropdown list (Firefox/Chrome/iOS Safari). */
+select,
+select.input {
+  @apply bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-100;
+  color-scheme: dark;
+}
+
+select option {
+  @apply bg-gray-800 text-gray-100;
+}
+
+/* Native checkboxes/radios and the range slider pick up the emerald accent
+   so they match the rest of the theme instead of the OS default. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: #10b981;
 }
 
 .btn-primary {
