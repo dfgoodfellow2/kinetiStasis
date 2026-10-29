@@ -106,6 +106,48 @@
   let trendReady = $derived(trendKg !== 0 && trendDays >= 7)
   let goalLabel = $derived(String(data?.macros?.goalLabel ?? '').toLowerCase())
 
+  // ── Weekly energy balance (client-side estimate) ────────────────────────────
+  let weeklyAvgCal = $derived(Number(data?.weeklyStats?.avgCalories ?? 0))
+  let targetCal = $derived(Number(data?.today?.targets?.calories ?? 0))
+  // Positive = eating above target, negative = below target.
+  let calDelta = $derived(weeklyAvgCal - targetCal)
+  let energyBalanceReady = $derived(weeklyAvgCal > 0 && targetCal > 0)
+  let avgWeightKg = $derived(Number(data?.weeklyStats?.avgWeightKg ?? 0))
+
+  // "vs Target" colour: over-target is amber while cutting, green while bulking.
+  // Unknown/maintenance goals stay neutral so we never imply a wrong direction.
+  function deltaColor(d) {
+    if (!goalLabel || d === 0) return 'text-gray-400'
+    if (goalLabel.includes('cut')) return d > 0 ? 'text-amber-400' : 'text-emerald-400'
+    if (goalLabel.includes('bulk')) return d > 0 ? 'text-emerald-400' : 'text-amber-400'
+    return 'text-gray-400'
+  }
+
+  function signedKcal(v) {
+    const sign = v > 0 ? '+' : v < 0 ? '−' : ''
+    return `${sign}${fmt0(Math.abs(v))}`
+  }
+
+  // Rule of thumb: 7700 kcal ≈ 1 kg of body mass, so a daily delta of X kcal
+  // predicts X×7/7700 kg/week of weight change.
+  function expectedKgPerWeek(delta) {
+    return (delta * 7) / 7700
+  }
+
+  function signedKgPerWeek(kg) {
+    const sign = kg > 0 ? '+' : kg < 0 ? '−' : ''
+    return `${sign}${Math.abs(kg).toFixed(1)}`
+  }
+
+  // Readiness has no sample-count field; ComputeReadiness returns all-zero
+  // SD/EMA (and "Learning...") until both grip and BOLT have ≥2 readings.
+  let readinessEmpty = $derived(
+    (data?.readiness?.gripSD ?? 0) === 0 &&
+    (data?.readiness?.gripEMA ?? 0) === 0 &&
+    (data?.readiness?.boltSD ?? 0) === 0 &&
+    (data?.readiness?.boltEMA ?? 0) === 0
+  )
+
   // Colour the rate by whether it moves toward the user's goal. Falls back to
   // neutral gray when the goal is unknown or maintenance.
   function rateColor(kg) {
@@ -207,7 +249,7 @@ let checklist = $derived(data ? [
             />
           </StreakRing>
           <!-- Macro summary below ring -->
-          <div class="w-full grid grid-cols-4 gap-2 text-center text-sm mt-1">
+          <div class="w-full grid grid-cols-5 gap-2 text-center text-sm mt-1">
               <div>
                 <div class="text-emerald-400 font-semibold">{fmt0(data.today?.consumed?.proteinG ?? 0)}g</div>
                 <div class="text-gray-500 text-xs">Protein</div>
@@ -219,6 +261,14 @@ let checklist = $derived(data ? [
               <div>
                 <div class="text-yellow-400 font-semibold">{fmt0(data.today?.consumed?.fatG ?? 0)}g</div>
                 <div class="text-gray-500 text-xs">Fat</div>
+              </div>
+              <div>
+                <!-- Fiber: amber-600 stays brown-warm and holds ~4.6:1 contrast on bg-gray-800.
+                     Legacy targets may have fiberG 0/unset — then show consumed only. -->
+                <div class="text-amber-600 font-semibold">
+                  {fmt0(data.today?.consumed?.fiberG ?? 0)}g{#if (data.today?.targets?.fiberG ?? 0) > 0}<span class="text-gray-500 text-xs">/{fmt0(data.today.targets.fiberG)}g</span>{/if}
+                </div>
+                <div class="text-gray-500 text-xs">Fiber</div>
               </div>
             <div>
               <div class="font-semibold flex items-center gap-1 {loggingStreak >= 30 ? 'text-amber-400' : 'text-cyan-400'}">
@@ -328,28 +378,34 @@ let checklist = $derived(data ? [
               <div class="flex items-center justify-center gap-3">
                 <div class="flex flex-col items-center">
                   <span class="inline-block w-6 h-6 rounded-full {bulbColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]"></span>
-                  <span class="text-xs text-gray-400 mt-1">Rz: {(data.readiness?.rz ?? 0).toFixed(2)}</span>
+                  <span class="text-xs text-gray-400 mt-1">Rz: {readinessEmpty ? '—' : (data.readiness?.rz ?? 0).toFixed(2)}</span>
                 </div>
                 <span class="text-2xl font-bold {arrowColor}">{arrowIcon}</span>
               </div>
-              <div class="text-xs text-gray-400">Trend: <span class="font-semibold">{velocity}</span></div>
+              <div class="text-xs text-gray-400">
+                {#if readinessEmpty}
+                  <span class="text-gray-500">No readings yet</span>
+                {:else}
+                  Trend: <span class="font-semibold">{velocity}</span>
+                {/if}
+              </div>
             </div>
             <!-- Right: SD / EMA values -->
             <div class="border-l border-gray-700 pl-3 space-y-2 text-xs">
               <div>
                 <div class="text-gray-500 mb-0.5">Grip</div>
                 <div class="font-tabular-nums text-gray-200">
-                  SD: <span class="font-semibold">{(data.readiness?.gripSD ?? 0).toFixed(2)}</span>
+                  SD: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.gripSD ?? 0).toFixed(2)}</span>
                   <span class="text-gray-600 mx-1">|</span>
-                  EMA: <span class="font-semibold">{(data.readiness?.gripEMA ?? 0).toFixed(2)}</span>
+                  EMA: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.gripEMA ?? 0).toFixed(2)}</span>
                 </div>
               </div>
               <div>
                 <div class="text-gray-500 mb-0.5">BOLT</div>
                 <div class="font-tabular-nums text-gray-200">
-                  SD: <span class="font-semibold">{(data.readiness?.boltSD ?? 0).toFixed(2)}</span>
+                  SD: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.boltSD ?? 0).toFixed(2)}</span>
                   <span class="text-gray-600 mx-1">|</span>
-                  EMA: <span class="font-semibold">{(data.readiness?.boltEMA ?? 0).toFixed(2)}</span>
+                  EMA: <span class="font-semibold">{readinessEmpty ? '—' : (data.readiness?.boltEMA ?? 0).toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -369,7 +425,7 @@ let checklist = $derived(data ? [
                 {dispWeight(trendKg, store.units)}
                 <span class="text-sm font-normal text-gray-400">{weightUnit(store.units)}</span>
               </div>
-            {:else}
+            {:else if weightPoints.length}
               <div class="text-lg font-semibold text-gray-300">
                 Trend forming
                 <span class="text-sm font-normal text-gray-500">({trendDays || weightPoints.length} {trendDays === 1 || (!trendDays && weightPoints.length === 1) ? 'day' : 'days'})</span>
@@ -395,8 +451,18 @@ let checklist = $derived(data ? [
       <Card title="Weekly Stats">
         <div class="text-sm text-gray-300">Avg Calories: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgCalories ?? 0)}</span></div>
         <div class="text-sm text-gray-300 mt-1">Avg Protein: <span class="font-semibold text-gray-100">{fmt0(data.weeklyStats?.avgProteinG ?? 0)}g</span></div>
-        <div class="text-sm text-gray-300 mt-1">Avg Weight: <span class="font-semibold text-gray-100">{dispWeight(data.weeklyStats?.avgWeightKg ?? 0, store.units)} {weightUnit(store.units)}</span></div>
+        <div class="text-sm text-gray-300 mt-1">Avg Weight: {#if avgWeightKg > 0}<span class="font-semibold text-gray-100">{dispWeight(avgWeightKg, store.units)} {weightUnit(store.units)}</span>{:else}<span class="font-semibold text-gray-500">—</span>{/if}</div>
         <div class="text-sm text-gray-300 mt-1">Workouts: <span class="font-semibold text-gray-100">{data.weeklyStats?.totalWorkouts ?? 0}</span></div>
+        {#if energyBalanceReady}
+          <div class="text-sm text-gray-300 mt-1">
+            vs Target: <span class="font-semibold text-gray-100">{fmt0(targetCal)} kcal</span>
+            <span class="text-gray-500">→</span>
+            <span class="font-semibold {deltaColor(calDelta)}">{signedKcal(calDelta)} kcal/day</span>
+          </div>
+          <div class="text-sm text-gray-300 mt-1">
+            Expected from balance: <span class="font-semibold {deltaColor(calDelta)}">≈ {signedKgPerWeek(expectedKgPerWeek(calDelta))} kg/wk</span>
+          </div>
+        {/if}
       </Card>
     </div>
 

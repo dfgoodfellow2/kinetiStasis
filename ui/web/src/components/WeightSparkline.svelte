@@ -94,6 +94,12 @@
 </script>
 
 <div class="flex flex-col items-center text-gray-100">
+  {#if !displayPoints.length}
+    <!-- Empty state: never render a "0 lbs" headline or 0/0 min-max labels. -->
+    <div class="text-sm text-gray-400 text-center py-6 max-w-[280px]">
+      No weigh-ins yet — log today's weight to start your trend.
+    </div>
+  {:else}
   <!-- Current weight + raw/trend toggle -->
   <div class="flex items-center justify-between w-full max-w-[280px] gap-2">
     <div class="text-2xl font-bold text-gray-100">
@@ -147,6 +153,7 @@
 
   {#if mode === 'trend'}
     <div class="text-[10px] text-gray-600 mt-0.5">Display-only EMA · headline trend comes from the server</div>
+  {/if}
   {/if}
 </div>
 
