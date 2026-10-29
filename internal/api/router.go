@@ -153,6 +153,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 				r.Post("/groups/join", groupsH.Join)
 			})
 			r.Get("/groups/{id}/summary", groupsH.Summary)
+			r.Get("/groups/{id}/members", groupsH.Members)
 			r.Patch("/groups/{id}/my-sharing", groupsH.UpdateMySharing)
 			r.Delete("/groups/{id}/members/{userId}", groupsH.RemoveMember)
 			r.Post("/groups/{id}/leave", groupsH.Leave)

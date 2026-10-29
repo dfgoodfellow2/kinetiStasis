@@ -232,10 +232,18 @@ func (h *GroupsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cards := make([]models.MemberCard, 0, len(rows))
+	var mySharing *models.SharedFlags
 	for _, row := range rows {
 		name := strings.TrimSpace(row.Name)
 		if name == "" {
 			name = "Member"
+		}
+		if row.UserID == userID {
+			mySharing = &models.SharedFlags{
+				Clock:     row.ShareClock,
+				Streak:    row.ShareStreak,
+				Adherence: row.ShareAdherence,
+			}
 		}
 		card := models.MemberCard{Name: name, Role: row.Role}
 		if row.ShareClock || row.ShareStreak || row.ShareAdherence {
@@ -268,7 +276,40 @@ func (h *GroupsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		GroupName: g.Name,
 		MyRole:    role,
 		Members:   cards,
+		MySharing: mySharing,
 	})
+}
+
+// GET /v1/groups/{id}/members — owner only. Owner tools need stable member
+// IDs to call the remove endpoint; the privacy-safe summary deliberately
+// omits identity, so this roster is served separately and only to the owner.
+func (h *GroupsHandler) Members(w http.ResponseWriter, r *http.Request) {
+	groupID := chi.URLParam(r, "id")
+	userID := groupUserID(r)
+	if !h.requireOwner(w, r, groupID, userID) {
+		return
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	rows, err := h.s.GroupSummarySource(r.Context(), groupID, today)
+	if err != nil {
+		slog.Error("group member roster", "err", err, "group_id", groupID)
+		respond.Error(w, http.StatusInternalServerError, "unable to load members")
+		return
+	}
+	members := make([]models.GroupMemberInfo, 0, len(rows))
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Name)
+		if name == "" {
+			name = "Member"
+		}
+		members = append(members, models.GroupMemberInfo{
+			UserID:   row.UserID,
+			Name:     name,
+			Role:     row.Role,
+			JoinedAt: row.JoinedAt,
+		})
+	}
+	respond.JSON(w, http.StatusOK, members)
 }
 
 // PATCH /v1/groups/{id}/my-sharing

@@ -349,12 +349,25 @@ type MemberCard struct {
 	AdherencePct *float64       `json:"adherencePct,omitempty"`
 }
 
+// GroupMemberInfo is the owner-only member roster entry. Unlike MemberCard it
+// carries UserID so the owner can target the remove endpoint; it is only ever
+// served to the group owner.
+type GroupMemberInfo struct {
+	UserID   string `json:"userId"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	JoinedAt string `json:"joinedAt,omitempty"`
+}
+
 // GroupSummary is the response for GET /v1/groups/{id}/summary.
 type GroupSummary struct {
 	GroupID   string       `json:"groupId"`
 	GroupName string       `json:"groupName"`
 	MyRole    string       `json:"myRole"`
 	Members   []MemberCard `json:"members"`
+	// MySharing is the requesting member's own toggles so the client can seed
+	// its switch controls without a second round-trip.
+	MySharing *SharedFlags `json:"mySharing,omitempty"`
 }
 
 // BodyMeasurement is a set of body circumference measurements on a given date.
