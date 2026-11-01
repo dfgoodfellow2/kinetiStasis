@@ -1,5 +1,5 @@
 
-.PHONY: dev dev-web test build pwa-build run tidy tui clean-all kill-server check-env dev-full smoke-test deploy gen-icons
+.PHONY: dev dev-web test build pwa-build run tidy tui dietctl clean-all kill-server check-env dev-full smoke-test deploy gen-icons
 
 DB_PATH ?= ./data/diet.db
 
@@ -78,6 +78,10 @@ tidy:
 tui:
 	mkdir -p bin
 	go build -o bin/diet-tracker-ui ./cmd/tui/
+
+dietctl:
+	mkdir -p bin
+	go build -o bin/dietctl ./cmd/dietctl/
 
 clean-all: kill-server
 	@echo "Cleaning build artifacts..."
