@@ -1239,6 +1239,15 @@ func (s *SQLiteStore) ConsumeInvite(ctx context.Context, code, userID, now strin
 	return groupID, nil
 }
 
+// hasNutritionContent reports whether a nutrition row represents actual food
+// intake. Water-only rows (waterMl set while every macro and calorie is zero)
+// are hydration logs, not logged food days, so they must not count toward
+// adherence or streaks — the same predicate used for the LoggedFood presence
+// flag on member cards.
+func hasNutritionContent(l models.NutritionLog) bool {
+	return l.Calories > 0 || l.ProteinG > 0 || l.CarbsG > 0 || l.FatG > 0 || l.FiberG > 0
+}
+
 // GroupSummarySource assembles per-member summary data with visibility toggles
 // intact. The handler is responsible for projecting it into privacy-safe cards.
 func (s *SQLiteStore) GroupSummarySource(ctx context.Context, groupID, today string) ([]GroupMemberSummary, error) {
@@ -1285,7 +1294,15 @@ func (s *SQLiteStore) GroupSummarySource(ctx context.Context, groupID, today str
 		if err != nil {
 			return nil, fmt.Errorf("group summary nutrition for %s: %w", m.UserID, err)
 		}
-		loggedDays, streak, _ := metrics.LoggingStreaks(logs, today, 30)
+		// Adherence counts days with actual food intake, mirroring the
+		// LoggedFood predicate: water-only rows are not logged days.
+		foodLogs := make([]models.NutritionLog, 0, len(logs))
+		for _, l := range logs {
+			if hasNutritionContent(l) {
+				foodLogs = append(foodLogs, l)
+			}
+		}
+		loggedDays, streak, _ := metrics.LoggingStreaks(foodLogs, today, 30)
 		m.Streak = streak
 		loggedCount := 0
 		for _, logged := range loggedDays {
@@ -1294,8 +1311,8 @@ func (s *SQLiteStore) GroupSummarySource(ctx context.Context, groupID, today str
 			}
 		}
 		m.AdherencePct = math.Round(float64(loggedCount)/float64(len(loggedDays))*1000) / 10
-		for _, l := range logs {
-			if l.Date == today && (l.Calories > 0 || l.ProteinG > 0 || l.CarbsG > 0 || l.FatG > 0 || l.FiberG > 0) {
+		for _, l := range foodLogs {
+			if l.Date == today {
 				m.LoggedFood = true
 				break
 			}

@@ -142,6 +142,27 @@ func TestGroupsRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected u3 signals: %+v", got)
 	}
 
+	// Water-only rows are hydration, not logged food: a water-only day must not
+	// count toward adherence or extend the logging streak. u3 logged food today
+	// (above) and water only yesterday, so adherence stays 1/30 = 3.3% and the
+	// streak stays 1; the old row-presence logic reported 2/30 = 6.7% and 2.
+	if err := s.CreateNutritionLog(ctx, &models.NutritionLog{
+		ID: "n2", UserID: "u3", Date: "2026-10-19", WaterMl: 2000, UpdatedAt: "now",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = s.GroupSummarySource(ctx, "g1", today)
+	if err != nil {
+		t.Fatalf("summary source after water-only log: %v", err)
+	}
+	byUser = map[string]store.GroupMemberSummary{}
+	for _, row := range rows {
+		byUser[row.UserID] = row
+	}
+	if got := byUser["u3"]; !got.LoggedFood || got.Streak != 1 || got.AdherencePct != 3.3 {
+		t.Fatalf("water-only day leaked into adherence/streak: %+v", got)
+	}
+
 	// Template sharing: owner only; visible to group members with sharedBy.
 	tpl := &models.MealTemplate{ID: "t1", UserID: "u1", Name: "Breakfast", Meals: []models.SavedMeal{}, CreatedAt: "now", UpdatedAt: "now"}
 	if err := s.CreateMealTemplate(ctx, tpl); err != nil {

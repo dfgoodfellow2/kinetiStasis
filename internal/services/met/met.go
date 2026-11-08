@@ -81,26 +81,71 @@ func EstimateMETFromRPE(rpe float64) float64 {
 	}
 }
 
-// CalculateCaloriesBurned computes calories burned from MET values.
-// Formula: calories = MET × weight_kg × duration_hours
-// If no MET provided, returns 0 so caller can use user-reported value.
+// CalculateCaloriesBurned computes calories burned by summing the ACSM
+// per-exercise energy expenditure:
+//
+//	kcal = Σ_i duration_i(min) × MET_i × 3.5 × weightKg / 200
+//
+// A time-unweighted mean MET (the old behaviour) only agrees with this when
+// every exercise occupies an equal share of the session; whenever high-MET and
+// low-MET work are split unevenly it overstates burn.
+//
+// Each exercise's share of the session clock is derived from its recorded set
+// time (the sum of TUTSeconds, which doubles as total duration for timed sets).
+// When any MET-bearing exercise has no recorded set time, weighting by a mix of
+// recorded and missing durations would skew the result, so the session duration
+// is split evenly across MET-bearing exercises instead — the same implicit split
+// the previous mean-MET implementation used. If no exercise declares a MET, the
+// historical 4-MET default is applied to the whole session.
 func CalculateCaloriesBurned(exercises []models.ExerciseEntry, weightKg, durationMin float64) float64 {
 	if len(exercises) == 0 || weightKg <= 0 || durationMin <= 0 {
 		return 0
 	}
-	var totalMET float64
-	var metCount int
-	for _, ex := range exercises {
-		if ex.METValue > 0 {
-			totalMET += ex.METValue
-			metCount++
+
+	durations := make([]float64, len(exercises)) // minutes, per exercise
+	totalRecorded := 0.0
+	metCount := 0
+	for i, ex := range exercises {
+		if ex.METValue <= 0 {
+			continue
+		}
+		metCount++
+		for _, s := range ex.Sets {
+			if s.TUTSeconds > 0 {
+				durations[i] += s.TUTSeconds / 60.0
+			}
+		}
+		totalRecorded += durations[i]
+	}
+
+	if metCount == 0 {
+		// No MET declared: preserve the historical 4-MET default so callers that
+		// rely on auto-calculation still get a plausible estimate.
+		return 4.0 * 3.5 * weightKg / 200.0 * durationMin
+	}
+
+	// Use recorded durations only when every MET-bearing exercise has one.
+	useRecorded := totalRecorded > 0
+	if useRecorded {
+		for i, ex := range exercises {
+			if ex.METValue > 0 && durations[i] <= 0 {
+				useRecorded = false
+				break
+			}
 		}
 	}
-	avgMET := 4.0
-	if metCount > 0 {
-		avgMET = totalMET / float64(metCount)
+
+	var calories float64
+	for i, ex := range exercises {
+		if ex.METValue <= 0 {
+			continue
+		}
+		minutes := durationMin / float64(metCount)
+		if useRecorded {
+			minutes = durationMin * durations[i] / totalRecorded
+		}
+		// ACSM: kcal/min = MET × 3.5 × kg / 200
+		calories += minutes * ex.METValue * 3.5 * weightKg / 200.0
 	}
-	durationHours := durationMin / 60.0
-	calories := avgMET * weightKg * durationHours
 	return calories
 }

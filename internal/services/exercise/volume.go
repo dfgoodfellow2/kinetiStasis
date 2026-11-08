@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
-	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/units"
 )
 
 // MechanicalWorkVolume sums load_lbs × reps × sets across all sets in an entry.
@@ -144,102 +143,6 @@ func SessionDensity(entries []models.ExerciseEntry, totalMinutes float64, weight
 		}
 	}
 	return metMin / totalMinutes
-}
-
-// SummarizeWorkout fills MWV, NDS, SessionDensity, CaloriesBurned and calculates intensity for each exercise
-func SummarizeWorkout(entry models.WorkoutEntry, weightLbs float64, profile models.Profile) models.WorkoutEntry {
-	totalMWV := 0.0
-
-	// Get workout-level intensity data from metadata
-	workoutRPE := entry.Metadata.RPE
-	avgHR := entry.Metadata.AvgHR
-	maxHR := entry.Metadata.MaxHR
-
-	// Calculate intensity for each exercise first
-	for i := range entry.Exercises {
-		ex := &entry.Exercises[i]
-
-		// Use first set's load and reps for 1RM estimation
-		var weight float64
-		var reps int
-		if len(ex.Sets) > 0 {
-			weight = ex.Sets[0].LoadLbs
-			reps = ex.Sets[0].Reps
-		}
-
-		intensity, source := CalculateRelativeIntensity(
-			weight,
-			reps,
-			ex.RPE,     // per-exercise RPE
-			workoutRPE, // workout-level RPE
-			avgHR,
-			maxHR,
-			ex.IntensityRelMax, // existing intensity from AI parser
-		)
-
-		// If still no intensity, use default
-		if intensity <= 0 {
-			intensity = CalculateDefaultIntensity()
-			source = "default"
-		}
-
-		ex.IntensityRelMax = intensity
-		ex.IntensitySource = source
-	}
-
-	// Calculate MWV (skip warmup and cooldown exercises)
-	for _, ex := range entry.Exercises {
-		if ex.Phase == "warmup" || ex.Phase == "cooldown" {
-			continue
-		}
-		for _, s := range ex.Sets {
-			if s.LoadLbs > 0 && s.Reps > 0 {
-				totalMWV += s.LoadLbs * float64(s.Reps)
-			}
-		}
-	}
-
-	nds := NeuralDemandScore(entry.Exercises)
-	sd := SessionDensity(entry.Exercises, entry.DurationMin, weightLbs, profile)
-
-	// Count main exercises for time splitting
-	mainCount := 0
-	for _, ex := range entry.Exercises {
-		if ex.Phase != "warmup" && ex.Phase != "cooldown" {
-			mainCount++
-		}
-	}
-
-	// Estimate calories burned (skip warmup and cooldown)
-	calories := 0.0
-	if entry.DurationMin > 0 && mainCount > 0 {
-		for _, ex := range entry.Exercises {
-			if ex.Phase == "warmup" || ex.Phase == "cooldown" {
-				continue
-			}
-			if ex.METValue <= 0 {
-				continue
-			}
-			minutes := entry.DurationMin / float64(mainCount)
-			calories += METToCalories(ex.METValue, weightLbs, minutes)
-		}
-	}
-
-	entry.MWV = totalMWV
-	entry.NDS = nds
-	entry.SessionDensity = sd
-	entry.CaloriesBurned = calories
-	return entry
-}
-
-// helper: MET -> calories for lbs
-func METToCalories(met, weightLbs, minutes float64) float64 {
-	if met <= 0 || weightLbs <= 0 || minutes <= 0 {
-		return 0
-	}
-	kg := units.LbsToKilograms(weightLbs)
-	kcalPerMin := (met * 3.5 * kg) / 200.0
-	return kcalPerMin * minutes
 }
 
 // small helper to avoid importing strings widely

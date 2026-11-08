@@ -327,9 +327,27 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile, 
 	return makeResult(level, msg, Rz, consecutiveDays)
 }
 
+// hasReadingOn reports whether a usable biometric reading (grip or BOLT) was
+// recorded on the given date. A day without one is a genuine gap, not a zero
+// signal, and must not be averaged into a trend.
+func hasReadingOn(logs []models.BiometricLog, date string) bool {
+	for _, b := range logs {
+		if b.Date == date && (b.GripKg > 0 || b.BoltScore > 0) {
+			return true
+		}
+	}
+	return false
+}
+
 // ComputeReadinessVelocity computes the 7-day rolling average Rz vs the prior
 // 7-day average and returns (currentAvgRz, yesterdayRz, delta, arrow). asOf
 // (YYYY-MM-DD) anchors both windows; empty falls back to server today.
+//
+// Only days that actually carry a biometric reading are averaged. Missing days
+// are skipped rather than zero-filled: a zero-fill mixes "no measurement" with
+// a real Rz of 0 (which means "at baseline") and drags the trend toward zero.
+// When either window has no readings at all there is no comparable trend, so
+// delta stays 0 and the arrow stays flat.
 func ComputeReadinessVelocity(biometrics []models.BiometricLog, profile models.Profile, asOf string) (currAvg, yesterdayRz, delta float64, arrow string) {
 	biometrics = filterLogsUpTo(biometrics, parseAsOf(asOf).Format("2006-01-02"))
 	if len(biometrics) == 0 {
@@ -339,25 +357,45 @@ func ComputeReadinessVelocity(biometrics []models.BiometricLog, profile models.P
 	today := parseAsOf(asOf)
 
 	rzSeries := make([]float64, 14)
+	hasReading := make([]bool, 14)
 	for i, daysAgo := range [14]int{13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0} {
 		targetDate := today.AddDate(0, 0, -daysAgo).Format("2006-01-02")
-		window := filterLogsUpTo(biometrics, targetDate)
-		if len(window) == 0 {
-			rzSeries[i] = 0
-			continue
+		if !hasReadingOn(biometrics, targetDate) {
+			continue // gap: excluded from the average
 		}
+		window := filterLogsUpTo(biometrics, targetDate)
 		res := ComputeReadiness(window, profile, targetDate)
 		rzSeries[i] = res.Rz
+		hasReading[i] = true
 	}
 
 	prevSum, currSum := 0.0, 0.0
+	prevCount, currCount := 0, 0
 	for i := 0; i < 7; i++ {
-		prevSum += rzSeries[i]
-		currSum += rzSeries[i+7]
+		if hasReading[i] {
+			prevSum += rzSeries[i]
+			prevCount++
+		}
+		if hasReading[i+7] {
+			currSum += rzSeries[i+7]
+			currCount++
+		}
 	}
-	prevAvg := prevSum / 7.0
-	currAvg = currSum / 7.0
-	delta = currAvg - prevAvg
+
+	// Average only the days that were actually measured, guarding division by
+	// zero when a whole window is empty.
+	prevAvg := 0.0
+	if prevCount > 0 {
+		prevAvg = prevSum / float64(prevCount)
+	}
+	if currCount > 0 {
+		currAvg = currSum / float64(currCount)
+	}
+	if prevCount == 0 || currCount == 0 {
+		delta = 0 // no comparable trend in one of the windows
+	} else {
+		delta = currAvg - prevAvg
+	}
 	yesterdayRz = rzSeries[12]
 
 	arrow = "→"

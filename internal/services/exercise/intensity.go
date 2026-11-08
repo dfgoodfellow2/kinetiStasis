@@ -4,8 +4,21 @@ import (
 	"math"
 )
 
+// maxEstimationReps is the highest rep count fed into the 1RM formulas.
+//
+// Brzycki and Epley are calibrated on low-rep sets. Beyond roughly 12 reps the
+// two formulas diverge sharply (the spread already exceeds 30% at 20 reps, and
+// grows without bound) because a high-rep set is limited by fatigue and
+// work capacity rather than maximal load, so the extrapolated 1RM stops being a
+// meaningful estimate. Clamping only the *estimation input* preserves the
+// upstream 0-30 rep validation while preventing a 30-rep set from producing a
+// divergent blowout.
+const maxEstimationReps = 12
+
 // Estimate1RM estimates a one-rep max from weight and reps using
-// Brzycki for <10 reps and Epley for >=10 reps. Special cases handled:
+// Brzycki for <10 reps and Epley for >=10 reps. The rep count is capped at
+// maxEstimationReps (12) for estimation; see maxEstimationReps. Special cases
+// handled:
 // - reps == 1 -> weight
 // - reps <= 0 -> 0
 func Estimate1RM(weight float64, reps int) float64 {
@@ -16,13 +29,18 @@ func Estimate1RM(weight float64, reps int) float64 {
 		return weight
 	}
 
-	if reps < 10 {
+	estReps := reps
+	if estReps > maxEstimationReps {
+		estReps = maxEstimationReps
+	}
+
+	if estReps < 10 {
 		// Brzycki
-		return weight * (36.0 / (37.0 - float64(reps)))
+		return weight * (36.0 / (37.0 - float64(estReps)))
 	}
 
 	// Epley
-	return weight * (1.0 + float64(reps)/30.0)
+	return weight * (1.0 + float64(estReps)/30.0)
 }
 
 // CalculateExerciseIntensity computes the intensity for a single exercise
