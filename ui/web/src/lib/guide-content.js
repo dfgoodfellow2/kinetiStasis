@@ -216,7 +216,7 @@ export const guideSections = [
       'A group is a small circle — family, a training crew, a few friends — who want to see each other keep going without turning it into a leaderboard.',
       'Invites are single-use and expire after 7 days. Generate a code from the group page and send it directly to the person you want to join.',
       'Member cards show only what each person has chosen to share: today’s logging presence, logging streaks, and 7-day adherence. Each member sets their own “My sharing” toggles, per group, and nothing is on by default.',
-      'Meal templates can be shared with a group, so everyone can apply the same meals.',
+      'Tap ＋ New in Templates to bundle saved meals into a template, then share it with a group so everyone can apply the same meals.',
       {
         tip: 'Body data — weight, body fat, measurements — is never shareable, by design. A group only ever sees the signals each member explicitly turns on.'
       }

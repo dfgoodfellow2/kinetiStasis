@@ -148,8 +148,10 @@ func TestGroupsInviteSummarySharingAndOwnership(t *testing.T) {
 	// Owner shares a template; it appears in Bob's merged template list with a
 	// provenance badge.
 	tpl := decodeJSON[models.MealTemplate](t, h.do(t, http.MethodPost, "/v1/meals/templates", map[string]any{
-		"name":  "Group breakfast",
-		"meals": []any{},
+		"name": "Group breakfast",
+		"meals": []any{
+			map[string]any{"name": "Oats", "calories": 320},
+		},
 	}, http.StatusCreated))
 	h.do(t, http.MethodPost, "/v1/meals/templates/"+tpl.ID+"/share", map[string]any{"groupId": groupID}, http.StatusOK)
 

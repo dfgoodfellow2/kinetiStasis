@@ -41,6 +41,24 @@
   let templatesLoading = $state(false)
   let openTemplates = $state([])
 
+  // Inline template builder. Selected saved-meal ids are kept in
+  // templateSelected; entries snapshotted from the current manual form live in
+  // templateDraftEntries and are opt-in (unselected) so "Use current form"
+  // never silently changes what the user meant to bundle.
+  let showTemplateBuilder = $state(false)
+  let templateName = $state('')
+  let templateSelected = $state([])
+  let templateDraftEntries = $state([])
+  let creatingTemplate = $state(false)
+  let draftEntrySeq = 0
+
+  let templateMealCount = $derived(
+    templateSelected.length + templateDraftEntries.filter((e) => e.selected).length
+  )
+  let canCreateTemplate = $derived(
+    templateName.trim().length > 0 && templateMealCount > 0 && !creatingTemplate
+  )
+
   // Group-sharing state for owned templates. Shared (non-owned) templates
   // arrive with a sharedBy name and are badge-only; owned ones expose
   // share/unshare controls backed by these groups.
@@ -232,6 +250,121 @@
     openTemplates = openTemplates.includes(id)
       ? openTemplates.filter((x) => x !== id)
       : [...openTemplates, id]
+  }
+
+  function resetTemplateBuilder() {
+    showTemplateBuilder = false
+    templateName = ''
+    templateSelected = []
+    templateDraftEntries = []
+  }
+
+  function startTemplateBuilder() {
+    error = ''
+    success = ''
+    resetTemplateBuilder()
+    showTemplateBuilder = true
+  }
+
+  function toggleTemplateMeal(id) {
+    templateSelected = templateSelected.includes(id)
+      ? templateSelected.filter((x) => x !== id)
+      : [...templateSelected, id]
+  }
+
+  // Name a form snapshot after the first few words of its notes, falling back
+  // to a neutral label when the form has no notes.
+  function defaultDraftEntryName() {
+    const words = String(form.mealNotes ?? '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 3)
+    return words.length ? words.join(' ') : 'My meal'
+  }
+
+  function addCurrentFormEntry() {
+    templateDraftEntries = [
+      ...templateDraftEntries,
+      {
+        key: `form-${++draftEntrySeq}`,
+        selected: false,
+        name: [...defaultDraftEntryName()].slice(0, 64).join(''),
+        calories: Number(form.calories) || 0,
+        proteinG: Number(form.proteinG) || 0,
+        carbsG: Number(form.carbsG) || 0,
+        fatG: Number(form.fatG) || 0,
+        fiberG: Number(form.fiberG) || 0,
+        notes: form.mealNotes || '',
+      },
+    ]
+  }
+
+  function toggleDraftEntry(key) {
+    templateDraftEntries = templateDraftEntries.map((e) =>
+      e.key === key ? { ...e, selected: !e.selected } : e
+    )
+  }
+
+  function updateDraftEntryName(key, name) {
+    templateDraftEntries = templateDraftEntries.map((e) =>
+      e.key === key ? { ...e, name } : e
+    )
+  }
+
+  function removeDraftEntry(key) {
+    templateDraftEntries = templateDraftEntries.filter((e) => e.key !== key)
+  }
+
+  async function createTemplate() {
+    const name = templateName.trim()
+    if (!name) {
+      error = 'Enter a template name'
+      return
+    }
+    const meals = []
+    for (const id of templateSelected) {
+      const m = savedMeals.find((x) => x.id === id)
+      if (!m) continue
+      meals.push({
+        name: m.name,
+        calories: m.calories ?? 0,
+        proteinG: m.proteinG ?? 0,
+        carbsG: m.carbsG ?? 0,
+        fatG: m.fatG ?? 0,
+        fiberG: m.fiberG ?? 0,
+        notes: m.notes ?? '',
+      })
+    }
+    for (const e of templateDraftEntries) {
+      if (!e.selected) continue
+      meals.push({
+        name: [...e.name.trim()].slice(0, 64).join('') || 'Meal',
+        calories: e.calories,
+        proteinG: e.proteinG,
+        carbsG: e.carbsG,
+        fatG: e.fatG,
+        fiberG: e.fiberG,
+        notes: e.notes,
+      })
+    }
+    if (meals.length === 0) {
+      error = 'Pick at least one meal for this template'
+      return
+    }
+    error = ''
+    success = ''
+    creatingTemplate = true
+    try {
+      const created = await api.createTemplate({ name, meals })
+      await loadTemplates()
+      resetTemplateBuilder()
+      success = `Created "${created?.name || name}"`
+    } catch (e) {
+      error = e.message
+    } finally {
+      creatingTemplate = false
+    }
   }
 
   onMount(() => {
@@ -642,10 +775,128 @@
     </Card>
 
     <Card title="Templates">
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <p class="text-xs text-gray-400">Bundle saved meals into a reusable template.</p>
+        <button
+          type="button"
+          class="bg-gray-700 px-3 py-1.5 rounded-lg text-sm shrink-0"
+          onclick={() => (showTemplateBuilder ? resetTemplateBuilder() : startTemplateBuilder())}
+        >
+          {showTemplateBuilder ? 'Cancel' : '＋ New'}
+        </button>
+      </div>
+
+      {#if showTemplateBuilder}
+        <div class="border border-gray-700 rounded-lg p-3 mb-3 space-y-3">
+          <div>
+            <label class="text-xs text-gray-400" for="tpl-name">Template name</label>
+            <input
+              id="tpl-name"
+              class="input"
+              maxlength="64"
+              placeholder="e.g. Workday breakfast"
+              bind:value={templateName}
+            />
+          </div>
+
+          <div>
+            <p class="text-xs text-gray-400 mb-1">Meals in this template</p>
+            {#if savedMeals.length === 0}
+              <p class="text-xs text-gray-500">
+                No saved meals yet — save one from the form, or add the current form below.
+              </p>
+            {:else}
+              <div class="flex flex-wrap gap-2">
+                {#each savedMeals as m (m.id)}
+                  {@const picked = templateSelected.includes(m.id)}
+                  <button
+                    type="button"
+                    class={picked
+                      ? 'rounded-full border border-emerald-500 bg-emerald-600/30 px-3 py-1.5 text-sm text-emerald-100'
+                      : 'rounded-full border border-gray-600 bg-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:border-gray-500'}
+                    aria-pressed={picked}
+                    title={picked ? 'Remove from template' : 'Add to template'}
+                    onclick={() => toggleTemplateMeal(m.id)}
+                  >
+                    {#if picked}✓ {/if}{m.name}
+                    <span class="text-gray-400">· {Math.round(m.calories ?? 0)} kcal</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          <div class="border-t border-gray-700 pt-3">
+            <button
+              type="button"
+              class="bg-gray-700 px-3 py-1.5 rounded-lg text-sm"
+              onclick={addCurrentFormEntry}
+            >
+              + Add current form values as a meal entry
+            </button>
+            {#if templateDraftEntries.length > 0}
+              <div class="mt-2 space-y-2">
+                {#each templateDraftEntries as e (e.key)}
+                  <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-700 bg-gray-900/40 px-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      checked={e.selected}
+                      aria-label="Include {e.name || 'meal'}"
+                      onchange={() => toggleDraftEntry(e.key)}
+                    />
+                    <input
+                      class="input flex-1 min-w-[8rem]"
+                      maxlength="64"
+                      value={e.name}
+                      aria-label="Entry name"
+                      placeholder="Meal name"
+                      oninput={(ev) => updateDraftEntryName(e.key, ev.currentTarget.value)}
+                    />
+                    <span class="text-xs text-gray-400">{Math.round(e.calories ?? 0)} kcal</span>
+                    <button
+                      type="button"
+                      class="text-xs text-gray-500 hover:text-red-400 px-1"
+                      title="Remove entry"
+                      aria-label="Remove entry"
+                      onclick={() => removeDraftEntry(e.key)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          {#if !templateName.trim() || templateMealCount === 0}
+            <p class="text-xs text-gray-500">
+              {#if !templateName.trim()}
+                Give the template a name.
+              {:else}
+                Select at least one meal — tap a chip above or tick a form entry.
+              {/if}
+            </p>
+          {/if}
+
+          <div class="flex gap-2">
+            <button class="btn-primary" onclick={createTemplate} disabled={!canCreateTemplate}>
+              {creatingTemplate ? 'Creating…' : 'Create'}
+            </button>
+            <button
+              class="bg-gray-700 px-3 py-2 rounded-lg"
+              onclick={resetTemplateBuilder}
+              disabled={creatingTemplate}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      {/if}
+
       {#if templatesLoading}
         <p class="text-xs text-gray-400">Loading templates…</p>
       {:else if templates.length === 0}
-        <p class="text-xs text-gray-400">No templates yet</p>
+        <p class="text-xs text-gray-400">No templates yet — create one from your saved meals.</p>
       {:else}
         <div class="space-y-2">
           {#each templates as t (t.id)}

@@ -211,6 +211,9 @@ export const api = {
   postSaved: (m) => req('POST', '/meals/saved', m),
   deleteSaved: (id) => req('DELETE', `/meals/saved/${id}`),
   listTemplates: () => req('GET', '/meals/templates'),
+  // POST body { name, meals: [{ name, calories, proteinG, carbsG, fatG, fiberG, notes }] }.
+  // Templates are always created private; use shareTemplate to share one.
+  createTemplate: (t) => req('POST', '/meals/templates', t),
   // Template sharing — owner-only share, owner or group owner may unshare.
   // POST body { groupId }; both return { status }.
   shareTemplate: (id, groupId) => req('POST', `/meals/templates/${id}/share`, { groupId }),
