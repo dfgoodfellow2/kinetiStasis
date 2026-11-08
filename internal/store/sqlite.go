@@ -837,18 +837,17 @@ func (s *SQLiteStore) FetchWorkoutsRange(ctx context.Context, userID, from, to s
 		}
 		if exercisesJSON != "" && exercisesJSON != "[]" {
 			if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
-				slog.Warn("failed to unmarshal exercises_json", "err", err)
-			} else {
-				for i := range w.Exercises {
-					if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
-						w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
-					}
+				return nil, fmt.Errorf("%w: exercises_json for %s/%s: %v", ErrCorruptWorkoutData, w.Date, w.Slot, err)
+			}
+			for i := range w.Exercises {
+				if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+					w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
 				}
 			}
 		}
 		if metadataJSON != "" && metadataJSON != "{}" {
 			if err := json.Unmarshal([]byte(metadataJSON), &w.Metadata); err != nil {
-				slog.Warn("failed to unmarshal metadata_json", "err", err)
+				return nil, fmt.Errorf("%w: metadata_json for %s/%s: %v", ErrCorruptWorkoutData, w.Date, w.Slot, err)
 			}
 		}
 		out = append(out, w)
@@ -865,42 +864,67 @@ func (s *SQLiteStore) GetWorkout(ctx context.Context, userID, date, slot string)
 	}
 	if exercisesJSON != "" {
 		if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
-			slog.Warn("failed to unmarshal exercises_json", "err", err)
-		} else {
-			for i := range w.Exercises {
-				if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
-					w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
-				}
+			return w, fmt.Errorf("%w: exercises_json for %s/%s: %v", ErrCorruptWorkoutData, date, slot, err)
+		}
+		for i := range w.Exercises {
+			if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+				w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
 			}
 		}
 	}
 	if metadataJSON != "" {
-		_ = json.Unmarshal([]byte(metadataJSON), &w.Metadata)
+		if err := json.Unmarshal([]byte(metadataJSON), &w.Metadata); err != nil {
+			return w, fmt.Errorf("%w: metadata_json for %s/%s: %v", ErrCorruptWorkoutData, date, slot, err)
+		}
 	}
 	return w, nil
 }
 
 func (s *SQLiteStore) UpsertWorkout(ctx context.Context, w *models.WorkoutEntry) error {
-	exb, _ := json.Marshal(w.Exercises)
-	metb, _ := json.Marshal(w.Metadata)
-	// Try update first
-	res, err := s.db.ExecContext(ctx, `UPDATE workouts SET title=?, raw_notes=?, duration_min=?, calories_burned=?, exercises_json=?, metadata_json=?, updated_at=?, mwv=?, nds=?, session_density=? WHERE user_id=? AND date=? AND slot=?`, w.Title, w.RawNotes, w.DurationMin, w.CaloriesBurned, string(exb), string(metb), w.UpdatedAt, w.MWV, w.NDS, w.SessionDensity, w.UserID, w.Date, w.Slot)
+	exb, err := json.Marshal(w.Exercises)
 	if err != nil {
-		return fmt.Errorf("upsert workout update: %w", err)
+		return fmt.Errorf("upsert workout marshal exercises: %w", err)
 	}
-	if ra, _ := res.RowsAffected(); ra == 0 {
-		_, err = s.db.ExecContext(ctx, `INSERT INTO workouts (id,user_id,date,slot,title,raw_notes,duration_min,calories_burned,mwv,nds,session_density,exercises_json,metadata_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, w.ID, w.UserID, w.Date, w.Slot, w.Title, w.RawNotes, w.DurationMin, w.CaloriesBurned, w.MWV, w.NDS, w.SessionDensity, string(exb), string(metb), w.UpdatedAt)
-		if err != nil {
-			return fmt.Errorf("upsert workout insert: %w", err)
-		}
+	metb, err := json.Marshal(w.Metadata)
+	if err != nil {
+		return fmt.Errorf("upsert workout marshal metadata: %w", err)
+	}
+	// A single statement keeps the update-then-insert path atomic: two
+	// concurrent writers for the same (user_id,date,slot) can no longer race
+	// between an empty UPDATE and an INSERT that trips the UNIQUE constraint.
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO workouts (id,user_id,date,slot,title,raw_notes,duration_min,calories_burned,mwv,nds,session_density,exercises_json,metadata_json,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(user_id,date,slot) DO UPDATE SET
+			title           = excluded.title,
+			raw_notes       = excluded.raw_notes,
+			duration_min    = excluded.duration_min,
+			calories_burned = excluded.calories_burned,
+			mwv             = excluded.mwv,
+			nds             = excluded.nds,
+			session_density = excluded.session_density,
+			exercises_json  = excluded.exercises_json,
+			metadata_json   = excluded.metadata_json,
+			updated_at      = excluded.updated_at`,
+		w.ID, w.UserID, w.Date, w.Slot, w.Title, w.RawNotes, w.DurationMin, w.CaloriesBurned,
+		w.MWV, w.NDS, w.SessionDensity, string(exb), string(metb), w.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert workout: %w", err)
 	}
 	return nil
 }
 
 func (s *SQLiteStore) UpdateWorkout(ctx context.Context, w *models.WorkoutEntry) (models.WorkoutEntry, error) {
-	exb, _ := json.Marshal(w.Exercises)
-	metb, _ := json.Marshal(w.Metadata)
-	_, err := s.db.ExecContext(ctx, `UPDATE workouts SET title=?,raw_notes=?,duration_min=?,calories_burned=?,mwv=?,nds=?,session_density=?,exercises_json=?,metadata_json=?,updated_at=? WHERE user_id=? AND date=? AND slot=?`, w.Title, w.RawNotes, w.DurationMin, w.CaloriesBurned, w.MWV, w.NDS, w.SessionDensity, string(exb), string(metb), w.UpdatedAt, w.UserID, w.Date, w.Slot)
+	exb, err := json.Marshal(w.Exercises)
+	if err != nil {
+		return models.WorkoutEntry{}, fmt.Errorf("update workout marshal exercises: %w", err)
+	}
+	metb, err := json.Marshal(w.Metadata)
+	if err != nil {
+		return models.WorkoutEntry{}, fmt.Errorf("update workout marshal metadata: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE workouts SET title=?,raw_notes=?,duration_min=?,calories_burned=?,mwv=?,nds=?,session_density=?,exercises_json=?,metadata_json=?,updated_at=? WHERE user_id=? AND date=? AND slot=?`, w.Title, w.RawNotes, w.DurationMin, w.CaloriesBurned, w.MWV, w.NDS, w.SessionDensity, string(exb), string(metb), w.UpdatedAt, w.UserID, w.Date, w.Slot)
 	if err != nil {
 		return models.WorkoutEntry{}, fmt.Errorf("update workout: %w", err)
 	}

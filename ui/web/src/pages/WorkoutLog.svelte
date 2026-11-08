@@ -38,6 +38,10 @@
       caloriesBurned: '',
       notes: '',
       coachNotes: '',
+      // Session metadata that is not edited inline but must round-trip.
+      rpe: '',
+      recovers: '',
+      day: '',
       exercises: [],
     }
   }
@@ -129,8 +133,11 @@
           surface:       workout.surface      || '',
           focus:         workout.focus ? workout.focus.split(',').map(s => s.trim()).filter(Boolean) : [],
           restInterval:  workout.restInterval || '',
+          rpe:           Number(workout.rpe)  || 0,
           avgHr:         Number(workout.avgHr) || 0,
           maxHr:         Number(workout.maxHr) || 0,
+          recovers:      workout.recovers     || '',
+          day:           Number(workout.day)  || 0,
           coachNotes:    workout.coachNotes   || '',
         },
         exercises: workout.exercises.map(ex => {
@@ -309,9 +316,11 @@
       workout.date = w.date || today()
       workout.slot = String(w.slot || '1')
       workout.title = w.title || ''
-      workout.type = w.type || 'strength'
-      workout.style = w.style || ''
-      workout.surface = w.surface || ''
+      // Session type/surface live under metadata in the API model, not at the
+      // top level; fall back to top-level fields for older payloads.
+      workout.type = w.metadata?.type || w.type || 'strength'
+      workout.style = w.metadata?.style || w.style || ''
+      workout.surface = w.metadata?.surface || w.surface || ''
       // Focus is stored under metadata.focus as an array - join into a display string
       workout.focus = Array.isArray(w.metadata?.focus)
         ? w.metadata.focus.join(', ')
@@ -325,6 +334,11 @@
       workout.caloriesBurned = String(w.caloriesBurned ?? '')
       workout.notes = w.rawNotes ?? ''
       workout.coachNotes = w.metadata?.coachNotes ?? ''
+      // These parse-time session fields are not shown as inputs but must be
+      // carried through an edit so saving does not erase them.
+      workout.rpe = w.metadata?.rpe ? String(w.metadata.rpe) : ''
+      workout.recovers = w.metadata?.recovers ?? ''
+      workout.day = w.metadata?.day ? String(w.metadata.day) : ''
 
       // Map ALL exercise fields from API to simple tab format
       workout.exercises = (w.exercises || []).map(ex => {
@@ -376,9 +390,9 @@
             loadKg: s.loadKg ?? 0,
             loadLbs: s.loadLbs ?? 0,
             reps: s.reps || 0,
-            // strip any set-level RPE (ExerciseSet model does not include RPE)
-            tempo: s.tempo || '',
-            duration: s.duration ?? '',
+            // Preserve TUT/rest so editing a parsed workout never zeroes them.
+            tutSeconds: s.tutSeconds ?? 0,
+            restSeconds: s.restSeconds ?? 0,
           }))
         }
       })

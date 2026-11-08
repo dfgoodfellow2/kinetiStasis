@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
@@ -28,8 +29,26 @@ func NewWorkoutHandler(s store.Store) *WorkoutHandler { return &WorkoutHandler{s
 const (
 	maxWorkoutCalories = 5000
 	maxWorkoutRPE      = 10
+	maxWorkoutSlotLen  = 32
 	maxInt             = int(^uint(0) >> 1)
 )
+
+// validateWorkoutKeys rejects a missing/malformed date or an empty/oversized
+// slot before the store is touched. Slots are short labels such as "1", "2",
+// "am" or "pm"; 32 characters is deliberately generous but still bounded.
+func validateWorkoutKeys(date, slot string) error {
+	if err := validate.Date(date); err != nil {
+		return err
+	}
+	slot = strings.TrimSpace(slot)
+	if slot == "" {
+		return errors.New("slot is required")
+	}
+	if len(slot) > maxWorkoutSlotLen {
+		return fmt.Errorf("slot must be <= %d characters", maxWorkoutSlotLen)
+	}
+	return nil
+}
 
 // validateWorkoutInput rejects non-physical session values before the MET
 // auto-calculation runs. A zero CaloriesBurned is allowed because it means
@@ -93,19 +112,18 @@ func scanWorkout(row interface {
 	}
 	if exercisesJSON != "" {
 		if err := json.Unmarshal([]byte(exercisesJSON), &w.Exercises); err != nil {
-			slog.Warn("unmarshal exercises_json failed", "err", err)
-		} else {
-			// Backwards compat: copy legacy snake_case duration_raw into durationRaw (DurationRaw in Go model)
-			for i := range w.Exercises {
-				if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
-					w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
-				}
+			return fmt.Errorf("%w: exercises_json: %v", store.ErrCorruptWorkoutData, err)
+		}
+		// Backwards compat: copy legacy snake_case duration_raw into durationRaw (DurationRaw in Go model)
+		for i := range w.Exercises {
+			if w.Exercises[i].DurationRaw == "" && w.Exercises[i].DurationRawLegacy != "" {
+				w.Exercises[i].DurationRaw = w.Exercises[i].DurationRawLegacy
 			}
 		}
 	}
 	if metadataJSON != "" {
 		if err := json.Unmarshal([]byte(metadataJSON), &w.Metadata); err != nil {
-			slog.Warn("unmarshal metadata_json failed", "err", err)
+			return fmt.Errorf("%w: metadata_json: %v", store.ErrCorruptWorkoutData, err)
 		}
 	}
 	return nil
@@ -126,6 +144,10 @@ func (h *WorkoutHandler) List(w http.ResponseWriter, r *http.Request) {
 	out, err := h.s.FetchWorkoutsRange(r.Context(), claims.UserID, from, to)
 	if err != nil {
 		slog.Error("fetch workouts range", "err", err)
+		if errors.Is(err, store.ErrCorruptWorkoutData) {
+			respond.Error(w, http.StatusInternalServerError, "stored workout data is corrupt")
+			return
+		}
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
@@ -141,6 +163,10 @@ func (h *WorkoutHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "workout not found")
 		return
+	} else if errors.Is(err, store.ErrCorruptWorkoutData) {
+		slog.Error("get workout: corrupt stored data", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "stored workout data is corrupt")
+		return
 	} else if err != nil {
 		slog.Error("get workout", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
@@ -154,6 +180,10 @@ func (h *WorkoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
 	var in models.WorkoutEntry
 	if !respond.Decode(w, r, &in) {
+		return
+	}
+	if err := validateWorkoutKeys(in.Date, in.Slot); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := validateWorkoutInput(&in); err != nil {
@@ -189,6 +219,10 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !respond.Decode(w, r, &in) {
 		return
 	}
+	if err := validateWorkoutKeys(date, slot); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := validateWorkoutInput(&in); err != nil {
 		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
@@ -196,6 +230,10 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// ensure exists
 	if _, err := h.s.GetWorkout(r.Context(), claims.UserID, date, slot); errors.Is(err, sql.ErrNoRows) {
 		respond.Error(w, http.StatusNotFound, "workout not found")
+		return
+	} else if errors.Is(err, store.ErrCorruptWorkoutData) {
+		slog.Error("get workout for update: corrupt stored data", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "stored workout data is corrupt")
 		return
 	} else if err != nil {
 		slog.Error("get workout for update", "err", err)
@@ -211,7 +249,11 @@ func (h *WorkoutHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	in.UserID = claims.UserID
+	// The URL identifies the row being edited. Force both key columns from the
+	// path so a body carrying a different date/slot can never update a
+	// different (or no) row and return a stale 200.
 	in.Date = date
+	in.Slot = slot
 	in.UpdatedAt = now
 	if _, err := h.s.UpdateWorkout(r.Context(), &in); err != nil {
 		slog.Error("update workout", "err", err)

@@ -58,6 +58,12 @@
       caloriesBurned: res.caloriesBurned || workout.caloriesBurned,
       notes:           res.notes || res.rawNotes || workout.notes,
       coachNotes:      res.coachNotes   || workout.coachNotes,
+      // Session metadata that has no inline input but must survive a save.
+      // ParsedWorkout always emits rpe/day (0 when unknown), so only a real
+      // value may override metadata restored from an existing row.
+      rpe:             res.rpe      || workout.rpe,
+      recovers:        res.recovers || workout.recovers,
+      day:             res.day      || workout.day,
       exercises:       (res.exercises || []).map(mapExercise),
     }
 
@@ -69,11 +75,10 @@
     const setCount = setsArr.length || ''
     const firstSet = setsArr[0] ?? {}
 
-    let weightDisplay = e.loadRaw || ''
-    if (!weightDisplay && (firstSet.loadKg > 0)) {
-      const kg = firstSet.loadKg
-      weightDisplay = String(kg) + ' kg'
-    }
+    // Never fabricate a load. A "70 kg" style fallback would be re-parsed as
+    // pounds by WorkoutLog's parseLoad and then converted to kg on save,
+    // corrupting every parsed exercise that carried set.loadKg only.
+    const weightDisplay = e.loadRaw || ''
 
     return {
       name:        e.name        || '',
@@ -85,8 +90,9 @@
       rpe:         e.rpe          ?? '',
       pattern:     e.category     || '',
       bias:        e.bias         || '',
-      distance:    (e.distanceKm ?? '') || '',
-      elevation:   (e.elevationM ?? '') || '',
+      distanceKm:  e.distanceKm   ?? '',
+      elevationM:  e.elevationM   ?? '',
+      surface:     e.surface      || '',
       pace:        e.pace         || '',
       met:         e.metValue ?? '',
       notes:       e.notes        || '',

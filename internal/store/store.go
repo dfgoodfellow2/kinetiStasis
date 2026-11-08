@@ -17,6 +17,11 @@ var (
 	ErrInviteInvalid = errors.New("store: invalid invite")
 	ErrInviteExpired = errors.New("store: invite expired")
 	ErrInviteUsed    = errors.New("store: invite used")
+	// ErrCorruptWorkoutData means a stored workouts row contains JSON that no
+	// longer decodes. Reads surface this instead of silently returning an
+	// empty exercise/metadata set, because a subsequent write would then
+	// persist that emptiness over the real data.
+	ErrCorruptWorkoutData = errors.New("store: stored workout data is corrupt")
 )
 
 // GroupMemberSummary is the raw per-member row used to build privacy-aware
