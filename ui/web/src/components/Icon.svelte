@@ -30,8 +30,9 @@
   };
   
   const iconMap = {
-    // Keep existing emoji mappings
-    logo: '🥗',
+    // Keep existing emoji mappings. The logo is always rendered from its SVG
+    // (see isSvg below); this glyph is only a last-resort fallback.
+    logo: '∞',
     home: '🏠',
     'log-meal': '➕',
     checkin: '✅',
@@ -44,11 +45,13 @@
 
   const sizeClass = $derived(sizeMap[size] ?? sizeMap.md);
   const icon = $derived(iconMap[name] ?? '');
+  // The brand logo is always vector artwork, regardless of the requested type.
+  const isSvg = $derived(type === 'svg' || name === 'logo');
   let svgSrc = $state(null);
 
   // Load SVG URL dynamically when requested
   async function updateSvg() {
-    if (type === 'svg' && name) {
+    if (isSvg && name) {
       const path = getIconPath(name);
       if (path) {
         try {
@@ -68,7 +71,7 @@
 
   $effect(() => {
     // Access reactive values directly so Svelte tracks them
-    if (type === 'svg' && name) {
+    if (isSvg && name) {
       updateSvg();
     } else {
       svgSrc = null;
@@ -76,7 +79,7 @@
   });
 </script>
 
-{#if type === 'svg' && svgSrc}
+{#if isSvg && svgSrc}
   <SvgIcon src={svgSrc} alt={alt || name} size={svgSizeMap[size] || '24'} class={className} />
 {:else}
   <span class="{sizeClass} {className}" aria-hidden="true">{icon || '❓'}</span>
