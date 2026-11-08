@@ -110,14 +110,11 @@ func ComputeWeightTrend(biometrics []models.BiometricLog, since string) (trendKg
 	return trendKg, slope * 7, days
 }
 
-// weightSeriesForWindow collects plausible weight observations inside the
-// lookback window, oldest to newest, and expresses each observation as days
-// since the first one. Real calendar offsets (rather than row indices) keep the
-// slope correct when the user weighs in sparsely. Duplicate dates collapse to
-// the latest value so "weight-bearing log days" counts distinct days.
-func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weights, dayOffsets []float64, spanDays float64) {
+// weightSeriesWithDates collects plausible weight observations inside the
+// lookback window, oldest to newest. Duplicate dates collapse to the latest
+// value so "weight-bearing log days" counts distinct days.
+func weightSeriesWithDates(biometrics []models.BiometricLog, since string) (weights []float64, dates []string) {
 	seen := make(map[string]int, len(biometrics))
-	var dates []string
 
 	for _, bio := range biometrics {
 		if bio.Date < since {
@@ -134,13 +131,26 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 		weights = append(weights, bio.WeightKg)
 		dates = append(dates, bio.Date)
 	}
-	if len(weights) == 0 {
-		return nil, nil, 0
-	}
+	return weights, dates
+}
 
-	dayOffsets = make([]float64, len(weights))
+// WeightSeriesForWindow is the exported view of the exact extraction
+// ComputeWeightTrend uses. Callers that need to align a derived series to the
+// headline observations (the dashboard sparkline) get the same weights and
+// dates, so the two stay consistent by construction.
+func WeightSeriesForWindow(biometrics []models.BiometricLog, since string) (weights []float64, dates []string) {
+	return weightSeriesWithDates(biometrics, since)
+}
+
+// dayOffsetsForDates converts ISO dates into elapsed days since the first date.
+// Malformed dates fall back to row-index spacing so one bad record cannot
+// poison the whole fit.
+func dayOffsetsForDates(dates []string) []float64 {
+	offsets := make([]float64, len(dates))
+	if len(dates) == 0 {
+		return offsets
+	}
 	base, baseErr := time.Parse(constants.DateFormat, dates[0])
-	minOffset, maxOffset := math.MaxFloat64, -math.MaxFloat64
 	for i, date := range dates {
 		offset := float64(i) // fallback: index spacing if a date is malformed
 		if baseErr == nil {
@@ -148,7 +158,24 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 				offset = d.Sub(base).Hours() / 24
 			}
 		}
-		dayOffsets[i] = offset
+		offsets[i] = offset
+	}
+	return offsets
+}
+
+// weightSeriesForWindow collects plausible weight observations inside the
+// lookback window, oldest to newest, and expresses each observation as days
+// since the first one. Real calendar offsets (rather than row indices) keep the
+// slope correct when the user weighs in sparsely.
+func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weights, dayOffsets []float64, spanDays float64) {
+	weights, dates := weightSeriesWithDates(biometrics, since)
+	if len(weights) == 0 {
+		return nil, nil, 0
+	}
+
+	dayOffsets = dayOffsetsForDates(dates)
+	minOffset, maxOffset := math.MaxFloat64, -math.MaxFloat64
+	for _, offset := range dayOffsets {
 		if offset < minOffset {
 			minOffset = offset
 		}
@@ -160,6 +187,44 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 		spanDays = maxOffset - minOffset
 	}
 	return weights, dayOffsets, spanDays
+}
+
+// RollingWeightTrendLevels fits the same least-squares regression used by
+// ComputeWeightTrend at every observation. Each entry is the fitted level at
+// that observation using only the observations up to and including it (an
+// expanding-window, causal fit), so the curve never looks ahead. Entries before
+// MinWeightTrendDays observations are nil: that is the burn-in segment the
+// client skips because there is not yet enough data to fit a trend.
+//
+// The final entry fits the whole series and is evaluated at the newest
+// observation, which is exactly what ComputeWeightTrend reports as trendKg.
+// Passing the same weights/dates as the headline therefore makes the dashboard
+// curve and the headline number agree by construction.
+func RollingWeightTrendLevels(weights []float64, dates []string) []*float64 {
+	n := len(weights)
+	levels := make([]*float64, n)
+	if n == 0 {
+		return levels
+	}
+
+	offsets := dayOffsetsForDates(dates)
+	if len(offsets) != n {
+		// Dates were omitted or truncated: fall back to uniform spacing.
+		offsets = make([]float64, n)
+		for i := range offsets {
+			offsets[i] = float64(i)
+		}
+	}
+
+	for i := 0; i < n; i++ {
+		if i+1 < MinWeightTrendDays {
+			continue
+		}
+		slope, intercept := regressionFit(weights[:i+1], offsets[:i+1])
+		level := slope*offsets[i] + intercept
+		levels[i] = &level
+	}
+	return levels
 }
 
 // regressionFit fits weight against elapsed days and returns the slope and the

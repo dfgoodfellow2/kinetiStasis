@@ -65,6 +65,7 @@ export const guideSections = [
     underTheHood: [
       'The dashboard uses least-squares linear regression over weigh-ins inside the TDEE lookback window (90 days by default, configurable in Profile). A trend is only reported after at least 7 weight observations (MinWeightTrendDays).',
       'The displayed trend weight is the fitted line evaluated at the newest observation, not a forecast. The weekly rate is the slope × 7. Observations outside the plausible 20–300 kg range are ignored.',
+      'The dashboard sparkline’s Trend view draws that same fitted line: each point is the engine’s regression level at that weigh-in — the identical numbers the check-in uses, not a separate client-side smoothing. The curve stays blank during burn-in, while there are fewer than 7 weigh-ins to fit.',
       'Observed TDEE uses both your intake and your weight trend: the trend slope tells the model how much energy your body stored or spent. It is not a single weigh-in — the trend is the signal, and targets only move at check-in once the weight term is reliable.'
     ]
   },

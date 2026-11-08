@@ -522,6 +522,12 @@ type DashboardData struct {
 	WeightRateKgPerWeek float64 `json:"weightRateKgPerWeek"`
 	TrendDays           int     `json:"trendDays"`
 
+	// WeightTrendSeries is the engine-fitted trend level at each WeightTrend
+	// observation, aligned one-to-one with that array. Entries are nil during
+	// burn-in (fewer than MinWeightTrendDays weigh-ins in the trend window);
+	// the last non-nil value equals WeightTrendKg by construction.
+	WeightTrendSeries []*float64 `json:"weightTrendSeries"`
+
 	// 60-day nutrition logging calendar and streaks.
 	LoggingStreak int    `json:"loggingStreak"`
 	LongestStreak int    `json:"longestStreak"`

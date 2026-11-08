@@ -400,6 +400,22 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Engine trend series: fit the same regression the headline uses over the
+	// full lookback window, then project its fitted level onto each raw point
+	// so the sparkline draws the engine's curve rather than a client-side
+	// smoothing. The expanding-window fit's final value is weightTrendKg by
+	// construction (identical weights, dates and regression).
+	trendWeights, trendDates := calculator.WeightSeriesForWindow(bioAll, sinceTrend)
+	trendLevels := calculator.RollingWeightTrendLevels(trendWeights, trendDates)
+	trendLevelByDate := make(map[string]*float64, len(trendDates))
+	for i, date := range trendDates {
+		trendLevelByDate[date] = trendLevels[i]
+	}
+	weightTrendSeries := make([]*float64, len(weightTrend))
+	for i, p := range weightTrend {
+		weightTrendSeries[i] = trendLevelByDate[p.Date]
+	}
+
 	// Find today's biometric entry (if logged)
 	var todayBio *models.BiometricLog
 	for i := range bio30 {
@@ -440,6 +456,7 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		WeightTrendKg:       weightTrendKg,
 		WeightRateKgPerWeek: weightRateKgPerWeek,
 		TrendDays:           trendDays,
+		WeightTrendSeries:   weightTrendSeries,
 		LoggingStreak:       loggingStreak,
 		LongestStreak:       longestStreak,
 		LoggedDays:          loggedDays,

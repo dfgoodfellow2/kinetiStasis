@@ -291,6 +291,65 @@ func TestComputeWeightTrendWeeklySparseRate(t *testing.T) {
 	}
 }
 
+// TestRollingWeightTrendLevelsMatchesHeadline guards the dashboard curve and
+// the headline trend against drifting apart: a synthetic flat-then-dip-then-
+// rise window must produce a nil burn-in prefix, a smooth curve that tracks the
+// drift, and a final value numerically identical to ComputeWeightTrend.
+func TestRollingWeightTrendLevelsMatchesHeadline(t *testing.T) {
+	dates := windowDates(12)
+	// Flat start, a water-weight dip, then a genuine rise.
+	weights := []float64{82.0, 82.1, 82.0, 81.2, 82.0, 82.1, 82.3, 82.6, 82.8, 83.1, 83.3, 83.6}
+
+	bios := make([]models.BiometricLog, len(dates))
+	for i := range dates {
+		bios[i] = models.BiometricLog{Date: dates[i], WeightKg: weights[i]}
+	}
+
+	levels := RollingWeightTrendLevels(weights, dates)
+	if len(levels) != len(weights) {
+		t.Fatalf("len(levels) = %d, want %d (same length as the raw series)", len(levels), len(weights))
+	}
+
+	// Burn-in: fewer than MinWeightTrendDays observations means no level.
+	for i := 0; i < MinWeightTrendDays-1; i++ {
+		if levels[i] != nil {
+			t.Fatalf("levels[%d] = %v, want nil during burn-in", i, *levels[i])
+		}
+	}
+	if levels[MinWeightTrendDays-1] == nil {
+		t.Fatalf("levels[%d] is nil, want the first fitted level", MinWeightTrendDays-1)
+	}
+
+	// Smoothness: the fitted level must move gradually, unlike the raw dip.
+	prev := *levels[MinWeightTrendDays-1]
+	for i := MinWeightTrendDays; i < len(levels); i++ {
+		if levels[i] == nil {
+			t.Fatalf("levels[%d] is nil after burn-in", i)
+		}
+		if step := math.Abs(*levels[i] - prev); step > 0.6 {
+			t.Fatalf("levels[%d] jumped %.2f kg from the previous fit", i, step)
+		}
+		prev = *levels[i]
+	}
+	// Drift tracking: the final fitted level sits above the flat/dip region.
+	if last := *levels[len(levels)-1]; last < 82.5 {
+		t.Fatalf("last level = %v, want the fit to track the rise above 82.5", last)
+	}
+
+	// Equality by construction: same series, same regression, same final level.
+	trendKg, _, days := ComputeWeightTrend(bios, dates[0])
+	if days != len(weights) {
+		t.Fatalf("ComputeWeightTrend days = %d, want %d", days, len(weights))
+	}
+	last := levels[len(levels)-1]
+	if last == nil {
+		t.Fatal("last rolling level is nil, want a fitted value")
+	}
+	if math.Abs(*last-trendKg) > 1e-9 {
+		t.Fatalf("last rolling level = %.12f, headline trendKg = %.12f; want identical by construction", *last, trendKg)
+	}
+}
+
 // TestComputeObservedTDEEImplausibleFallsBackToStatic guards the <1000 kcal
 // fallback that prevents nonsensical targets.
 func TestComputeObservedTDEEImplausibleFallsBackToStatic(t *testing.T) {

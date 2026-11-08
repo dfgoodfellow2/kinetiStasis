@@ -89,9 +89,11 @@
   }
 
   // ── Weight trend (insight layer) ────────────────────────────────────────────
-  // Contract: dashboard supplies weightTrendKg (EMA level, 0 = insufficient),
-  // weightRateKgPerWeek (negative = losing), trendDays, loggingStreak,
-  // longestStreak and loggedDays (60 bools, oldest→newest, last = today).
+  // Contract: dashboard supplies weightTrendKg (engine fitted level, 0 =
+  // insufficient data), weightTrendSeries (that same fit sampled at each raw
+  // weigh-in; null = burn-in), weightRateKgPerWeek (negative = losing),
+  // trendDays, loggingStreak, longestStreak and loggedDays (60 bools,
+  // oldest→newest, last = today).
   let weightPoints = $derived(
     (data?.weightTrend ?? []).filter(p => p && isFinite(p.weightKg))
   )
@@ -395,7 +397,7 @@ let checklist = $derived(data ? [
               </span>
             </div>
           </div>
-          <WeightSparkline points={data.weightTrend ?? []} units={store.units} />
+          <WeightSparkline points={data.weightTrend ?? []} trendSeries={data.weightTrendSeries ?? []} units={store.units} />
         </div>
       </Card>
 

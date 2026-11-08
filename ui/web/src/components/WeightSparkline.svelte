@@ -6,26 +6,38 @@
   export let units = 'imperial'
   // Initial view: 'raw' | 'trend'. The pill toggles it locally afterwards.
   export let series = 'raw'
-  // Span (days) used for the display-only EMA smoothing.
+  // Server engine trend, aligned 1:1 with `points`. Null entries are burn-in
+  // (fewer than 7 weigh-ins) — the client skips them. Empty for legacy
+  // payloads, which fall back to the display-only EMA below.
+  export let trendSeries = []
+  // Span (days) used for the display-only EMA fallback.
   export let trendWindow = 7
 
   let mode = series === 'trend' ? 'trend' : 'raw'
 
+  // Pair each raw point with its server trend value before filtering/sorting,
+  // so the two arrays stay aligned even when invalid readings are dropped.
+  $: paired = points.map((p, i) => ({
+    ...p,
+    trendKg: Number.isFinite(trendSeries?.[i]) ? trendSeries[i] : null
+  }))
+
   // Filter out points with invalid weightKg and ensure sorted by date (oldest -> newest)
-  $: validPoints = points.filter(p => p.weightKg !== undefined && p.weightKg !== null && isFinite(p.weightKg))
+  $: validPoints = paired.filter(p => p.weightKg !== undefined && p.weightKg !== null && isFinite(p.weightKg))
   $: sorted = [...validPoints].sort((a, b) => a.date.localeCompare(b.date))
 
   // Convert points to display units but keep raw (kg) for scaling
   $: displayPoints = sorted.map(p => ({
     date: p.date,
     weight: dispWeight(p.weightKg, units),
-    raw: p.weightKg
+    raw: p.weightKg,
+    trendKg: p.trendKg
   }))
 
-  // The API only ships raw weigh-ins today. Until the server exposes a full
-  // EMA series, smooth the sparkline here for DISPLAY ONLY. Headline trend
-  // numbers (Dashboard's weightTrendKg / weightRateKgPerWeek) always come
-  // from the server — never from this client-side smoothing.
+  // Smooth the sparkline here for DISPLAY ONLY when the server shipped no
+  // engine series (legacy payloads). Headline trend numbers (Dashboard's
+  // weightTrendKg / weightRateKgPerWeek) always come from the server — never
+  // from this client-side smoothing.
   function ema(values, alpha) {
     const out = []
     let prev = null
@@ -37,18 +49,36 @@
   }
 
   $: alpha = 2 / (Math.max(trendWindow, 2) + 1)
-  $: trendSeries = (() => {
+  $: fallbackTrend = (() => {
     if (!displayPoints.length) return []
     const smooth = ema(displayPoints.map(p => p.raw), alpha)
     return displayPoints.map((p, i) => ({
       date: p.date,
       raw: smooth[i],
-      weight: dispWeight(smooth[i], units)
+      weight: dispWeight(smooth[i], units),
+      xIndex: i
     }))
   })()
 
+  // When the server sent an engine trend, the curve IS the fitted level the
+  // check-in uses. Null entries are burn-in and are skipped, but x stays keyed
+  // to the raw point index so the curve remains aligned with the raw dots.
+  $: hasEngineTrend = displayPoints.some(p => p.trendKg !== null)
+  $: engineTrend = displayPoints
+    .map((p, i) => (p.trendKg !== null
+      ? { date: p.date, raw: p.trendKg, weight: dispWeight(p.trendKg, units), xIndex: i }
+      : null))
+    .filter(Boolean)
+
+  $: rawSeriesPoints = displayPoints.map((p, i) => ({
+    date: p.date,
+    raw: p.raw,
+    weight: p.weight,
+    xIndex: i
+  }))
+
   // Active series drives both the path and the min/max labels.
-  $: active = mode === 'trend' ? trendSeries : displayPoints
+  $: active = mode === 'trend' ? (hasEngineTrend ? engineTrend : fallbackTrend) : rawSeriesPoints
   $: hasSeries = active.length >= 2
 
   // Calculate min/max for scaling (use raw kg values then convert for display labels)
@@ -61,11 +91,15 @@
   const height = 80
   const padding = 10
 
+  // x positions stay anchored to the full raw index range so a burn-in gap at
+  // the start of the trend series does not stretch the remaining points.
+  $: xSpan = Math.max(displayPoints.length - 1, 1)
+
   // Generate SVG path
   $: pathData = (() => {
     if (active.length < 2) return ''
     const pts = active.map((p, i) => {
-      const x = padding + (i / (active.length - 1)) * (width - 2 * padding)
+      const x = padding + (p.xIndex / xSpan) * (width - 2 * padding)
       const y = height - padding - ((p.raw - minWeight) / range) * (height - 2 * padding)
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`
     })
@@ -74,7 +108,7 @@
 
   // Last point for the end dot
   $: lastIdx = active.length - 1
-  $: lastX = active.length ? padding + (lastIdx / Math.max(active.length - 1, 1)) * (width - 2 * padding) : 0
+  $: lastX = active.length ? padding + (active[lastIdx].xIndex / xSpan) * (width - 2 * padding) : 0
   $: lastY = active.length
     ? height - padding - ((active[lastIdx].raw - minWeight) / range) * (height - 2 * padding)
     : 0
@@ -152,7 +186,11 @@
   </div>
 
   {#if mode === 'trend'}
-    <div class="text-[10px] text-gray-600 mt-0.5">Display-only EMA · headline trend comes from the server</div>
+    <div class="text-[10px] text-gray-600 mt-0.5">
+      {hasEngineTrend
+        ? 'Engine trend · same fit the check-in uses'
+        : 'Display-only EMA · headline trend comes from the server'}
+    </div>
   {/if}
   {/if}
 </div>
