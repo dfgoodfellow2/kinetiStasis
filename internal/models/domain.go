@@ -4,12 +4,13 @@ import "time"
 
 // User represents an authenticated user account.
 type User struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	IsAdmin   bool   `json:"isAdmin"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID              string `json:"id"`
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	IsAdmin         bool   `json:"isAdmin"`
+	PendingApproval bool   `json:"pendingApproval,omitempty"`
+	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt"`
 }
 
 // Profile holds all personal and physiological data for a user.
@@ -324,6 +325,16 @@ type GroupMember struct {
 	ShareStreak    bool   `json:"shareStreak"`
 	ShareAdherence bool   `json:"shareAdherence"`
 	JoinedAt       string `json:"joinedAt"`
+}
+
+// RegistrationInvite is a single-use account-registration code. used_by is
+// empty until an account consumes it; the row is kept for audit.
+type RegistrationInvite struct {
+	Code      string `json:"code"`
+	CreatedBy string `json:"createdBy"`
+	ExpiresAt string `json:"expiresAt"`
+	UsedBy    string `json:"usedBy,omitempty"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // GroupInvite is a single-use join code for a group.

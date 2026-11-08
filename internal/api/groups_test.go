@@ -16,7 +16,9 @@ import (
 )
 
 // newAuthedClient registers a fresh user on the harness server and returns a
-// client whose cookie jar carries that user's auth cookies.
+// client whose cookie jar carries that user's auth cookies. The default
+// registration mode is invite_only, so a 403 from the gate makes the helper
+// mint a code as the harness admin (the first registrant) and retry once.
 func newAuthedClient(t *testing.T, h *harness, username string) *http.Client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
@@ -25,21 +27,44 @@ func newAuthedClient(t *testing.T, h *harness, username string) *http.Client {
 	}
 	c := &http.Client{Jar: jar}
 
-	payload, _ := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"username": username,
 		"email":    username + "@example.com",
 		"password": "supersecret123",
-	})
-	resp, err := c.Post(h.server.URL+"/v1/auth/register", "application/json", bytes.NewReader(payload))
-	if err != nil {
-		t.Fatalf("register %s: %v", username, err)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("register %s: status %d, body %s", username, resp.StatusCode, body)
+	status, body := postRegister(t, h, c, payload)
+	if status == http.StatusForbidden {
+		raw := doAs(t, h, h.client, http.MethodPost, "/v1/admin/register-invites", nil, http.StatusCreated)
+		inv := decodeJSON[struct {
+			Code string `json:"code"`
+		}](t, raw)
+		payload["inviteCode"] = inv.Code
+		status, body = postRegister(t, h, c, payload)
+	}
+	if status != http.StatusCreated {
+		t.Fatalf("register %s: status %d, body %s", username, status, body)
 	}
 	return c
+}
+
+// postRegister posts a registration body and returns the raw status and body
+// without asserting success, so callers can decide how to handle the gate.
+func postRegister(t *testing.T, h *harness, c *http.Client, payload map[string]any) (int, []byte) {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal register payload: %v", err)
+	}
+	resp, err := c.Post(h.server.URL+"/v1/auth/register", "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read register response: %v", err)
+	}
+	return resp.StatusCode, body
 }
 
 // doAs is the multi-client analogue of harness.do.

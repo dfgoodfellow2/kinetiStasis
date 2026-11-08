@@ -338,12 +338,16 @@ func (s *SQLiteStore) CountUsers(ctx context.Context) (int, error) {
 	return cnt, nil
 }
 
-func (s *SQLiteStore) CreateUser(ctx context.Context, id, username, email, passwordHash string, isAdmin bool, createdAt, updatedAt string) error {
+func (s *SQLiteStore) CreateUser(ctx context.Context, id, username, email, passwordHash string, isAdmin, pendingApproval bool, createdAt, updatedAt string) error {
 	admin := 0
 	if isAdmin {
 		admin = 1
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO users (id, username, email, password, is_admin, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`, id, username, email, passwordHash, admin, createdAt, updatedAt)
+	pending := 0
+	if pendingApproval {
+		pending = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO users (id, username, email, password, is_admin, pending_approval, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`, id, username, email, passwordHash, admin, pending, createdAt, updatedAt)
 	if err != nil {
 		return fmt.Errorf("create user: %w", err)
 	}
@@ -361,11 +365,12 @@ func (s *SQLiteStore) FindUserByLogin(ctx context.Context, login string) (id, us
 
 func (s *SQLiteStore) GetUserByID(ctx context.Context, userID string) (models.User, error) {
 	var u models.User
-	var isAdmin int
-	if err := s.db.QueryRowContext(ctx, `SELECT id, username, email, is_admin, created_at, updated_at FROM users WHERE id = ?`, userID).Scan(&u.ID, &u.Username, &u.Email, &isAdmin, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	var isAdmin, pending int
+	if err := s.db.QueryRowContext(ctx, `SELECT id, username, email, is_admin, pending_approval, created_at, updated_at FROM users WHERE id = ?`, userID).Scan(&u.ID, &u.Username, &u.Email, &isAdmin, &pending, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		return u, fmt.Errorf("get user by id: %w", err)
 	}
 	u.IsAdmin = isAdmin == 1
+	u.PendingApproval = pending == 1
 	return u, nil
 }
 
@@ -431,7 +436,7 @@ func (s *SQLiteStore) DeleteUserRefreshTokens(ctx context.Context, userID string
 }
 
 func (s *SQLiteStore) ListUsers(ctx context.Context) ([]models.User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, username, email, is_admin, created_at, updated_at FROM users ORDER BY created_at ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, email, is_admin, pending_approval, created_at, updated_at FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
@@ -439,11 +444,12 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]models.User, error) {
 	var out []models.User
 	for rows.Next() {
 		var u models.User
-		var isAdmin int
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &isAdmin, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		var isAdmin, pending int
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &isAdmin, &pending, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan user row: %w", err)
 		}
 		u.IsAdmin = isAdmin == 1
+		u.PendingApproval = pending == 1
 		out = append(out, u)
 	}
 	return out, nil
@@ -479,6 +485,196 @@ func (s *SQLiteStore) CountAdmins(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("count admins: %w", err)
 	}
 	return cnt, nil
+}
+
+// --- Registration gate -------------------------------------------------------
+
+// AddSetting upserts an instance_settings row. The only key used today is
+// registration_mode, but the table is intentionally generic.
+func (s *SQLiteStore) AddSetting(ctx context.Context, key, value string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO instance_settings ("key", value) VALUES (?,?)
+         ON CONFLICT("key") DO UPDATE SET value = excluded.value`,
+		key, value,
+	); err != nil {
+		return fmt.Errorf("add setting %q: %w", key, err)
+	}
+	return nil
+}
+
+// GetSetting returns the stored value. sql.ErrNoRows is preserved via %w so
+// callers can distinguish a missing setting from a real database failure.
+func (s *SQLiteStore) GetSetting(ctx context.Context, key string) (string, error) {
+	var value string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM instance_settings WHERE "key" = ?`, key,
+	).Scan(&value); err != nil {
+		return "", fmt.Errorf("get setting %q: %w", key, err)
+	}
+	return value, nil
+}
+
+func (s *SQLiteStore) CreateRegistrationInvite(ctx context.Context, inv *models.RegistrationInvite) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO registration_invites (code, created_by, expires_at, used_by, created_at)
+         VALUES (?,?,?,?,?)`,
+		inv.Code, inv.CreatedBy, inv.ExpiresAt, inv.UsedBy, inv.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create registration invite: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListRegistrationInvites(ctx context.Context) ([]models.RegistrationInvite, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT code, created_by, expires_at, COALESCE(used_by,''), created_at
+         FROM registration_invites ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list registration invites: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.RegistrationInvite
+	for rows.Next() {
+		var inv models.RegistrationInvite
+		if err := rows.Scan(&inv.Code, &inv.CreatedBy, &inv.ExpiresAt, &inv.UsedBy, &inv.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan registration invite: %w", err)
+		}
+		out = append(out, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate registration invites: %w", err)
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) RevokeRegistrationInvite(ctx context.Context, code string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM registration_invites WHERE code = ?`, code)
+	if err != nil {
+		return fmt.Errorf("revoke registration invite: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("revoke registration invite rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ConsumeRegistrationInvite validates a code and marks it used in a single
+// transaction, mirroring ConsumeInvite for groups. The caller supplies the
+// account ID that will own the code so used_by is populated atomically.
+func (s *SQLiteStore) ConsumeRegistrationInvite(ctx context.Context, code, userID, now string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin consume registration invite: %w", err)
+	}
+	defer tx.Rollback()
+
+	var expiresAt, usedBy string
+	err = tx.QueryRowContext(ctx,
+		`SELECT expires_at, COALESCE(used_by,'') FROM registration_invites WHERE code = ?`, code,
+	).Scan(&expiresAt, &usedBy)
+	if err == sql.ErrNoRows {
+		return ErrInviteInvalid
+	}
+	if err != nil {
+		return fmt.Errorf("read registration invite: %w", err)
+	}
+	if usedBy != "" {
+		return ErrInviteUsed
+	}
+	exp, expErr := time.Parse(time.RFC3339, expiresAt)
+	nowT, nowErr := time.Parse(time.RFC3339, now)
+	if expErr == nil && nowErr == nil && !nowT.Before(exp) {
+		return ErrInviteExpired
+	}
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE registration_invites SET used_by = ? WHERE code = ? AND COALESCE(used_by,'') = ''`,
+		userID, code,
+	)
+	if err != nil {
+		return fmt.Errorf("mark registration invite used: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark registration invite rows affected: %w", err)
+	}
+	if n == 0 {
+		// Lost a race with another registration.
+		return ErrInviteUsed
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit consume registration invite: %w", err)
+	}
+	return nil
+}
+
+// ListPendingUsers returns accounts created under public_approval that have
+// not yet been approved. Rows are ordered oldest-first so admins review the
+// queue in arrival order.
+func (s *SQLiteStore) ListPendingUsers(ctx context.Context) ([]models.User, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, username, email, is_admin, pending_approval, created_at, updated_at
+         FROM users WHERE pending_approval = 1 ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list pending users: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.User
+	for rows.Next() {
+		var u models.User
+		var isAdmin, pending int
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &isAdmin, &pending, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan pending user: %w", err)
+		}
+		u.IsAdmin = isAdmin == 1
+		u.PendingApproval = pending == 1
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pending users: %w", err)
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) IsUserPendingApproval(ctx context.Context, userID string) (bool, error) {
+	var pending int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT pending_approval FROM users WHERE id = ?`, userID,
+	).Scan(&pending); err != nil {
+		return false, fmt.Errorf("get pending approval: %w", err)
+	}
+	return pending == 1, nil
+}
+
+func (s *SQLiteStore) SetUserPendingApproval(ctx context.Context, userID string, pending bool) error {
+	flag := 0
+	if pending {
+		flag = 1
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET pending_approval = ?, updated_at = ? WHERE id = ?`,
+		flag, time.Now().UTC().Format(time.RFC3339), userID,
+	)
+	if err != nil {
+		return fmt.Errorf("set pending approval: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set pending approval rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // --- Nutrition ---

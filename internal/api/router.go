@@ -85,6 +85,8 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 			r.Post("/login", authH.Login)
 			r.Post("/refresh", authH.Refresh)
 			r.Post("/logout", authH.Logout)
+			// Public: tells the register form which posture this instance uses.
+			r.Get("/registration-info", authH.RegistrationInfo)
 		})
 
 		// Protected routes — require valid access token cookie
@@ -104,6 +106,15 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 				r.Post("/users/{userID}/promote", adminH.PromoteUser)
 				r.Post("/users/{userID}/demote", adminH.DemoteUser)
 				r.Post("/users/{userID}/reset-password", authH.AdminResetPassword)
+
+				// Registration gate administration.
+				r.Post("/register-invites", adminH.CreateRegistrationInvite)
+				r.Get("/register-invites", adminH.ListRegistrationInvites)
+				r.Delete("/register-invites/{code}", adminH.RevokeRegistrationInvite)
+				r.Get("/pending-users", adminH.ListPendingUsers)
+				r.Post("/users/{userID}/approve", adminH.ApproveUser)
+				r.Get("/registration-mode", adminH.GetRegistrationMode)
+				r.Put("/registration-mode", adminH.SetRegistrationMode)
 			})
 
 			r.Get("/profile", profileH.Get)

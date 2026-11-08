@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/auth"
@@ -33,13 +34,66 @@ func NewAuthHandler(s store.Store, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{s: s, cfg: cfg}
 }
 
-// Register handles POST /v1/auth/register
-// The first user to register is automatically made admin.
+// Registration modes stored in instance_settings under "registration_mode".
+const (
+	RegistrationModeInviteOnly     = "invite_only"
+	RegistrationModePublic         = "public"
+	RegistrationModePublicApproval = "public_approval"
+
+	registrationModeSetting = "registration_mode"
+)
+
+// validRegistrationMode reports whether mode is one of the three supported
+// registration postures.
+func validRegistrationMode(mode string) bool {
+	switch mode {
+	case RegistrationModeInviteOnly, RegistrationModePublic, RegistrationModePublicApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+// RegistrationInfo handles GET /v1/auth/registration-info. It is public so the
+// register form knows whether to ask for an invite code and whether a new
+// account will need approval.
+func (h *AuthHandler) RegistrationInfo(w http.ResponseWriter, r *http.Request) {
+	mode := RegistrationModeInviteOnly
+	stored, err := h.s.GetSetting(r.Context(), registrationModeSetting)
+	switch {
+	case err == nil:
+		if validRegistrationMode(stored) {
+			mode = stored
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		// Legacy database without the seed row: fail closed.
+	default:
+		slog.Error("read registration mode", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	respond.JSON(w, http.StatusOK, map[string]any{
+		"mode":            mode,
+		"pendingApproval": mode == RegistrationModePublicApproval,
+	})
+}
+
+// Register handles POST /v1/auth/register.
+//
+// Gate rules, in order:
+//  1. Zero users on the instance: registration is always allowed and the first
+//     account becomes the admin/owner. This preserves the bootstrap flow.
+//  2. invite_only (default): a valid, unused, unexpired inviteCode is required.
+//  3. public: any registration is accepted immediately.
+//  4. public_approval: the account row is created pending approval and Login
+//     refuses to issue tokens until an admin approves it.
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Username   string `json:"username"`
+		Email      string `json:"email"`
+		Password   string `json:"password"`
+		InviteCode string `json:"inviteCode"`
 	}
 	if !respond.Decode(w, r, &req) {
 		return
@@ -53,18 +107,29 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine if this is the first user (auto-admin)
-	var count int
-	cnt, err := h.s.CountUsers(r.Context())
+	count, err := h.s.CountUsers(r.Context())
 	if err != nil {
 		slog.Error("count users during register", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	count = cnt
-	isAdmin := 0
-	if count == 0 {
-		isAdmin = 1
+	bootstrap := count == 0
+
+	mode := RegistrationModeInviteOnly
+	if !bootstrap {
+		stored, err := h.s.GetSetting(r.Context(), registrationModeSetting)
+		switch {
+		case err == nil:
+			if validRegistrationMode(stored) {
+				mode = stored
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// Missing seed: keep the closed default.
+		default:
+			slog.Error("read registration mode", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
 	}
 
 	hash, err := auth.HashPassword(req.Password)
@@ -77,9 +142,47 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(constants.TimeFormat)
 	userID := uuid.New().String()
 
-	if err := h.s.CreateUser(r.Context(), userID, req.Username, req.Email, hash, isAdmin == 1, now, now); err != nil {
+	// Invite-only gate. The code is consumed before the user row is created so
+	// two concurrent registrations cannot both spend it. A duplicate
+	// username/email therefore still burns the code; that is an acceptable
+	// trade-off for single-use enforcement.
+	if !bootstrap && mode == RegistrationModeInviteOnly {
+		code := strings.ToUpper(strings.TrimSpace(req.InviteCode))
+		if code == "" {
+			respond.Error(w, http.StatusForbidden, "registration requires a valid invite code")
+			return
+		}
+		if err := h.s.ConsumeRegistrationInvite(r.Context(), code, userID, now); err != nil {
+			switch {
+			case errors.Is(err, store.ErrInviteInvalid),
+				errors.Is(err, store.ErrInviteUsed),
+				errors.Is(err, store.ErrInviteExpired):
+				slog.Warn("registration invite rejected", "reason", err)
+				respond.Error(w, http.StatusForbidden, "registration requires a valid invite code")
+			default:
+				slog.Error("consume registration invite", "err", err)
+				respond.Error(w, http.StatusInternalServerError, "internal server error")
+			}
+			return
+		}
+	}
+
+	pending := !bootstrap && mode == RegistrationModePublicApproval
+	isAdmin := bootstrap
+
+	if err := h.s.CreateUser(r.Context(), userID, req.Username, req.Email, hash, isAdmin, pending, now, now); err != nil {
 		slog.Error("create user during register", "err", err)
 		respond.Error(w, http.StatusConflict, "username or email already exists")
+		return
+	}
+
+	// Pending accounts get no profile, no tokens and no session.
+	if pending {
+		slog.Info("registration pending approval", "user_id", userID)
+		respond.JSON(w, http.StatusCreated, map[string]string{
+			"status":  "pending",
+			"message": "account is awaiting approval",
+		})
 		return
 	}
 
@@ -89,7 +192,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Issue tokens
-	if err := h.issueTokenPair(w, r, userID, isAdmin == 1); err != nil {
+	if err := h.issueTokenPair(w, r, userID, isAdmin); err != nil {
 		slog.Error("issue token pair during register", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not issue tokens")
 		return
@@ -98,7 +201,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusCreated, map[string]any{
 		"userId":   userID,
 		"username": req.Username,
-		"isAdmin":  isAdmin == 1,
+		"isAdmin":  isAdmin,
 	})
 }
 
@@ -136,6 +239,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err := auth.CheckPassword(hash, req.Password); err != nil {
 		respond.Error(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	// Accounts created under public_approval exist but cannot sign in until an
+	// admin approves them. Reject before minting any tokens or refresh rows.
+	pending, err := h.s.IsUserPendingApproval(r.Context(), userID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("check pending approval during login", "user_id", userID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if pending {
+		respond.Error(w, http.StatusForbidden, "account is awaiting approval")
 		return
 	}
 

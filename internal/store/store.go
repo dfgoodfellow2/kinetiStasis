@@ -59,10 +59,21 @@ type UserStore interface {
 
 	// auth / users
 	CountUsers(ctx context.Context) (int, error)
-	CreateUser(ctx context.Context, id, username, email, passwordHash string, isAdmin bool, createdAt, updatedAt string) error
+	CreateUser(ctx context.Context, id, username, email, passwordHash string, isAdmin, pendingApproval bool, createdAt, updatedAt string) error
 	FindUserByLogin(ctx context.Context, login string) (id, username, passwordHash string, isAdmin bool, err error)
 	GetUserByID(ctx context.Context, userID string) (models.User, error)
 	GetUserPasswordHash(ctx context.Context, userID string) (string, error)
+
+	// registration gate
+	AddSetting(ctx context.Context, key, value string) error
+	GetSetting(ctx context.Context, key string) (string, error)
+	CreateRegistrationInvite(ctx context.Context, inv *models.RegistrationInvite) error
+	ListRegistrationInvites(ctx context.Context) ([]models.RegistrationInvite, error)
+	RevokeRegistrationInvite(ctx context.Context, code string) error
+	ConsumeRegistrationInvite(ctx context.Context, code, userID, now string) error
+	ListPendingUsers(ctx context.Context) ([]models.User, error)
+	IsUserPendingApproval(ctx context.Context, userID string) (bool, error)
+	SetUserPendingApproval(ctx context.Context, userID string, pending bool) error
 
 	// password management
 	UpdateUserPassword(ctx context.Context, userID, passwordHash string) error
