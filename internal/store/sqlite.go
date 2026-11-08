@@ -699,7 +699,10 @@ func (s *SQLiteStore) CreateTargetSnapshot(ctx context.Context, snap *models.Tar
 }
 
 func (s *SQLiteStore) FetchTargetHistory(ctx context.Context, userID string) ([]models.TargetSnapshot, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,created_at FROM target_history WHERE user_id = ? ORDER BY effective_date DESC`, userID)
+	// created_at is the tie-breaker: several snapshots can share an
+	// effective_date (check-in + manual edit), and without a secondary key
+	// their relative order is unspecified.
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,created_at FROM target_history WHERE user_id = ? ORDER BY effective_date DESC, created_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch target history: %w", err)
 	}

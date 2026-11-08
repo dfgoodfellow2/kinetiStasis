@@ -282,7 +282,12 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	// Nanosecond precision keeps target_history's
+	// UNIQUE(user_id,effective_date,created_at) key collision-free when a
+	// check-in snapshot and a manual targets edit land in the same second.
+	// Existing rows stay second-precision; the string key only needs the
+	// values to differ, so no migration is required for the mixed formats.
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	in.CreatedAt = now
 
 	// Persist the engine snapshot exactly as produced for this run.

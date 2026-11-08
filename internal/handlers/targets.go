@@ -138,7 +138,11 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.UserID = claims.UserID
-	now := time.Now().UTC().Format(time.RFC3339)
+	// Nanosecond precision keeps target_history's
+	// UNIQUE(user_id,effective_date,created_at) key collision-free when this
+	// manual edit races a check-in snapshot in the same second. Existing rows
+	// stay second-precision; string uniqueness needs no migration.
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	var err error
 
