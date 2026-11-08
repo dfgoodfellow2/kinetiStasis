@@ -156,11 +156,55 @@ func (s *SQLiteStore) GetLastCheckin(ctx context.Context, userID string) (models
 	return out, nil
 }
 
+// execer is the write subset shared by *sql.DB and *sql.Tx. Extracting it lets
+// the legacy single-write methods and RecordCheckinTx share exactly the same
+// SQL without duplicating statements.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// insertCheckinLog writes the check-in row using the supplied executor.
+func insertCheckinLog(ctx context.Context, ex execer, c *models.CheckInLog) error {
+	_, err := ex.ExecContext(ctx, `INSERT INTO check_in_logs (id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at, observed_tdee, tdee_confidence, lookback_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, c.ID, c.UserID, c.CheckInDate, c.WeightBefore, c.WeightAfter, c.CaloriesBefore, c.CaloriesAfter, c.Reason, c.CreatedAt, c.ObservedTDEE, c.TDEEConfidence, c.LookbackDays)
+	return err
+}
+
 // CreateCheckinLog inserts a new check-in row.
 func (s *SQLiteStore) CreateCheckinLog(ctx context.Context, c *models.CheckInLog) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO check_in_logs (id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at, observed_tdee, tdee_confidence, lookback_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, c.ID, c.UserID, c.CheckInDate, c.WeightBefore, c.WeightAfter, c.CaloriesBefore, c.CaloriesAfter, c.Reason, c.CreatedAt, c.ObservedTDEE, c.TDEEConfidence, c.LookbackDays)
-	if err != nil {
+	if err := insertCheckinLog(ctx, s.db, c); err != nil {
 		return fmt.Errorf("create checkin log: %w", err)
+	}
+	return nil
+}
+
+// RecordCheckinTx persists the check-in row, an optional target update and an
+// optional pre-change target snapshot in a single transaction. A nil targets
+// leaves the targets table untouched (the policy-blocked path); a nil snap
+// skips the history row. The check-in insert error is returned unwrapped so
+// callers can match the driver's exact UNIQUE-constraint text for the
+// duplicate-day check-in conflict.
+func (s *SQLiteStore) RecordCheckinTx(ctx context.Context, c *models.CheckInLog, targets *models.Targets, snap *models.TargetSnapshot) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin record checkin: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := insertCheckinLog(ctx, tx, c); err != nil {
+		return err
+	}
+	if targets != nil {
+		if err := upsertTargets(ctx, tx, targets); err != nil {
+			return fmt.Errorf("upsert targets: %w", err)
+		}
+	}
+	if snap != nil {
+		if err := insertTargetSnapshot(ctx, tx, snap); err != nil {
+			return fmt.Errorf("create target snapshot: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit record checkin: %w", err)
 	}
 	return nil
 }
@@ -607,25 +651,37 @@ func (s *SQLiteStore) DeleteWorkout(ctx context.Context, userID, date, slot stri
 }
 
 // --- Targets ---
-func (s *SQLiteStore) UpsertTargets(ctx context.Context, t *models.Targets) error {
+
+// upsertTargets writes the full target row using the supplied executor.
+func upsertTargets(ctx context.Context, ex execer, t *models.Targets) error {
 	eatBack := 0
 	if t.EatBackExercise {
 		eatBack = 1
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO targets (user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET calories=excluded.calories,protein_g=excluded.protein_g,carbs_g=excluded.carbs_g,fat_g=excluded.fat_g,fiber_g=excluded.fiber_g,water_ml=excluded.water_ml,eat_back_exercise=excluded.eat_back_exercise,updated_at=excluded.updated_at`, t.UserID, t.Calories, t.ProteinG, t.CarbsG, t.FatG, t.FiberG, t.WaterMl, eatBack, t.UpdatedAt)
-	if err != nil {
+	_, err := ex.ExecContext(ctx, `INSERT INTO targets (user_id,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET calories=excluded.calories,protein_g=excluded.protein_g,carbs_g=excluded.carbs_g,fat_g=excluded.fat_g,fiber_g=excluded.fiber_g,water_ml=excluded.water_ml,eat_back_exercise=excluded.eat_back_exercise,updated_at=excluded.updated_at`, t.UserID, t.Calories, t.ProteinG, t.CarbsG, t.FatG, t.FiberG, t.WaterMl, eatBack, t.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) UpsertTargets(ctx context.Context, t *models.Targets) error {
+	if err := upsertTargets(ctx, s.db, t); err != nil {
 		return fmt.Errorf("upsert targets: %w", err)
 	}
 	return nil
 }
 
-func (s *SQLiteStore) CreateTargetSnapshot(ctx context.Context, snap *models.TargetSnapshot) error {
+// insertTargetSnapshot writes a pre-change target row using the supplied
+// executor.
+func insertTargetSnapshot(ctx context.Context, ex execer, snap *models.TargetSnapshot) error {
 	eatBack := 0
 	if snap.EatBackExercise {
 		eatBack = 1
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO target_history (id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, snap.ID, snap.UserID, snap.EffectiveDate, snap.Calories, snap.ProteinG, snap.CarbsG, snap.FatG, snap.FiberG, snap.WaterMl, eatBack, snap.CreatedAt)
-	if err != nil {
+	_, err := ex.ExecContext(ctx, `INSERT INTO target_history (id,user_id,effective_date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,eat_back_exercise,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, snap.ID, snap.UserID, snap.EffectiveDate, snap.Calories, snap.ProteinG, snap.CarbsG, snap.FatG, snap.FiberG, snap.WaterMl, eatBack, snap.CreatedAt)
+	return err
+}
+
+func (s *SQLiteStore) CreateTargetSnapshot(ctx context.Context, snap *models.TargetSnapshot) error {
+	if err := insertTargetSnapshot(ctx, s.db, snap); err != nil {
 		return fmt.Errorf("create target snapshot: %w", err)
 	}
 	return nil

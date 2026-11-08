@@ -84,35 +84,29 @@ func LinearRegression(values []float64) (m, b, predicted float64) {
 
 // ComputeWeightTrend fits a least-squares line over the weight observations on
 // or after since. trendKg is the fitted value at the newest observation and
-// rateKgPerWeek is the slope expressed per week. days reports how many weight
-// observations fed the fit, even during burn-in (when trendKg is 0).
+// rateKgPerWeek is the slope expressed per week. days reports how many distinct
+// weight-bearing days fed the fit, even during burn-in (when trendKg is 0).
+//
+// The regression uses real calendar-day offsets rather than row indices, so
+// weekly or otherwise sparse weigh-ins produce a truthful weekly rate. With
+// row-index spacing, seven weekly weigh-ins a kilogram apart looked like
+// -7 kg/week instead of -1 kg/week.
 //
 // biometrics must be ordered oldest to newest, which is how the store returns
 // them. Observations outside the plausible human range (20-300 kg) are skipped
 // to match the dashboard's existing weight-trend filtering.
 func ComputeWeightTrend(biometrics []models.BiometricLog, since string) (trendKg, rateKgPerWeek float64, days int) {
-	weights := make([]float64, 0, len(biometrics))
-	for _, bio := range biometrics {
-		if bio.Date < since {
-			continue
-		}
-		if bio.WeightKg <= 20 || bio.WeightKg >= 300 {
-			continue
-		}
-		weights = append(weights, bio.WeightKg)
-	}
+	weights, dayOffsets, _ := weightSeriesForWindow(biometrics, since)
 
 	days = len(weights)
 	if days < MinWeightTrendDays {
 		return 0, 0, days
 	}
 
-	slope, intercept, _ := LinearRegression(weights)
-	// Observations are 0-based, so the newest one is at x = days-1.
-	// Evaluate the fit there; LinearRegression's third return value is an
-	// x = n one-day-forward forecast and must not be used as the level.
-	trendKg = slope*float64(days-1) + intercept
-	// rateKgPerWeek assumes one weigh-in per day; sparse weighing understates it.
+	slope, intercept := regressionFit(weights, dayOffsets)
+	// Evaluate the fit at the newest observation's calendar offset. This is the
+	// smoothed level, not a forecast beyond the data.
+	trendKg = slope*dayOffsets[len(dayOffsets)-1] + intercept
 	return trendKg, slope * 7, days
 }
 
@@ -168,13 +162,17 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 	return weights, dayOffsets, spanDays
 }
 
-// regressionSlopeKgPerDay fits weight against elapsed days and returns the
-// slope. It is the same least-squares math as LinearRegression, parameterised
-// by real day offsets so sparse weigh-ins are not understated.
-func regressionSlopeKgPerDay(weights, dayOffsets []float64) float64 {
+// regressionFit fits weight against elapsed days and returns the slope and the
+// intercept at day zero (the first observation). It is the same least-squares
+// math as LinearRegression, parameterised by real day offsets so sparse
+// weigh-ins are not distorted.
+func regressionFit(weights, dayOffsets []float64) (slope, intercept float64) {
 	n := float64(len(weights))
 	if n < 2 {
-		return 0
+		if n == 1 {
+			return 0, weights[0]
+		}
+		return 0, 0
 	}
 	var sumX, sumY float64
 	for i, w := range weights {
@@ -189,10 +187,16 @@ func regressionSlopeKgPerDay(weights, dayOffsets []float64) float64 {
 		num += (x - meanX) * (w - meanY)
 		den += (x - meanX) * (x - meanX)
 	}
-	if den == 0 {
-		return 0
+	if den != 0 {
+		slope = num / den
 	}
-	return num / den
+	return slope, meanY - slope*meanX
+}
+
+// regressionSlopeKgPerDay returns only the calendar-day slope of the fit.
+func regressionSlopeKgPerDay(weights, dayOffsets []float64) float64 {
+	slope, _ := regressionFit(weights, dayOffsets)
+	return slope
 }
 
 // ComputeObservedTDEE implements the energy-balance estimator:

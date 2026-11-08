@@ -107,6 +107,11 @@ type LogStore interface {
 // CheckinStore handles weekly check-in events.
 type CheckinStore interface {
 	CreateCheckinLog(ctx context.Context, c *models.CheckInLog) error
+	// RecordCheckinTx persists the check-in row, an optional pre-change target
+	// snapshot and an optional target update in a single transaction. Pass nil
+	// for snap/targets to skip that write; a nil targets leaves stored targets
+	// untouched (the blocked-update path).
+	RecordCheckinTx(ctx context.Context, c *models.CheckInLog, targets *models.Targets, snap *models.TargetSnapshot) error
 	FetchCheckinHistory(ctx context.Context, userID string, limit int) ([]models.CheckinHistoryEntry, error)
 }
 

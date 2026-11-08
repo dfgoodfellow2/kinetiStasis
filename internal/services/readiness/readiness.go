@@ -2,7 +2,6 @@ package readiness
 
 import (
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
@@ -21,8 +20,8 @@ type SignalAnalysis struct {
 
 // ReadinessThresholdZone defines a consecutive-day escalation zone.
 type ReadinessThresholdZone struct {
-	MinZ       float64 // inclusive lower bound for |z|
-	MaxZ       float64 // exclusive upper bound (0 = no bound)
+	MinZ       float64 // inclusive lower bound for the NEGATIVE deviation (-MinZ)
+	MaxZ       float64 // exclusive upper bound for the negative deviation (0 = no bound)
 	DaysYellow int     // consecutive days to trigger yellow
 	DaysRed    int     // consecutive days to trigger red
 }
@@ -30,9 +29,12 @@ type ReadinessThresholdZone struct {
 // DefaultThresholdZones are the standard readiness escalation rules.
 // Inspired by Andy Galpin's HRV framework (2 SD >5 days → action),
 // but graduated for faster response.
+//
+// Only NEGATIVE deviations escalate: readiness is a fatigue signal, so a run of
+// days far ABOVE baseline is informational, never a reason to mandate rest.
 var DefaultThresholdZones = []ReadinessThresholdZone{
-	{MinZ: 2.0, MaxZ: 0, DaysYellow: 2, DaysRed: 3},   // Severe: |z| ≥ 2
-	{MinZ: 1.0, MaxZ: 2.0, DaysYellow: 4, DaysRed: 5}, // Moderate: 1 ≤ |z| < 2
+	{MinZ: 2.0, MaxZ: 0, DaysYellow: 2, DaysRed: 3},   // Severe: Rz ≤ -2
+	{MinZ: 1.0, MaxZ: 2.0, DaysYellow: 4, DaysRed: 5}, // Moderate: -2 < Rz ≤ -1
 }
 
 // analyzeSignal computes EMA, SD, and z-score for a set of values.
@@ -156,17 +158,20 @@ func computeRzHistory(logs []models.BiometricLog, profile models.Profile, days i
 }
 
 // countDaysInRange counts trailing consecutive days (from most recent backward)
-// where |Rz| falls within [minZ, maxZ). If maxZ is 0, there is no upper bound.
+// where the combined Rz is at least minZ BELOW baseline, i.e. Rz ≤ -minZ. When
+// maxZ is non-zero the deviation must also be less severe than -maxZ
+// (-maxZ < Rz). Positive deviations never count: a good day above baseline is
+// not fatigue.
 //
-// NOTE: A day with no biometric data produces Rz=0 (the zero value for a float64).
-// Since |0| < 1.0, such a day does NOT match any zone and breaks the streak.
-// This means a missed log day resets the consecutive-day count — by design,
-// since we cannot confirm a deviation streak without data.
+// NOTE: A day with no biometric data produces Rz=0 (the zero value for a
+// float64). Since 0 > -1.0, such a day does NOT match any zone and breaks the
+// streak. This means a missed log day resets the consecutive-day count — by
+// design, since we cannot confirm a deviation streak without data.
 func countDaysInRange(rzHistory []float64, minZ, maxZ float64) int {
 	count := 0
 	for i := len(rzHistory) - 1; i >= 0; i-- {
-		absZ := math.Abs(rzHistory[i])
-		inRange := absZ >= minZ && (maxZ == 0 || absZ < maxZ)
+		z := rzHistory[i]
+		inRange := z <= -minZ && (maxZ == 0 || z > -maxZ)
 		if inRange {
 			count++
 		} else {
@@ -194,6 +199,14 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 	}
 	if bolt.ZScore <= -1.0 {
 		notes = append(notes, "BOLT below baseline")
+	}
+	// Positive deviations are informational only. They are surfaced so the user
+	// knows the signal is unusually high, but they never escalate readiness.
+	if grip.ZScore >= 1.0 {
+		notes = append(notes, "Grip above baseline (informational)")
+	}
+	if bolt.ZScore >= 1.0 {
+		notes = append(notes, "BOLT above baseline (informational)")
 	}
 
 	makeResult := func(level, message string, rz float64, consecutiveDays int) models.ReadinessResult {
@@ -267,7 +280,7 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 				msg = fmt.Sprintf("Moderate deviation %d days — recovery needed", count)
 			}
 			consecutiveDays = count
-			notes = append(notes, fmt.Sprintf("|Rz| ≥ %.0f for %d consecutive days", zone.MinZ, count))
+			notes = append(notes, fmt.Sprintf("Rz ≤ -%.0f for %d consecutive days", zone.MinZ, count))
 			break // highest priority zone wins
 		}
 		if count >= zone.DaysYellow {
@@ -278,7 +291,7 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 				msg = fmt.Sprintf("Moderate deviation %d days — consider easy day", count)
 			}
 			consecutiveDays = count
-			notes = append(notes, fmt.Sprintf("|Rz| ≥ %.0f for %d consecutive days", zone.MinZ, count))
+			notes = append(notes, fmt.Sprintf("Rz ≤ -%.0f for %d consecutive days", zone.MinZ, count))
 			break
 		}
 	}

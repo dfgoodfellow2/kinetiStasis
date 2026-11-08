@@ -43,13 +43,31 @@ const (
 	// WaterMlPerKg is the daily water target in millilitres per kg bodyweight.
 	WaterMlPerKg = 35.0
 
-	// NEATFactorLightlyActive is the activity multiplier for the
-	// "lightly_active" profile value.
-	NEATFactorLightlyActive = 1.1
+	// Activity multipliers. These are TOTAL TDEE/BMR ratios, not NEAT-only
+	// multipliers: they absorb the thermic effect of food and baseline
+	// non-exercise activity, while deliberate exercise is added separately
+	// through EstimateEATFactor and CalcRunningCalories. The values follow the
+	// generous custom-factor convention used by SBS/MacroFactor-style
+	// calculators rather than the narrower classic Harris-Benedict ranges.
+	//
+	// Policy impact: initial and fallback estimates for sedentary users rise
+	// roughly 20% versus the old BMR-as-TDEE behaviour (an 80 kg / 180 cm /
+	// 38-year-old sedentary male now lands near 2175 kcal instead of 1740).
+	// That is intentional — the adaptive engine self-corrects actual
+	// expenditure from scale data within a few weeks of logging.
+	NEATFactorSedentary        = 1.25
+	NEATFactorLightlyActive    = 1.35
+	NEATFactorModeratelyActive = 1.45
+	NEATFactorVeryActive       = 1.55
 
 	// DefaultNEATFactor applies when a profile's activity is unrecognised.
 	// It matches the lightly-active multiplier.
 	DefaultNEATFactor = NEATFactorLightlyActive
+
+	// RunningKmPerSession is the nominal distance of one dedicated running
+	// session, used to net running sessions out of the reported exercise
+	// frequency so the same run is not counted twice.
+	RunningKmPerSession = 8.0
 )
 
 func EstimateBMRMifflin(weightKg, heightCm float64, age int, isMale bool) float64 {
@@ -89,13 +107,13 @@ func ComputeBMR(p models.Profile, weightKg float64) float64 {
 }
 
 func EstimateTDEEBase(bmr float64, activity string) float64 {
-	neatFactors := map[string]float64{
-		"sedentary":         1.0,
+	activityFactors := map[string]float64{
+		"sedentary":         NEATFactorSedentary,
 		"lightly_active":    NEATFactorLightlyActive,
-		"moderately_active": 1.2,
-		"very_active":       1.3,
+		"moderately_active": NEATFactorModeratelyActive,
+		"very_active":       NEATFactorVeryActive,
 	}
-	factor, ok := neatFactors[activity]
+	factor, ok := activityFactors[activity]
 	if !ok {
 		factor = DefaultNEATFactor
 	}
@@ -167,12 +185,35 @@ func CalcFiberTarget(calories int, sex string) int {
 	return absMin
 }
 
-// ComputeStaticTDEE computes profile-based static TDEE: BMR × NEAT × EAT + running calories
+// ComputeStaticTDEE computes profile-based static TDEE:
+//
+//	BMR × total-activity factor × EAT + running calories
+//
+// Running must not be counted twice. Users often report both a weekly running
+// distance and a general exercise frequency that already includes those runs,
+// so netting the running sessions out of the EAT frequency input and adding
+// their energy back once keeps the estimate coherent. Vault convention:
+// deliberate running is EAT (exercise activity thermogenesis), distinct from
+// baseline activity, and may appear exactly once in the total.
 func ComputeStaticTDEE(p models.Profile, weightKg float64) float64 {
 	bmr := ComputeBMR(p, weightKg)
-	baseNEAT := EstimateTDEEBase(bmr, p.Activity)
-	eatMult := EstimateEATFactor(p.ExerciseFreq)
-	tdeeBase := math.Round(baseNEAT * eatMult)
+	baseActivity := EstimateTDEEBase(bmr, p.Activity)
+
+	// Count running as dedicated exercise days (≈8 km per session) and remove
+	// them from the frequency input before applying the EAT factor. A runner
+	// who logs 40 km/week and "5 exercise days" therefore gets EAT for 0
+	// non-running days plus the running calories, not both.
+	runningDays := 0
+	if p.RunningKm > 0 {
+		runningDays = int(math.Round(p.RunningKm / RunningKmPerSession))
+	}
+	effectiveExerciseFreq := p.ExerciseFreq - runningDays
+	if effectiveExerciseFreq < 0 {
+		effectiveExerciseFreq = 0
+	}
+	eatMult := EstimateEATFactor(effectiveExerciseFreq)
+
+	tdeeBase := math.Round(baseActivity * eatMult)
 	runningCalsDay := CalcRunningCalories(weightKg, p.RunningKm)
 	return tdeeBase + float64(runningCalsDay)
 }

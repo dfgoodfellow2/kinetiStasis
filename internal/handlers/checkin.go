@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,11 @@ func NewCheckinHandler(s store.Store) *CheckinHandler { return &CheckinHandler{s
 const (
 	checkinWarningNeedWeighIns      = "Not enough weigh-in data yet to check in — log your weight daily (need 3)."
 	checkinWarningNeedWeightHistory = "Not enough weigh-in history to update targets — keep logging daily (7 needed)."
+
+	// checkinConflictErr is the SQLite driver's exact UNIQUE text for the
+	// one-check-in-per-day constraint. RecordCheckinTx returns it unwrapped so
+	// this mapping cannot regress to a 500.
+	checkinConflictErr = "UNIQUE constraint failed: check_in_logs.user_id, check_in_logs.check_in_date"
 )
 
 // checkinState bundles the inputs and derived gates shared by Preview and
@@ -289,82 +295,73 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// check-in is still recorded, but targets are reset to their current values
 	// (caloriesAfter = current) and never adjusted.
 	targetUpdateBlocked := !state.tdee.WeightReliable
+
+	var (
+		newTargets *models.Targets
+		snap       *models.TargetSnapshot
+	)
 	if targetUpdateBlocked {
 		in.CaloriesAfter = int(math.Round(currentCalories))
 	} else {
 		recommended, _ := calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCalories, 0, state.targets.EatBackExercise)
 		in.CaloriesAfter = recommended
+
+		// Capture the superseded targets BEFORE mutating the row. These are the
+		// pre-change values shown in target history.
+		if state.hasTargets {
+			snap = &models.TargetSnapshot{
+				ID:              in.ID,
+				UserID:          claims.UserID,
+				EffectiveDate:   in.CheckInDate,
+				Calories:        state.targets.Calories,
+				ProteinG:        state.targets.ProteinG,
+				CarbsG:          state.targets.CarbsG,
+				FatG:            state.targets.FatG,
+				FiberG:          state.targets.FiberG,
+				WaterMl:         state.targets.WaterMl,
+				EatBackExercise: state.targets.EatBackExercise,
+				CreatedAt:       now,
+			}
+		}
+
+		// Full path: recompute the COMPLETE macro set from the final calorie
+		// target so macros are always consistent with the stored calories.
+		targets := state.targets
+		targets.UserID = claims.UserID
+		targets.Calories = float64(in.CaloriesAfter)
+		targets.UpdatedAt = now
+
+		if weight := latestPlausibleWeight(state.bioLogs); weight > 0 {
+			macros := nutrition.ComputeMacros(state.profile, targets.Calories, weight)
+			if isFiniteMacroResult(macros) {
+				targets.ProteinG = macros.ProteinG
+				targets.CarbsG = macros.CarbsG
+				targets.FatG = macros.FatG
+				targets.FiberG = macros.FiberG
+				targets.WaterMl = macros.WaterMl
+			} else {
+				// Never leave a torn state: keep the calorie update and log the
+				// failed recompute. The previous macro row is preserved.
+				slog.Warn("macro recompute produced invalid values; updating calories only",
+					"user", claims.UserID, "calories", targets.Calories, "weight", weight)
+			}
+		} else {
+			slog.Warn("macro recompute skipped: no usable weight; updating calories only",
+				"user", claims.UserID, "calories", targets.Calories)
+		}
+		newTargets = &targets
 	}
 
-	// Insert check-in log before updating targets: a persisted check-in is
-	// useful even when the policy suppresses the target change.
-	if err := h.s.CreateCheckinLog(r.Context(), &in); err != nil {
-		if err.Error() == "UNIQUE constraint failed: check_in_logs.user_id, check_in_logs.check_in_date" {
+	// One transaction: the check-in row and (on the reliable path) the target
+	// update + pre-change history snapshot commit together. On the blocked path
+	// targets stay untouched, so a stray client-supplied caloriesAfter cannot
+	// move the row and no history row is written.
+	if err := h.s.RecordCheckinTx(r.Context(), &in, newTargets, snap); err != nil {
+		if strings.Contains(err.Error(), checkinConflictErr) {
 			respond.Error(w, http.StatusConflict, "already checked in today")
 			return
 		}
-		slog.Error("create checkin log", "err", err)
-		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
-		return
-	}
-
-	// Always snapshot the superseded targets for history.
-	if state.hasTargets {
-		snap := models.TargetSnapshot{
-			ID:              in.ID,
-			UserID:          claims.UserID,
-			EffectiveDate:   in.CheckInDate,
-			Calories:        state.targets.Calories,
-			ProteinG:        state.targets.ProteinG,
-			CarbsG:          state.targets.CarbsG,
-			FatG:            state.targets.FatG,
-			FiberG:          state.targets.FiberG,
-			WaterMl:         state.targets.WaterMl,
-			EatBackExercise: state.targets.EatBackExercise,
-			CreatedAt:       now,
-		}
-		if err := h.s.CreateTargetSnapshot(r.Context(), &snap); err != nil {
-			slog.Error("create target snapshot", "err", err)
-			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
-			return
-		}
-	}
-
-	if targetUpdateBlocked {
-		// Targets remain unchanged. No UpsertTargets call is made at all, so a
-		// stray client-supplied caloriesAfter cannot move the row.
-		respond.JSON(w, http.StatusCreated, in)
-		return
-	}
-
-	// Full path: recompute the COMPLETE macro set from the final calorie target
-	// so macros are always consistent with the stored calories.
-	targets := state.targets
-	targets.UserID = claims.UserID
-	targets.Calories = float64(in.CaloriesAfter)
-	targets.UpdatedAt = now
-
-	if weight := latestPlausibleWeight(state.bioLogs); weight > 0 {
-		macros := nutrition.ComputeMacros(state.profile, targets.Calories, weight)
-		if isFiniteMacroResult(macros) {
-			targets.ProteinG = macros.ProteinG
-			targets.CarbsG = macros.CarbsG
-			targets.FatG = macros.FatG
-			targets.FiberG = macros.FiberG
-			targets.WaterMl = macros.WaterMl
-		} else {
-			// Never leave a torn state: keep the calorie update and log the
-			// failed recompute. The previous macro row is preserved.
-			slog.Warn("macro recompute produced invalid values; updating calories only",
-				"user", claims.UserID, "calories", targets.Calories, "weight", weight)
-		}
-	} else {
-		slog.Warn("macro recompute skipped: no usable weight; updating calories only",
-			"user", claims.UserID, "calories", targets.Calories)
-	}
-
-	if err := h.s.UpsertTargets(r.Context(), &targets); err != nil {
-		slog.Error("upsert targets after checkin", "err", err)
+		slog.Error("record checkin transaction", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
