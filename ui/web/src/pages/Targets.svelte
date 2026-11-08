@@ -15,6 +15,45 @@
   let historyLoading = $state(false)
   let savedTargets = $state(null)
 
+  // Goal drives the calorie target: the server multiplies the observed/static
+  // TDEE basis by the profile goal (internal/services/nutrition/macros.go →
+  // ComputeTargetCalories). Mirror that table here so a one-tap seed keeps the
+  // user's goal instead of quietly resetting them to maintenance. Unknown goals
+  // fall back to 1.0, exactly like the server.
+  const GOAL_MULTIPLIERS = {
+    cut_10: 0.90,
+    cut_20: 0.80,
+    cut_30: 0.70,
+    cut_40: 0.60,
+    maintenance: 1.0,
+    bulk_10: 1.10,
+    bulk_20: 1.20,
+  }
+
+  let goal = $state('maintenance')
+
+  function goalMultiplier(g) {
+    return GOAL_MULTIPLIERS[g] ?? 1.0
+  }
+
+  // Only trust the observed figure when the server says the weight-trend term
+  // was reliable. A missing weightReliable (older server) counts as untrusted.
+  let observedReliable = $derived(
+    Boolean(tdee) && tdee.weightReliable === true && Number(tdee.observedTdee ?? 0) > 0
+  )
+
+  // Goal-aware seed for the calorie input. When the observation is unreliable
+  // we fall back to the current saved target rather than a raw, unvetted TDEE —
+  // a plain save is a full replace, so seeding a wrong number would wipe the
+  // user's goal-derived target.
+  let suggestedCalories = $derived.by(() => {
+    if (observedReliable) {
+      return Math.round(Number(tdee.observedTdee) * goalMultiplier(goal))
+    }
+    const current = Number(savedTargets?.calories ?? targets.calories ?? 0)
+    return Number.isFinite(current) ? Math.round(current) : 0
+  })
+
   async function loadTargetHistory() {
     historyLoading = true
     try {
@@ -36,6 +75,14 @@
       }
     } catch (e) {
       error = 'Failed to load targets: ' + (e.message || e)
+    }
+    try {
+      // Goal is best-effort: without it the multiplier defaults to maintenance,
+      // which is also the server's fallback for an unknown goal.
+      const p = await api.getProfile()
+      if (p?.goal) goal = p.goal
+    } catch {
+      // Profile unavailable — keep the maintenance default.
     }
     try {
       tdee = await api.getTDEE(30)
@@ -158,8 +205,16 @@
         <div class="text-gray-400 text-xs">{tdee.confidence ?? ''} confidence · {tdee.daysOfData ?? 0} days of data</div>
     <button
       class="mt-2 text-xs text-emerald-400 underline"
-      onclick={() => { targets.calories = String(Math.round(tdee.observedTdee ?? tdee.estimatedTdee ?? 0)) }}
-    >Use observed TDEE as calorie target</button>
+      onclick={() => { targets.calories = String(suggestedCalories) }}
+    >Use suggested calorie target</button>
+    <div class="text-gray-400 text-xs">
+      {goal.replace(/_/g, ' ')} × {goalMultiplier(goal)} → <span class="text-white font-mono">{suggestedCalories} kcal</span>
+    </div>
+    {#if !observedReliable}
+      <div class="text-gray-400 text-xs">
+        Weight trend isn’t reliable yet, so the suggestion keeps your current target.
+      </div>
+    {/if}
   </div>
 {/if}
 

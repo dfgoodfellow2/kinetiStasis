@@ -6,7 +6,8 @@
 //   - internal/services/readiness/readiness.go (z-scores, escalation zones)
 //   - internal/services/nutrition/macros.go (protein/fat/carb/fiber/water)
 //   - internal/services/calculator/adaptive.go (tiering, damping, trend)
-//   - internal/services/met/met.go + exercise/volume.go (MET, MWV, NDS)
+//   - internal/services/met/met.go + exercise/volume.go (MET-based calories,
+//     RPE-driven intensity; MWV/NDS/density stay export-only, not UI displays)
 //   - internal/services/bodyfat/bodyfat.go (Navy formulas, Katch-McArdle)
 //
 // Body entries are deliberately renderer-friendly:
@@ -243,7 +244,7 @@ export const guideSections = [
     underTheHood: [
       'Session identity is date + slot. Saving is an upsert, so re-saving the same date/slot updates that session.',
       'Calories: MET × bodyweight (kg) × duration (hours), using the average of the session’s per-exercise MET values (fallback 4.0 METs if none are supplied). On save with calories = 0, the server estimates from your most recent weight. METs can come from an explicit value, RPE (9–10 → 8, 7–8 → 6, 5–6 → 5, below 5 → 4), or an exercise-name lookup.',
-      'Training load stored on each session: MWV is the sum of load (lb) × reps, excluding warmup and cooldown; NDS (Neural Demand Score) weights volume by joint involvement, unilateral bias, and intensity; session density is MET-minutes divided by clock minutes. All three are included in exports.'
+      'Each saved session keeps its date, slot, title, duration, exercises, RPE, and calorie estimate, so your workout history is a plain record you can browse and export.'
     ]
   },
   {
@@ -283,9 +284,7 @@ export const guideSections = [
           { term: 'Distribution', def: 'How the calories left after protein are split between fat and carbs.' },
           { term: 'Check-in', def: 'A periodic target recalculation, at least 5 days apart. Needs 3 weigh-ins to run and 7 days of weigh-ins before targets can move.' },
           { term: 'Slot', def: 'The label that separates multiple sessions on the same date, such as AM/PM or 1/2.' },
-          { term: 'MWV', def: 'Mechanical work volume — load × reps summed across a session’s working sets, excluding warmup and cooldown.' },
-          { term: 'NDS', def: 'Neural Demand Score — a training-load number that weights volume by joint involvement, unilateral bias, and intensity.' },
-          { term: 'Session density', def: 'MET-minutes divided by the session’s clock minutes — how much work you packed into the time.' }
+          { term: 'Workout history', def: 'Your saved sessions by date and slot, each with duration, exercises, RPE, and the calorie estimate the app computed for it.' }
         ]
       }
     ]

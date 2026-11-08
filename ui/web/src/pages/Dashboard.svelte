@@ -139,14 +139,10 @@
     return `${sign}${Math.abs(kg).toFixed(1)}`
   }
 
-  // Readiness has no sample-count field; ComputeReadiness returns all-zero
-  // SD/EMA (and "Learning...") until both grip and BOLT have ≥2 readings.
-  let readinessEmpty = $derived(
-    (data?.readiness?.gripSD ?? 0) === 0 &&
-    (data?.readiness?.gripEMA ?? 0) === 0 &&
-    (data?.readiness?.boltSD ?? 0) === 0 &&
-    (data?.readiness?.boltEMA ?? 0) === 0
-  )
+  // The server sets hasSufficientData=false only while both grip and BOLT
+  // lack the two readings needed for an EMA/SD (the "Learning..." state), so
+  // this is the honest empty-state flag rather than inferring it from zeros.
+  let readinessEmpty = $derived(data?.readiness?.hasSufficientData === false)
 
   // Colour the rate by whether it moves toward the user's goal. Falls back to
   // neutral gray when the goal is unknown or maintenance.

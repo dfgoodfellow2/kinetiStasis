@@ -214,7 +214,7 @@
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-bf">Body Fat %</label>
-      <input class="input" id="pf-bf" type="number" placeholder="e.g. 18" bind:value={profile.bfPct} />
+      <input class="input" id="pf-bf" type="number" min="0" max="70" step="0.1" placeholder="e.g. 18" bind:value={profile.bfPct} />
     </div>
     <div>
       <label class="text-xs text-gray-400" for="pf-hr-rest">Resting HR</label>
