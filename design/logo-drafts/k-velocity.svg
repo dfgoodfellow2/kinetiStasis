@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Kinetistasis K monogram with pendulum and speed lines</title>
+
+  <!-- K stem -->
+  <path d="M44 26 V 102" fill="none" stroke="#10b981" stroke-width="13" stroke-linecap="round"/>
+
+  <!-- upper arm -->
+  <path d="M44 63 L 87 27" fill="none" stroke="#10b981" stroke-width="13" stroke-linecap="round"/>
+
+  <!-- pendulum string -->
+  <path d="M44 64 C 54 84, 66 98, 80 104" fill="none" stroke="#34d399" stroke-width="6.5" stroke-linecap="round"/>
+
+  <!-- three parallel curved speed lines from the bob rim -->
+  <path d="M76.22 98.76 A 55.9 55.9 0 0 0 83.50 90.54" fill="none" stroke="#34d399" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+  <path d="M82.00 105.00 A 55.9 55.9 0 0 0 93.49 89.98" fill="none" stroke="#34d399" stroke-width="6.5" stroke-linecap="round" opacity="1"/>
+  <path d="M87.78 111.23 A 55.9 55.9 0 0 0 96.20 101.37" fill="none" stroke="#34d399" stroke-width="5.5" stroke-linecap="round" opacity="0.45"/>
+
+  <!-- pendulum bob -->
+  <circle cx="82.0" cy="105.0" r="11" fill="#10b981"/>
+</svg>
