@@ -42,7 +42,7 @@ export const guideSections = [
       'Daily nutrition logs feed the observed-TDEE estimate. Biometric logs feed the weight trend and readiness.',
       {
         list: [
-          'Check-ins unlock after at least 5 days (MinCheckinIntervalDays) and need at least 3 biometric log days (MinBiometricLogsForCheckin).',
+          'Check-ins unlock after at least 5 days (MinCheckinIntervalDays) and need at least 3 weigh-ins; targets only move once 7 days of weigh-ins make the weight term reliable.',
           'Daily calorie targets never fall below 1200 kcal (MinCalorieFloor).',
           'Readiness uses the profile’s gripWeight to blend grip and BOLT; the default is 50/50.'
         ]
@@ -64,7 +64,7 @@ export const guideSections = [
     underTheHood: [
       'The dashboard uses least-squares linear regression over weigh-ins inside the TDEE lookback window (90 days by default, configurable in Profile). A trend is only reported after at least 7 weight observations (MinWeightTrendDays).',
       'The displayed trend weight is the fitted line evaluated at the newest observation, not a forecast. The weekly rate is the slope × 7. Observations outside the plausible 20–300 kg range are ignored.',
-      'Observed TDEE itself is estimated from your logged intake history, not from a single weigh-in. The weight trend is shown alongside it for context, and targets only move at check-in.'
+      'Observed TDEE uses both your intake and your weight trend: the trend slope tells the model how much energy your body stored or spent. It is not a single weigh-in — the trend is the signal, and targets only move at check-in once the weight term is reliable.'
     ]
   },
   {
@@ -72,25 +72,26 @@ export const guideSections = [
     title: 'Weekly check-in',
     icon: '📅',
     body: [
-      'A check-in is a scheduled look at your data. It recalculates your observed TDEE — your estimated daily burn, recalculated from your own logged intake — and nudges your calorie target toward the goal you chose.',
+      'A check-in is a scheduled look at your data. It estimates how much energy you actually burn by comparing what you ate with what your weight trend says happened — then nudges your calorie target toward the goal you chose.',
+      'Two weigh-in gates keep it honest: you need 3 weigh-ins before you can check in at all, and 7 days of weigh-ins before your targets are allowed to move. Until then your estimate is intake-only and your targets stay exactly where they are.',
       'Targets move gradually. A single check-in can change your daily calories by at most 500 kcal in either direction, and never below 1,200 kcal.',
-      'Check-ins unlock every 5 days and need at least 3 days of biometric data. That’s deliberate: it keeps one weird Tuesday from rewriting the whole plan.',
-      'Skipping is allowed. Your check-in is still recorded, your targets stay exactly where they are, and you can try again when you have a clearer picture.',
+      'Check-ins are available every 5 days. Skipping is allowed — your check-in is still recorded, your targets stay exactly where they are, and you can try again when you have a clearer picture.',
       {
         tip: 'After a holiday, an illness, or a run of missed logs, skipping a check-in is often the smartest move.'
       }
     ],
     underTheHood: [
-      'Observed TDEE is tiered by how much intake data you have in the lookback window (90 days by default; when no lookback is set, high-volume runners above 32 km/week use 28 days):',
+      'Your estimated burn = what you ate − what your weight trend says your body gained or lost (≈7700 kcal per kg). Needs 7 days of weigh-ins to trust the weight term. Until then your estimate is intake-only and targets won’t move.',
+      'In practice the weight term is the slope of your trend line in kg per day, multiplied by 7,700 kcal per kg. It only counts once there are at least 7 distinct weigh-in days spanning 7 calendar days inside the lookback window; short of that the body-energy side is ignored and the estimate leans on intake alone.',
       {
         list: [
-          'Under 7 days: linear regression. Confidence becomes medium at 4+ days.',
-          '7–29 days: recursive least squares with a forgetting factor of 0.98. Confidence is medium below 14 days, high from 14.',
-          '30+ days: exponential moving average with α = 0.10. Confidence high.'
+          '3 weigh-ins (MinWeighInsForCheckin) unlock the check-in itself. Grip, sleep, and BOLT do not count toward this gate — only entries with a real weight do.',
+          '7 days of weigh-ins make the weight term trustworthy. Until then a check-in is still recorded, but the recommendation equals your current target with a zero adjustment — no calorie or macro change.',
+          'A check-in can run every 5 days (MinCheckinIntervalDays). That cooldown is separate from the data gates.'
         ]
       },
-      'Recommendation = current calories + clamp(goal-adjusted observed TDEE − current calories, −500, +500), then floored at 1,200 kcal. The ±500 cap is MaxWeeklyCalorieSwing.',
-      'The preview is gated by canCheckIn: at least 5 days since the last check-in AND at least 3 biometric logs. Accept writes the recommended calories; Skip sends 0 and leaves targets untouched. Either way, a target snapshot is recorded for the timeline.'
+      'When a target update is allowed, recommendation = current calories + clamp(goal-adjusted observed TDEE − current calories, −500, +500), then floored at 1,200 kcal. The full macro set is recomputed server-side from the final calorie figure, so protein, carbs, fat, fiber, and water always match the stored calories.',
+      'Skip sends a zero adjustment: the check-in is recorded and targets are left untouched. Either way, a target snapshot is written for the timeline.'
     ]
   },
   {
@@ -274,13 +275,13 @@ export const guideSections = [
           { term: 'BOLT', def: 'Body Oxygen Level Test — seconds you can hold your breath after a normal nose exhale, stopping at the first real urge to breathe.' },
           { term: 'EMA', def: 'Exponential moving average — a smoothed average that gives recent values more weight.' },
           { term: 'MET', def: 'Metabolic equivalent of task — how many times resting energy use an activity costs (1 MET is roughly resting).' },
-          { term: 'Observed TDEE', def: 'Your estimated daily energy burn, recalculated from your own logged data.' },
+          { term: 'Observed TDEE', def: 'Your estimated daily energy burn, from what you ate minus what your weight trend says you gained or lost.' },
           { term: 'RPE', def: 'Rate of perceived exertion, from 1 (barely moving) to 10 (everything you have).' },
           { term: 'Readiness', def: 'A green/yellow/red signal comparing today’s grip and BOLT with your own recent baseline.' },
           { term: 'Trend weight', def: 'The fitted line through your recent weigh-ins, used instead of a single scale reading.' },
           { term: 'Eat-back', def: 'Adding workout calories back to that day’s food target.' },
           { term: 'Distribution', def: 'How the calories left after protein are split between fat and carbs.' },
-          { term: 'Check-in', def: 'A periodic target recalculation, at least 5 days apart and requiring at least 3 biometric days.' },
+          { term: 'Check-in', def: 'A periodic target recalculation, at least 5 days apart. Needs 3 weigh-ins to run and 7 days of weigh-ins before targets can move.' },
           { term: 'Slot', def: 'The label that separates multiple sessions on the same date, such as AM/PM or 1/2.' },
           { term: 'MWV', def: 'Mechanical work volume — load × reps summed across a session’s working sets, excluding warmup and cooldown.' },
           { term: 'NDS', def: 'Neural Demand Score — a training-load number that weights volume by joint involvement, unilateral bias, and intensity.' },

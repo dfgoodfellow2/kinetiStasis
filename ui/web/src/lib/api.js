@@ -24,11 +24,27 @@ const BASE = '/v1'
  * @property {boolean[]} loggedDays        Calendar window, oldest→newest, last = today (60 entries)
  *
  * @typedef {Object} CheckinPreview
+ * @property {boolean} canCheckIn          False until MinWeighInsForCheckin real weigh-ins
+ * @property {number} daysSinceLastCheckIn
  * @property {number} observedTdee
+ * @property {number} estimatedTdee
+ * @property {string} confidence           Legacy alias of tdeeConfidence
+ * @property {string} tdeeMethod
+ * @property {number} daysOfData
+ * @property {boolean} lowConfidenceWarning
  * @property {string} tdeeConfidence       New field; older servers call this `confidence`
  * @property {number} lookbackDays
- * @property {string} confidence           Legacy alias of tdeeConfidence
- * @property {number} recommendedCalories
+ * @property {number} weightStart          0 when the preview has no usable weight context
+ * @property {number} weightEnd            0 when the preview has no usable weight context
+ * @property {number} weightChange         0 when the preview has no usable weight context
+ * @property {boolean} hasWeighinData      False when the window has no weight-bearing logs
+ * @property {number} currentCalories
+ * @property {boolean} eatBackExercise
+ * @property {number} recommendedCalories  Equals currentCalories while TargetUpdateBlocked
+ * @property {number} calorieAdjustment    0 while TargetUpdateBlocked
+ * @property {boolean} weightReliable      True once the weight term has 7 weigh-in days
+ * @property {boolean} targetUpdateBlocked Suppresses calorie/macro changes at check-in
+ * @property {string} warning              Human-readable reason when a gate is closed
  *
  * @typedef {Object} CheckinHistoryEntry
  * @property {string} checkInDate

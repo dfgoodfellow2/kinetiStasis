@@ -54,8 +54,17 @@
     return units === 'imperial' ? kgToLbs(kg) : kg.toFixed(2)
   }
 
+  // The preview zeroes weight context whenever it is not usable, so a positive
+  // start/end is the honest signal that a real weigh-in backs these tiles.
+  function hasStartWeight(p) {
+    return !!p && p.hasWeighinData === true && p.weightStart > 0
+  }
+  function hasEndWeight(p) {
+    return !!p && p.hasWeighinData === true && p.weightEnd > 0
+  }
+
   async function acceptCheckin() {
-      if (!checkinPreview || !checkinPreview.canCheckIn) return
+      if (!checkinPreview || !checkinPreview.canCheckIn || checkinPreview.targetUpdateBlocked) return
       weeklyError = ''
       weeklySuccess = ''
       weeklyLoading = true
@@ -73,7 +82,13 @@
   }
 
   async function skipCheckin() {
-      if (!checkinPreview || !checkinPreview.canCheckIn) return
+      if (!checkinPreview) return
+      // Without the weigh-in gate the server rejects the write; surface the
+      // same payload warning instead of firing a request that cannot succeed.
+      if (!checkinPreview.canCheckIn) {
+        weeklyError = checkinPreview.warning || 'Not enough weigh-in data to check in yet.'
+        return
+      }
       weeklyError = ''
       weeklySuccess = ''
       weeklyLoading = true
@@ -369,7 +384,7 @@
     <button class={tab === 'daily' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'daily'}>Daily</button>
     <button class={tab === 'measurements' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'measurements'}>Measurements</button>
     <button class={tab === 'bodyfat' ? 'btn-primary' : 'bg-gray-700 px-3 py-2 rounded-lg'} onclick={() => tab = 'bodyfat'}>Body Fat %</button>
-    <button class="px-3 py-2 rounded-lg {tab === 'weekly' ? 'btn-primary' : (checkinPreview?.canCheckIn && !checkinSaved ? 'bg-emerald-600 text-white font-semibold' : 'bg-gray-700')}" onclick={() => tab = 'weekly'}>Weekly Target</button>
+    <button class="px-3 py-2 rounded-lg {tab === 'weekly' ? 'btn-primary' : (checkinPreview?.canCheckIn && !checkinPreview?.targetUpdateBlocked && !checkinSaved ? 'bg-emerald-600 text-white font-semibold' : (checkinPreview?.canCheckIn && checkinPreview?.targetUpdateBlocked && !checkinSaved ? 'bg-amber-600 text-white font-semibold' : 'bg-gray-700'))}" onclick={() => tab = 'weekly'}>Weekly Target</button>
   </div>
 
   <!-- Daily tab -->
@@ -648,9 +663,23 @@
               {#if checkinPreview.canCheckIn}
                 <div class="text-emerald-400 font-semibold">✅ Ready for check-in</div>
               {:else}
-                <div class="text-yellow-400 font-semibold">⏳ {checkinPreview.daysSinceLastCheckIn ?? 0} days since last check-in</div>
+                <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3 text-amber-300 font-semibold">
+                  ⚠️ {checkinPreview.warning || 'Not enough weigh-in data to check in'}
+                </div>
               {/if}
             </div>
+
+            <!-- Targets pinned by the weight-reliability gate: check-in is
+                 allowed (3 weigh-ins), but the model still needs 7 to move
+                 calories without guessing. -->
+            {#if checkinPreview.canCheckIn && checkinPreview.targetUpdateBlocked}
+              <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3">
+                <div class="text-amber-300 font-bold">Targets on hold</div>
+                <div class="text-sm text-amber-200">
+                  {checkinPreview.warning || 'Not enough weigh-in history to update targets — keep logging daily (7 needed).'}
+                </div>
+              </div>
+            {/if}
 
             <!-- Low-confidence clamp warning -->
             {#if checkinPreview.lowConfidenceWarning}
@@ -664,7 +693,15 @@
 
             <!-- TDEE confidence -->
             <div class="bg-gray-700 rounded-lg p-3">
-              <div class="text-xs text-gray-400">Adaptive TDEE</div>
+              <div class="flex items-center gap-2">
+                <div class="text-xs text-gray-400">Adaptive TDEE</div>
+                {#if checkinPreview.weightReliable}
+                  <span class="text-[10px] uppercase tracking-wide bg-emerald-900/60 text-emerald-300 border border-emerald-600 rounded px-2 py-0.5">Scale-verified</span>
+                {:else if checkinPreview.observedTdee > 0}
+                  <span class="text-[10px] uppercase tracking-wide bg-gray-600 text-gray-300 border border-gray-500 rounded px-2 py-0.5">Intake-only</span>
+                {/if}
+                <InfoTip label="adaptive TDEE" text="Your estimated burn = what you ate − what your weight trend says your body gained or lost (about 7,700 kcal per kg). Needs 7 days of weigh-ins before the weight term is trusted. Until then the estimate is intake-only and targets won't move." />
+              </div>
               <div class="text-lg font-semibold text-cyan-400">{checkinPreview.observedTdee ?? '—'} kcal</div>
               <div class="text-xs text-gray-400">
                 Method: {checkinPreview.tdeeMethod ?? '—'} · 
@@ -673,21 +710,39 @@
               </div>
             </div>
 
-            <!-- Weight trend -->
+            <!-- Weight trend — render "—" unless a real weigh-in backs the value -->
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight Start</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightStart != null ? dispWeight(checkinPreview.weightStart, store.units) : '—'} {weightUnit(store.units)}</div>
+                <div class="text-lg font-semibold">
+                  {#if hasStartWeight(checkinPreview)}
+                    {dispWeight(checkinPreview.weightStart, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
+                  {:else}
+                    <span class="text-gray-500">—</span>
+                  {/if}
+                </div>
               </div>
               <div class="bg-gray-700 rounded-lg p-3">
                 <div class="text-xs text-gray-400">Weight End</div>
-                <div class="text-lg font-semibold">{checkinPreview.weightEnd != null ? dispWeight(checkinPreview.weightEnd, store.units) : '—'} {weightUnit(store.units)}</div>
+                <div class="text-lg font-semibold">
+                  {#if hasEndWeight(checkinPreview)}
+                    {dispWeight(checkinPreview.weightEnd, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
+                  {:else}
+                    <span class="text-gray-500">—</span>
+                  {/if}
+                </div>
               </div>
             </div>
 
             <div class="bg-gray-700 rounded-lg p-3">
               <div class="text-xs text-gray-400">Weight Change</div>
-              <div class="text-lg font-semibold">{dispWeightDelta(checkinPreview.weightChange, store.units)} {weightUnit(store.units)}</div>
+              <div class="text-lg font-semibold">
+                {#if hasStartWeight(checkinPreview)}
+                  {dispWeightDelta(checkinPreview.weightChange, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
+                {:else}
+                  <span class="text-gray-500">—</span>
+                {/if}
+              </div>
             </div>
 
             <!-- Recommendation -->
@@ -695,13 +750,33 @@
               <div class="text-xs text-gray-400">Calorie Recommendation</div>
               <div class="text-sm">Current: {checkinPreview.currentCalories ?? '—'} kcal</div>
               <div class="text-sm">Recommended: <span class="font-bold text-emerald-400">{checkinPreview.recommendedCalories ?? '—'}</span> kcal</div>
-              <div class="text-sm">Adjustment: {checkinPreview.calorieAdjustment != null ? (checkinPreview.calorieAdjustment > 0 ? '+' : '') + Math.round(checkinPreview.calorieAdjustment) : '—'} kcal</div>
+              <div class="text-sm">
+                Adjustment:
+                {#if checkinPreview.targetUpdateBlocked}
+                  <span class="text-amber-300">no change</span>
+                {:else}
+                  {checkinPreview.calorieAdjustment != null ? (checkinPreview.calorieAdjustment > 0 ? '+' : '') + Math.round(checkinPreview.calorieAdjustment) : '—'} kcal
+                {/if}
+              </div>
             </div>
 
-            <!-- Action buttons -->
-            <div class="flex space-x-2">
-              <button class="btn-primary" onclick={acceptCheckin} disabled={!checkinPreview.canCheckIn || weeklyLoading || checkinSaved}>{weeklyLoading ? 'Processing…' : (checkinSaved ? 'Saved' : 'Accept Changes')}</button>
-              <button class="bg-gray-700 px-3 py-2 rounded-lg hover:bg-gray-600" onclick={skipCheckin} disabled={!checkinPreview.canCheckIn || weeklyLoading || checkinSaved}>Skip</button>
+            <!-- Action buttons. Accept is hidden until the weigh-in gate opens,
+                 and pinned while targets are blocked. Skip stays available. -->
+            <div class="flex items-center space-x-2">
+              {#if checkinPreview.canCheckIn}
+                <span class="inline-block" title={checkinPreview.targetUpdateBlocked ? (checkinPreview.warning || 'Not enough weigh-in history to update targets — keep logging daily (7 needed).') : undefined}>
+                  <button
+                    class="btn-primary"
+                    onclick={acceptCheckin}
+                    disabled={checkinPreview.targetUpdateBlocked || weeklyLoading || checkinSaved}
+                    title={checkinPreview.targetUpdateBlocked ? (checkinPreview.warning || 'Not enough weigh-in history to update targets — keep logging daily (7 needed).') : undefined}
+                  >{weeklyLoading ? 'Processing…' : (checkinSaved ? 'Saved' : 'Accept Changes')}</button>
+                </span>
+                <button class="bg-gray-700 px-3 py-2 rounded-lg hover:bg-gray-600" onclick={skipCheckin} disabled={weeklyLoading || checkinSaved}>Skip</button>
+              {:else}
+                <button class="bg-gray-700 px-3 py-2 rounded-lg hover:bg-gray-600" onclick={skipCheckin} disabled={weeklyLoading || checkinSaved}>Skip</button>
+                <span class="text-xs text-gray-400">Log weigh-ins on the Daily tab to unlock target changes.</span>
+              {/if}
             </div>
           </div>
         </Card>
