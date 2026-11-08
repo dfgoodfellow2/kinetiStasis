@@ -142,9 +142,9 @@ func (h *CheckinHandler) loadCheckinState(ctx context.Context, userID string) (*
 		}
 	}
 	if lastPtr != nil {
-		if lastDate, err := time.Parse(constants.DateFormat, lastPtr.CheckInDate); err == nil {
-			state.daysSinceCheckIn = int(time.Since(lastDate).Hours() / 24)
-			dateGateOpen = state.daysSinceCheckIn >= constants.MinCheckinIntervalDays
+		if days, ok := daysSinceLocalDate(lastPtr.CheckInDate); ok {
+			state.daysSinceCheckIn = days
+			dateGateOpen = days >= constants.MinCheckinIntervalDays
 		}
 	}
 
@@ -283,12 +283,13 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Nanosecond precision keeps target_history's
+	// Fixed-width nanosecond timestamps keep target_history's
 	// UNIQUE(user_id,effective_date,created_at) key collision-free when a
 	// check-in snapshot and a manual targets edit land in the same second.
-	// Existing rows stay second-precision; the string key only needs the
-	// values to differ, so no migration is required for the mixed formats.
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	// The constant 9-digit fraction also makes the lexical created_at
+	// ordering chronological; migration 015 normalises legacy rows to the
+	// same shape.
+	now := time.Now().UTC().Format(constants.FormatResourceTimestamp)
 	in.CreatedAt = now
 
 	// Persist the engine snapshot exactly as produced for this run.

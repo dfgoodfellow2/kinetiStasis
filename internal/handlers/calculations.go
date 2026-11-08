@@ -38,6 +38,28 @@ func requestDate(r *http.Request) string {
 	return time.Now().Format(constants.DateFormat)
 }
 
+// daysSinceLocalDate returns the whole calendar-day distance from a
+// date-only string to today's local date. Both sides are projected onto local
+// midnights and then compared in UTC, so a UTC-midnight parse can no longer
+// shift the check-in cooldown by the caller's offset (and DST length changes
+// cannot truncate a day).
+func daysSinceLocalDate(date string) (int, bool) {
+	return daysSinceLocalDateAt(time.Now(), date)
+}
+
+// daysSinceLocalDateAt is the deterministic core of daysSinceLocalDate. Tests
+// can pin now to the end of a local day (or across a DST boundary) without
+// sleeping until midnight.
+func daysSinceLocalDateAt(now time.Time, date string) (int, bool) {
+	d, err := time.ParseInLocation(constants.DateFormat, date, now.Location())
+	if err != nil {
+		return 0, false
+	}
+	from := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	return int(to.Sub(from).Hours() / 24), true
+}
+
 // GET /v1/calc/tdee
 func (h *CalcHandler) TDEE(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
@@ -465,12 +487,14 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// include check-in readiness (last checkin)
 	if lastCheckInDate, err := h.s.FetchLastCheckin(r.Context(), claims.UserID); err == nil {
 		if lastCheckInDate != "" {
-			t, _ := time.Parse(constants.DateFormat, lastCheckInDate)
-			days := int(time.Since(t).Hours() / 24)
-			can := days >= 5
-			dash.CanChangeTargets = can
-			if !can {
-				dash.DaysUntilCheckin = 5 - days
+			if days, ok := daysSinceLocalDate(lastCheckInDate); ok {
+				can := days >= constants.MinCheckinIntervalDays
+				dash.CanChangeTargets = can
+				if !can {
+					dash.DaysUntilCheckin = constants.MinCheckinIntervalDays - days
+				}
+			} else {
+				dash.CanChangeTargets = true
 			}
 		} else {
 			dash.CanChangeTargets = true

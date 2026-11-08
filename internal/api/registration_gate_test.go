@@ -266,3 +266,113 @@ func TestRegistrationPublicMode(t *testing.T) {
 	frank := loginClient(t, h, "frank", "supersecret123", http.StatusOK)
 	doAs(t, h, frank, http.MethodPut, "/v1/admin/registration-mode", map[string]any{"mode": "invite_only"}, http.StatusForbidden)
 }
+
+// TestRegistrationInviteCompensationOnDuplicateUsername pins the invite burn
+// compensation path. The code is consumed before the user insert so two
+// concurrent registrations cannot both spend it; when that insert fails (here,
+// a duplicate username) the burn must be released so the caller can retry with
+// the same code and a fresh identity.
+func TestRegistrationInviteCompensationOnDuplicateUsername(t *testing.T) {
+	h := newHarness(t)
+	newAuthedClient(t, h, "bob") // second account: bootstrap is over
+	code := createRegistrationInvite(t, h)
+
+	// Duplicate username: the code burns first, then CreateUser fails with 409.
+	status, body := postRegister(t, h, &http.Client{}, map[string]any{
+		"username":   "bob",
+		"email":      "duplicate@example.com",
+		"password":   "supersecret123",
+		"inviteCode": code,
+	})
+	if status != http.StatusConflict {
+		t.Fatalf("duplicate-username register status = %d, want 409, body = %s", status, body)
+	}
+
+	var usedBy string
+	if err := h.db.QueryRow(`SELECT used_by FROM registration_invites WHERE code = ?`, code).Scan(&usedBy); err != nil {
+		t.Fatalf("read invite after failed registration: %v", err)
+	}
+	if usedBy != "" {
+		t.Fatalf("invite used_by = %q after failed registration, want unused", usedBy)
+	}
+
+	// The compensated code still works for a fresh username.
+	registerFresh(t, h, "carol", map[string]any{"inviteCode": code}, http.StatusCreated)
+	if err := h.db.QueryRow(`SELECT used_by FROM registration_invites WHERE code = ?`, code).Scan(&usedBy); err != nil {
+		t.Fatalf("read invite after successful registration: %v", err)
+	}
+	if usedBy != userIDFor(t, h, "carol") {
+		t.Fatalf("invite used_by = %q, want carol", usedBy)
+	}
+}
+
+// TestApprovalCreatesProfileAndLiftsWaveRBlocker covers the Wave-R blocker:
+// a public_approval account is created without a profile, so approval must
+// create the empty profile row that GET /v1/profile and GET /v1/targets need.
+func TestApprovalCreatesProfileAndLiftsWaveRBlocker(t *testing.T) {
+	h := newHarness(t)
+
+	doAs(t, h, h.client, http.MethodPut, "/v1/admin/registration-mode", map[string]any{"mode": "public_approval"}, http.StatusOK)
+	dave := registerFresh(t, h, "dave", nil, http.StatusCreated)
+
+	// Pending: no session, so protected reads are unauthenticated and login is
+	// refused with the approval message.
+	doAs(t, h, dave, http.MethodGet, "/v1/profile", nil, http.StatusUnauthorized)
+	body := doAs(t, h, dave, http.MethodPost, "/v1/auth/login", map[string]any{
+		"login":    "dave",
+		"password": "supersecret123",
+	}, http.StatusForbidden)
+	if !strings.Contains(string(body), "awaiting approval") {
+		t.Fatalf("pending login body = %s", body)
+	}
+
+	daveID := userIDFor(t, h, "dave")
+	doAs(t, h, h.client, http.MethodPost, "/v1/admin/users/"+daveID+"/approve", nil, http.StatusOK)
+
+	// Approval created the profile; the freshly logged-in member can read both
+	// the profile and the computed fallback targets.
+	dave = loginClient(t, h, "dave", "supersecret123", http.StatusOK)
+	profile := decodeJSON[models.Profile](t, doAs(t, h, dave, http.MethodGet, "/v1/profile", nil, http.StatusOK))
+	if profile.UserID != daveID {
+		t.Fatalf("profile userId = %q, want dave %q", profile.UserID, daveID)
+	}
+	doAs(t, h, dave, http.MethodGet, "/v1/targets", nil, http.StatusOK)
+}
+
+// TestAdminDenyGuards pins the deny endpoint's safety rails: approved accounts
+// are not deniable, unknown ids are 404, and the last-admin guard still fires
+// defensively (exercised with a stale admin token after a raw demotion).
+func TestAdminDenyGuards(t *testing.T) {
+	h := newHarness(t)
+	newAuthedClient(t, h, "bob")
+	bobID := userIDFor(t, h, "bob")
+	integrityID := userIDFor(t, h, "integrity")
+
+	// An approved member is not a pending request.
+	body := doAs(t, h, h.client, http.MethodDelete, "/v1/admin/users/"+bobID, nil, http.StatusBadRequest)
+	if !strings.Contains(string(body), "only pending accounts can be denied") {
+		t.Fatalf("approved-user deny body = %s", body)
+	}
+
+	// Unknown ids get a stable 404.
+	doAs(t, h, h.client, http.MethodDelete, "/v1/admin/users/no-such-user", nil, http.StatusNotFound)
+
+	// Make bob an admin, then log in so his token carries the admin claim.
+	doAs(t, h, h.client, http.MethodPost, "/v1/admin/users/"+bobID+"/promote", nil, http.StatusOK)
+	bobAdmin := loginClient(t, h, "bob", "supersecret123", http.StatusOK)
+
+	// Simulate the defensive invariant break the guard protects against: bob's
+	// token stays admin, the DB no longer agrees, and the only remaining admin
+	// is a (pending) target. The deny path must refuse before deleting.
+	if _, err := h.db.Exec(`UPDATE users SET is_admin = 0 WHERE id = ?`, bobID); err != nil {
+		t.Fatalf("demote bob in DB: %v", err)
+	}
+	if _, err := h.db.Exec(`UPDATE users SET pending_approval = 1 WHERE id = ?`, integrityID); err != nil {
+		t.Fatalf("mark integrity pending in DB: %v", err)
+	}
+
+	body = doAs(t, h, bobAdmin, http.MethodDelete, "/v1/admin/users/"+integrityID, nil, http.StatusBadRequest)
+	if !strings.Contains(string(body), "cannot deny the last admin") {
+		t.Fatalf("last-admin deny body = %s", body)
+	}
+}

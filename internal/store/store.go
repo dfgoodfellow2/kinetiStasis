@@ -71,6 +71,11 @@ type UserStore interface {
 	ListRegistrationInvites(ctx context.Context) ([]models.RegistrationInvite, error)
 	RevokeRegistrationInvite(ctx context.Context, code string) error
 	ConsumeRegistrationInvite(ctx context.Context, code, userID, now string) error
+	// CompensateRegistrationInvite releases a code burned for userID when the
+	// account creation that followed it failed. The UPDATE is scoped to the
+	// exact attempt (used_by = userID) so a concurrent winner's burn is never
+	// undone.
+	CompensateRegistrationInvite(ctx context.Context, code, userID string) error
 	ListPendingUsers(ctx context.Context) ([]models.User, error)
 	IsUserPendingApproval(ctx context.Context, userID string) (bool, error)
 	SetUserPendingApproval(ctx context.Context, userID string, pending bool) error
@@ -168,6 +173,10 @@ type WorkoutStore interface {
 type TargetStore interface {
 	FetchTargets(ctx context.Context, userID string) (models.Targets, error)
 	UpsertTargets(ctx context.Context, t *models.Targets) error
+	// RecordTargetUpdateTx upserts the target row and, when snap is non-nil,
+	// inserts the pre-change snapshot in one transaction so history can never
+	// disagree with the live row.
+	RecordTargetUpdateTx(ctx context.Context, t *models.Targets, snap *models.TargetSnapshot) error
 	CreateTargetSnapshot(ctx context.Context, s *models.TargetSnapshot) error
 	FetchTargetHistory(ctx context.Context, userID string) ([]models.TargetSnapshot, error)
 }

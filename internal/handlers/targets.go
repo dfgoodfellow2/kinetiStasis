@@ -138,11 +138,12 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.UserID = claims.UserID
-	// Nanosecond precision keeps target_history's
+	// Fixed-width nanosecond timestamps keep target_history's
 	// UNIQUE(user_id,effective_date,created_at) key collision-free when this
-	// manual edit races a check-in snapshot in the same second. Existing rows
-	// stay second-precision; string uniqueness needs no migration.
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	// manual edit races a check-in snapshot in the same second, and make the
+	// lexical created_at ordering chronological. Migration 015 rewrites legacy
+	// rows to the same shape.
+	now := time.Now().UTC().Format(constants.FormatResourceTimestamp)
 
 	var err error
 
@@ -166,22 +167,20 @@ func (h *TargetsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		existingCmp.UpdatedAt, inCmp.UpdatedAt = "", ""
 		changed = !reflect.DeepEqual(existingCmp, inCmp)
 	}
-	// perform snapshot + upsert via store methods (transaction handled inside store)
+
+	var snap *models.TargetSnapshot
 	if changed {
-		snap := &models.TargetSnapshot{ID: uuid.New().String(), UserID: claims.UserID, EffectiveDate: time.Now().UTC().Format("2006-01-02"), Calories: existing.Calories, ProteinG: existing.ProteinG, CarbsG: existing.CarbsG, FatG: existing.FatG, FiberG: existing.FiberG, WaterMl: existing.WaterMl, EatBackExercise: existing.EatBackExercise, CreatedAt: now}
-		if err := h.s.CreateTargetSnapshot(r.Context(), snap); err != nil {
-			slog.Error("create target snapshot", "err", err)
-			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
-			return
-		}
+		snap = &models.TargetSnapshot{ID: uuid.New().String(), UserID: claims.UserID, EffectiveDate: time.Now().UTC().Format(constants.DateFormat), Calories: existing.Calories, ProteinG: existing.ProteinG, CarbsG: existing.CarbsG, FatG: existing.FatG, FiberG: existing.FiberG, WaterMl: existing.WaterMl, EatBackExercise: existing.EatBackExercise, CreatedAt: now}
 	}
 	in.UpdatedAt = now
-	if err := h.s.UpsertTargets(r.Context(), &in); err != nil {
-		slog.Error("upsert targets", "err", err)
+
+	// The snapshot and the live row commit in one transaction, so history can
+	// never disagree with the targets the client is about to read back.
+	if err := h.s.RecordTargetUpdateTx(r.Context(), &in, snap); err != nil {
+		slog.Error("record target update", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	in.UpdatedAt = now
 	respond.JSON(w, http.StatusOK, in)
 }
 

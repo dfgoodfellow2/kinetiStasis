@@ -36,7 +36,10 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, users)
 }
 
-// DeleteUser handles DELETE /v1/admin/users/{userID}
+// DeleteUser handles DELETE /v1/admin/users/{userID}. This is the admin "deny"
+// action for the pending-approval queue: only accounts that are still pending
+// may be removed here. Fetching first also gives a stable 404 for an unknown id
+// and lets the last-admin guard run before any destructive work.
 func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
 	claims := auth.ClaimsFromCtx(r)
@@ -47,12 +50,49 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	target, err := h.s.GetUserByID(r.Context(), targetID)
+	if errors.Is(err, sql.ErrNoRows) {
+		respond.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get user for deletion", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+
+	// Approved members are not deletable through the deny path; removing them
+	// is a different, deliberate operation that this endpoint does not offer.
+	if !target.PendingApproval {
+		respond.Error(w, http.StatusBadRequest, "only pending accounts can be denied")
+		return
+	}
+
+	// Defensive depth: a pending row should never be an admin, but never let the
+	// deny path remove the instance's only admin even if that invariant breaks.
+	if target.IsAdmin {
+		adminCount, err := h.s.CountAdmins(r.Context())
+		if err != nil {
+			slog.Error("count admins for denial", "target_user_id", targetID, "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+			return
+		}
+		if adminCount <= 1 {
+			respond.Error(w, http.StatusBadRequest, "cannot deny the last admin")
+			return
+		}
+	}
+
 	if err := h.s.DeleteUser(r.Context(), targetID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			respond.Error(w, http.StatusNotFound, "user not found")
+			return
+		}
 		slog.Error("delete user", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	respond.JSON(w, http.StatusOK, map[string]string{"status": "denied"})
 }
 
 // PromoteUser handles POST /v1/admin/users/{userID}/promote
@@ -79,16 +119,31 @@ func (h *AdminHandler) DemoteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure at least one admin remains
-	adminCount, err := h.s.CountAdmins(r.Context())
+	target, err := h.s.GetUserByID(r.Context(), targetID)
+	if errors.Is(err, sql.ErrNoRows) {
+		respond.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
 	if err != nil {
-		slog.Error("count admins", "err", err)
+		slog.Error("get user for demotion", "target_user_id", targetID, "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	if adminCount <= 1 {
-		respond.Error(w, http.StatusBadRequest, "cannot demote the last admin")
-		return
+
+	// Ensure at least one admin remains — but only when the target actually
+	// holds the admin bit. Demoting an ordinary member must not be blocked by
+	// the instance's admin count.
+	if target.IsAdmin {
+		adminCount, err := h.s.CountAdmins(r.Context())
+		if err != nil {
+			slog.Error("count admins", "err", err)
+			respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+			return
+		}
+		if adminCount <= 1 {
+			respond.Error(w, http.StatusBadRequest, "cannot demote the last admin")
+			return
+		}
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -185,9 +240,28 @@ func (h *AdminHandler) ListPendingUsers(w http.ResponseWriter, r *http.Request) 
 }
 
 // ApproveUser handles POST /v1/admin/users/{userID}/approve. It clears the
-// pending flag so the account can log in.
+// pending flag so the account can log in and creates the same empty profile row
+// the registration path writes for active accounts (pending accounts get none).
 func (h *AdminHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
+
+	target, err := h.s.GetUserByID(r.Context(), targetID)
+	if errors.Is(err, sql.ErrNoRows) {
+		respond.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get user for approval", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+
+	// Approving an already-approved account is an idempotent no-op success.
+	if !target.PendingApproval {
+		respond.JSON(w, http.StatusOK, map[string]string{"status": "approved"})
+		return
+	}
+
 	if err := h.s.SetUserPendingApproval(r.Context(), targetID, false); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			respond.Error(w, http.StatusNotFound, "user not found")
@@ -197,6 +271,18 @@ func (h *AdminHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
+
+	// Pending accounts are created without a profile. Create the empty default
+	// row here so GET /v1/profile and GET /v1/targets work on the member's first
+	// request (the Wave-R blocker). Non-fatal: the user can still set their
+	// profile on first login.
+	if err := h.s.UpsertProfile(r.Context(), &models.Profile{
+		UserID:    targetID,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		slog.Warn("create empty profile on approval", "target_user_id", targetID, "err", err)
+	}
+
 	slog.Info("pending user approved", "target_user_id", targetID)
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }

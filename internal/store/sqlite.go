@@ -149,7 +149,10 @@ func (s *SQLiteStore) FetchLastCheckin(ctx context.Context, userID string) (last
 
 func (s *SQLiteStore) GetLastCheckin(ctx context.Context, userID string) (models.CheckInLog, error) {
 	var out models.CheckInLog
-	err := s.db.QueryRowContext(ctx, `SELECT id, user_id, check_in_date, weight_before, weight_after, calories_before, calories_after, reason, created_at, observed_tdee, tdee_confidence, lookback_days FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, userID).Scan(&out.ID, &out.UserID, &out.CheckInDate, &out.WeightBefore, &out.WeightAfter, &out.CaloriesBefore, &out.CaloriesAfter, &out.Reason, &out.CreatedAt, &out.ObservedTDEE, &out.TDEEConfidence, &out.LookbackDays)
+	// weight_before/weight_after/calories_before/calories_after/reason were
+	// added as nullable columns by 004; legacy rows can carry SQL NULL, so
+	// every reader must COALESCE them before scanning into value types.
+	err := s.db.QueryRowContext(ctx, `SELECT id, user_id, check_in_date, COALESCE(weight_before,0), COALESCE(weight_after,0), COALESCE(calories_before,0), COALESCE(calories_after,0), COALESCE(reason,''), created_at, observed_tdee, tdee_confidence, lookback_days FROM check_in_logs WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1`, userID).Scan(&out.ID, &out.UserID, &out.CheckInDate, &out.WeightBefore, &out.WeightAfter, &out.CaloriesBefore, &out.CaloriesAfter, &out.Reason, &out.CreatedAt, &out.ObservedTDEE, &out.TDEEConfidence, &out.LookbackDays)
 	if err != nil {
 		return out, fmt.Errorf("get last checkin: %w", err)
 	}
@@ -456,9 +459,16 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]models.User, error) {
 }
 
 func (s *SQLiteStore) DeleteUser(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID)
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete user rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -588,9 +598,11 @@ func (s *SQLiteStore) ConsumeRegistrationInvite(ctx context.Context, code, userI
 	if usedBy != "" {
 		return ErrInviteUsed
 	}
+	// Fail closed: an unparseable stored expiry (or clock value) must never let
+	// a code through. Legacy/malformed rows are treated as expired.
 	exp, expErr := time.Parse(time.RFC3339, expiresAt)
 	nowT, nowErr := time.Parse(time.RFC3339, now)
-	if expErr == nil && nowErr == nil && !nowT.Before(exp) {
+	if expErr != nil || nowErr != nil || !nowT.Before(exp) {
 		return ErrInviteExpired
 	}
 
@@ -611,6 +623,20 @@ func (s *SQLiteStore) ConsumeRegistrationInvite(ctx context.Context, code, userI
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit consume registration invite: %w", err)
+	}
+	return nil
+}
+
+// CompensateRegistrationInvite un-burns a code when the account creation that
+// followed its consumption failed. It only clears used_by when the recorded
+// owner is this exact attempt, so it can never release a code won by another
+// concurrent registration.
+func (s *SQLiteStore) CompensateRegistrationInvite(ctx context.Context, code, userID string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE registration_invites SET used_by = '' WHERE code = ? AND used_by = ?`,
+		code, userID,
+	); err != nil {
+		return fmt.Errorf("compensate registration invite: %w", err)
 	}
 	return nil
 }
@@ -679,7 +705,7 @@ func (s *SQLiteStore) SetUserPendingApproval(ctx context.Context, userID string,
 
 // --- Nutrition ---
 func (s *SQLiteStore) FetchNutritionLogsRange(ctx context.Context, userID, from, to string) ([]models.NutritionLog, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at FROM nutrition_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, userID, from, to)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,COALESCE(meal_notes,''),updated_at FROM nutrition_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("fetch nutrition logs range: %w", err)
 	}
@@ -697,7 +723,7 @@ func (s *SQLiteStore) FetchNutritionLogsRange(ctx context.Context, userID, from,
 
 func (s *SQLiteStore) GetNutritionLog(ctx context.Context, userID, date string) (models.NutritionLog, error) {
 	var n models.NutritionLog
-	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at FROM nutrition_logs WHERE user_id = ? AND date = ?`, userID, date).Scan(&n.ID, &n.UserID, &n.Date, &n.Calories, &n.ProteinG, &n.CarbsG, &n.FatG, &n.FiberG, &n.WaterMl, &n.MealNotes, &n.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,COALESCE(meal_notes,''),updated_at FROM nutrition_logs WHERE user_id = ? AND date = ?`, userID, date).Scan(&n.ID, &n.UserID, &n.Date, &n.Calories, &n.ProteinG, &n.CarbsG, &n.FatG, &n.FiberG, &n.WaterMl, &n.MealNotes, &n.UpdatedAt)
 	if err != nil {
 		return n, fmt.Errorf("get nutrition log: %w", err)
 	}
@@ -730,7 +756,7 @@ func (s *SQLiteStore) DeleteNutritionLog(ctx context.Context, userID, date strin
 
 // --- Biometric ---
 func (s *SQLiteStore) FetchBiometricLogsRange(ctx context.Context, userID, from, to string) ([]models.BiometricLog, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, userID, from, to)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,date,COALESCE(weight_kg,0),COALESCE(waist_cm,0),COALESCE(grip_kg,0),COALESCE(bolt_score,0),COALESCE(sleep_hours,0),COALESCE(sleep_quality,0),COALESCE(subjective_feel,0),COALESCE(body_fat_pct,0),COALESCE(notes,''),updated_at FROM biometric_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("fetch biometric logs range: %w", err)
 	}
@@ -748,7 +774,7 @@ func (s *SQLiteStore) FetchBiometricLogsRange(ctx context.Context, userID, from,
 
 func (s *SQLiteStore) GetBiometricLog(ctx context.Context, userID, date string) (models.BiometricLog, error) {
 	var b models.BiometricLog
-	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,date,weight_kg,waist_cm,grip_kg,bolt_score,sleep_hours,sleep_quality,subjective_feel,body_fat_pct,notes,updated_at FROM biometric_logs WHERE user_id = ? AND date = ?`, userID, date).Scan(&b.ID, &b.UserID, &b.Date, &b.WeightKg, &b.WaistCm, &b.GripKg, &b.BoltScore, &b.SleepHours, &b.SleepQuality, &b.SubjectiveFeel, &b.BodyFatPct, &b.Notes, &b.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,date,COALESCE(weight_kg,0),COALESCE(waist_cm,0),COALESCE(grip_kg,0),COALESCE(bolt_score,0),COALESCE(sleep_hours,0),COALESCE(sleep_quality,0),COALESCE(subjective_feel,0),COALESCE(body_fat_pct,0),COALESCE(notes,''),updated_at FROM biometric_logs WHERE user_id = ? AND date = ?`, userID, date).Scan(&b.ID, &b.UserID, &b.Date, &b.WeightKg, &b.WaistCm, &b.GripKg, &b.BoltScore, &b.SleepHours, &b.SleepQuality, &b.SubjectiveFeel, &b.BodyFatPct, &b.Notes, &b.UpdatedAt)
 	if err != nil {
 		return b, fmt.Errorf("get biometric log: %w", err)
 	}
@@ -908,6 +934,31 @@ func upsertTargets(ctx context.Context, ex execer, t *models.Targets) error {
 func (s *SQLiteStore) UpsertTargets(ctx context.Context, t *models.Targets) error {
 	if err := upsertTargets(ctx, s.db, t); err != nil {
 		return fmt.Errorf("upsert targets: %w", err)
+	}
+	return nil
+}
+
+// RecordTargetUpdateTx writes the live target row and an optional pre-change
+// snapshot atomically. The manual-edit path previously called UpsertTargets and
+// CreateTargetSnapshot separately, so a failure between them could publish a
+// new target with no history row (or vice versa).
+func (s *SQLiteStore) RecordTargetUpdateTx(ctx context.Context, t *models.Targets, snap *models.TargetSnapshot) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin record target update: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := upsertTargets(ctx, tx, t); err != nil {
+		return fmt.Errorf("upsert targets: %w", err)
+	}
+	if snap != nil {
+		if err := insertTargetSnapshot(ctx, tx, snap); err != nil {
+			return fmt.Errorf("create target snapshot: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit record target update: %w", err)
 	}
 	return nil
 }
@@ -1460,9 +1511,10 @@ func (s *SQLiteStore) ConsumeInvite(ctx context.Context, code, userID, now strin
 	if usedBy != "" {
 		return "", ErrInviteUsed
 	}
+	// Fail closed: a malformed expires_at is invalid, never an open door.
 	exp, expErr := time.Parse(time.RFC3339, expiresAt)
 	nowT, nowErr := time.Parse(time.RFC3339, now)
-	if expErr == nil && nowErr == nil && !nowT.Before(exp) {
+	if expErr != nil || nowErr != nil || !nowT.Before(exp) {
 		return "", ErrInviteExpired
 	}
 

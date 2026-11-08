@@ -11,6 +11,12 @@ const (
 	// TimeFormat is the canonical RFC3339 layout used for all timestamp fields.
 	TimeFormat = time.RFC3339
 
+	// FormatResourceTimestamp is the fixed-width timestamp layout used for
+	// resource ordering keys (target_history.created_at, check_in_logs.created_at).
+	// A constant 9-digit fraction keeps lexical string comparison chronological;
+	// RFC3339Nano's variable-length fraction does not.
+	FormatResourceTimestamp = "2006-01-02T15:04:05.000000000Z07:00"
+
 	// DefaultTDEELookbackDays is the default number of days used to compute observed TDEE
 	// when the user has not set a custom value in their profile.
 	DefaultTDEELookbackDays = 90

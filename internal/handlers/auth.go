@@ -143,9 +143,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	userID := uuid.New().String()
 
 	// Invite-only gate. The code is consumed before the user row is created so
-	// two concurrent registrations cannot both spend it. A duplicate
-	// username/email therefore still burns the code; that is an acceptable
-	// trade-off for single-use enforcement.
+	// two concurrent registrations cannot both spend it. If CreateUser then
+	// fails, the burn is compensated back below, so a failed attempt does not
+	// cost the caller their code.
+	var consumedInviteCode string
 	if !bootstrap && mode == RegistrationModeInviteOnly {
 		code := strings.ToUpper(strings.TrimSpace(req.InviteCode))
 		if code == "" {
@@ -165,6 +166,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		consumedInviteCode = code
 	}
 
 	pending := !bootstrap && mode == RegistrationModePublicApproval
@@ -172,6 +174,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.s.CreateUser(r.Context(), userID, req.Username, req.Email, hash, isAdmin, pending, now, now); err != nil {
 		slog.Error("create user during register", "err", err)
+		// The invite was burned for this exact attempt before the insert. If the
+		// insert failed (duplicate username/email, constraint, etc.) release it
+		// so the caller can retry with the same code. Compensation only clears
+		// the burn when used_by still matches this userID, so a concurrent
+		// winner's code is never released. A compensation failure is logged but
+		// must not mask the original conflict.
+		if consumedInviteCode != "" {
+			if cerr := h.s.CompensateRegistrationInvite(r.Context(), consumedInviteCode, userID); cerr != nil {
+				slog.Error("compensate registration invite after create failure", "user_id", userID, "err", cerr)
+			}
+		}
 		respond.Error(w, http.StatusConflict, "username or email already exists")
 		return
 	}
