@@ -1055,7 +1055,12 @@ func (s *SQLiteStore) DeleteMealTemplate(ctx context.Context, userID, templateID
 
 // --- Measurements ---
 func (s *SQLiteStore) FetchMeasurementsRange(ctx context.Context, userID, from, to string) ([]models.BodyMeasurement, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, userID, from, to)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,date,
+        COALESCE(neck_cm,0), COALESCE(chest_cm,0), COALESCE(waist_cm,0),
+        COALESCE(hips_cm,0), COALESCE(thigh_cm,0), COALESCE(bicep_cm,0),
+        COALESCE(notes,''), created_at,
+        COALESCE(shoulders_cm,0), COALESCE(calves_cm,0)
+        FROM body_measurements WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC`, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("fetch measurements range: %w", err)
 	}
@@ -1067,6 +1072,9 @@ func (s *SQLiteStore) FetchMeasurementsRange(ctx context.Context, userID, from, 
 			return nil, fmt.Errorf("scan measurement row: %w", err)
 		}
 		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate measurement rows: %w", err)
 	}
 	return out, nil
 }
@@ -1098,9 +1106,19 @@ func (s *SQLiteStore) CreateMeasurement(ctx context.Context, m *models.BodyMeasu
 }
 
 func (s *SQLiteStore) UpdateMeasurement(ctx context.Context, m *models.BodyMeasurement) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE body_measurements SET neck_cm=?,chest_cm=?,waist_cm=?,hips_cm=?,thigh_cm=?,bicep_cm=?,notes=?,shoulders_cm=?,calves_cm=? WHERE user_id=? AND date=?`, m.NeckCm, m.ChestCm, m.WaistCm, m.HipsCm, m.ThighCm, m.BicepCm, m.Notes, m.ShouldersCm, m.CalvesCm, m.UserID, m.Date)
+	res, err := s.db.ExecContext(ctx, `UPDATE body_measurements SET neck_cm=?,chest_cm=?,waist_cm=?,hips_cm=?,thigh_cm=?,bicep_cm=?,notes=?,shoulders_cm=?,calves_cm=? WHERE user_id=? AND date=?`, m.NeckCm, m.ChestCm, m.WaistCm, m.HipsCm, m.ThighCm, m.BicepCm, m.Notes, m.ShouldersCm, m.CalvesCm, m.UserID, m.Date)
 	if err != nil {
 		return fmt.Errorf("update measurement: %w", err)
+	}
+	// PUT is a replace of an existing row: zero affected rows means the
+	// (user, date) pair does not exist, which the handler maps to 404 rather
+	// than reporting a phantom success.
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update measurement rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

@@ -65,6 +65,11 @@ func (h *MeasurementsHandler) List(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
+	// Normalise the nil slice so an empty window serialises as [] rather than
+	// null — clients iterate the array unconditionally.
+	if out == nil {
+		out = []models.BodyMeasurement{}
+	}
 	respond.JSON(w, http.StatusOK, out)
 }
 
@@ -83,14 +88,31 @@ func (h *MeasurementsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if in.ID == "" {
 		in.ID = uuid.New().String()
 	}
-	now := time.Now().UTC().Format(constants.TimeFormat)
+	// created_at is NOT NULL; the upsert never rewrites it on conflict, so
+	// seeding it here only affects genuinely new rows. The response below still
+	// echoes the persisted value.
+	if in.CreatedAt == "" {
+		in.CreatedAt = time.Now().UTC().Format(constants.TimeFormat)
+	}
 	// UPSERT: insert or replace if date already exists for this user
 	if err := h.s.CreateMeasurement(r.Context(), &in); err != nil {
 		slog.Error("create measurement", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	in.CreatedAt = now
+	// The upsert is preserve-on-zero and may have kept an existing row's id,
+	// created_at, or untouched fields. Respond with the stored row rather than
+	// a freshly minted UUID/now pair so the client cache matches the database.
+	saved, err := h.s.FetchMeasurementsRange(r.Context(), claims.UserID, in.Date, in.Date)
+	if err != nil {
+		slog.Error("fetch created measurement", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+	if len(saved) > 0 {
+		respond.JSON(w, http.StatusOK, saved[0])
+		return
+	}
 	respond.JSON(w, http.StatusOK, in)
 }
 
@@ -109,7 +131,7 @@ func (h *MeasurementsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	in.UserID = claims.UserID
 	in.Date = date
 	if err := h.s.UpdateMeasurement(r.Context(), &in); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrNotFound) {
 			respond.Error(w, http.StatusNotFound, "measurement not found")
 			return
 		}

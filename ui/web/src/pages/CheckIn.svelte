@@ -184,12 +184,33 @@
   }
 
   // --- Measurements tab ---
-  let measForm = $state({ date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', shouldersCm: '', calvesCm: '', notes: '' })
+  // Server-validated upper bound for a single circumference, in display units
+  // below; mirrored here so the browser rejects obvious typos before submit.
+  const maxCircumferenceCm = 250
+  function maxLengthInput(units) {
+    return units === 'imperial' ? +(maxCircumferenceCm / 2.54).toFixed(1) : maxCircumferenceCm
+  }
+
+  function emptyMeasForm() {
+    return { date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', shouldersCm: '', calvesCm: '', notes: '' }
+  }
+
+  let measForm = $state(emptyMeasForm())
   let measLoading = $state(false)
   let measError = $state('')
   let measSuccess = $state('')
   let measHistory = $state([])
   let bfHistory = $state([])
+  // Measurement edit state mirrors Measurements.svelte: form values are held in
+  // display units and PUT targets the original (user, date) row.
+  let measIsEdit = $state(false)
+  let measEditDate = $state('')
+
+  // Stored cm → display-unit input value. Zero means "not logged", so it stays
+  // blank rather than showing a misleading 0.
+  function measEditValue(cm) {
+    return cm ? String(dispLength(cm, store.units)) : ''
+  }
 
   async function loadMeasurements() {
     try {
@@ -213,7 +234,7 @@
     measSuccess = ''
     measLoading = true
     try {
-      await api.postMeasurement({
+      const payload = {
         date:         measForm.date,
         neckCm:      inputLength(measForm.neckCm, store.units),
         chestCm:     inputLength(measForm.chestCm, store.units),
@@ -224,9 +245,19 @@
         shouldersCm: inputLength(measForm.shouldersCm, store.units),
         calvesCm:    inputLength(measForm.calvesCm, store.units),
         notes:        measForm.notes || '',
-      })
-      measSuccess = 'Measurement saved'
-      measForm = { date: today(), neckCm: '', chestCm: '', waistCm: '', hipsCm: '', thighCm: '', bicepCm: '', shouldersCm: '', calvesCm: '', notes: '' }
+      }
+      if (measIsEdit) {
+        // PUT is a true replace: blank fields intentionally clear the stored
+        // value, matching the Measurements page.
+        await api.putMeasurement(measEditDate, payload)
+        measSuccess = 'Measurement updated'
+      } else {
+        await api.postMeasurement(payload)
+        measSuccess = 'Measurement saved'
+      }
+      measIsEdit = false
+      measEditDate = ''
+      measForm = emptyMeasForm()
       await loadMeasurements()
     } catch (e) {
       measError = e.message
@@ -352,16 +383,20 @@
         tab = 'daily'
       } else if (store.editData.type === 'measurement') {
         const row = store.editData.data
+        // Form state is in display units; stored cm values are converted on
+        // prefill and back on submit, exactly like Measurements.svelte.
+        measIsEdit = true
+        measEditDate = row.date
         measForm = {
           date: row.date,
-          neckCm: String(row.neckCm ?? ''),
-          chestCm: String(row.chestCm ?? ''),
-          waistCm: String(row.waistCm ?? ''),
-          hipsCm: String(row.hipsCm ?? ''),
-          thighCm: String(row.thighCm ?? ''),
-          bicepCm: String(row.bicepCm ?? ''),
-          shouldersCm: String(row.shouldersCm ?? ''),
-          calvesCm: String(row.calvesCm ?? ''),
+          neckCm: measEditValue(row.neckCm),
+          chestCm: measEditValue(row.chestCm),
+          waistCm: measEditValue(row.waistCm),
+          hipsCm: measEditValue(row.hipsCm),
+          thighCm: measEditValue(row.thighCm),
+          bicepCm: measEditValue(row.bicepCm),
+          shouldersCm: measEditValue(row.shouldersCm),
+          calvesCm: measEditValue(row.calvesCm),
           notes: row.notes ?? ''
         }
         tab = 'measurements'
@@ -470,42 +505,42 @@
 
           <div>
             <label class="text-xs text-gray-400" for="meas-neck">Neck ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-neck" type="number" step="0.1" bind:value={measForm.neckCm} />
+            <input class="input" id="meas-neck" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.neckCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-chest">Chest ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-chest" type="number" step="0.1" bind:value={measForm.chestCm} />
+            <input class="input" id="meas-chest" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.chestCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-waist">Waist ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-waist" type="number" step="0.1" bind:value={measForm.waistCm} />
+            <input class="input" id="meas-waist" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.waistCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-hips">Hips ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-hips" type="number" step="0.1" bind:value={measForm.hipsCm} />
+            <input class="input" id="meas-hips" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.hipsCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-thigh">Thigh ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-thigh" type="number" step="0.1" bind:value={measForm.thighCm} />
+            <input class="input" id="meas-thigh" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.thighCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-bicep">Bicep ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-bicep" type="number" step="0.1" bind:value={measForm.bicepCm} />
+            <input class="input" id="meas-bicep" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.bicepCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-shoulders">Shoulders ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-shoulders" type="number" step="0.1" bind:value={measForm.shouldersCm} />
+            <input class="input" id="meas-shoulders" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.shouldersCm} />
           </div>
 
           <div>
             <label class="text-xs text-gray-400" for="meas-calves">Calves ({lengthUnit(store.units)})</label>
-            <input class="input" id="meas-calves" type="number" step="0.1" bind:value={measForm.calvesCm} />
+            <input class="input" id="meas-calves" type="number" min="0" max={maxLengthInput(store.units)} step="0.1" bind:value={measForm.calvesCm} />
           </div>
 
           <div class="col-span-2">
@@ -514,7 +549,7 @@
           </div>
 
           <div class="col-span-2">
-            <button class="btn-primary" onclick={submitMeasurement} disabled={measLoading}>{measLoading ? 'Saving…' : 'Save'}</button>
+            <button class="btn-primary" onclick={submitMeasurement} disabled={measLoading}>{measLoading ? 'Saving…' : (measIsEdit ? 'Update' : 'Save')}</button>
           </div>
         </div>
       </Card>
