@@ -261,6 +261,36 @@ func TestComputeObservedTDEEShortSeriesUsesFittedLevelNotForecast(t *testing.T) 
 	}
 }
 
+// TestComputeWeightTrendWeeklySparseRate guards the row-index vs calendar-day
+// bug: seven weekly weigh-ins a kilogram apart are a truthful -1 kg/week trend,
+// not the -7 kg/week that index-based regression produced.
+func TestComputeWeightTrendWeeklySparseRate(t *testing.T) {
+	start := time.Now().AddDate(0, 0, -42)
+	bios := make([]models.BiometricLog, 7)
+	for i := range bios {
+		bios[i] = models.BiometricLog{
+			Date:     start.AddDate(0, 0, 7*i).Format("2006-01-02"),
+			WeightKg: 80 - float64(i),
+		}
+	}
+
+	trend, rate, days := ComputeWeightTrend(bios, start.Format("2006-01-02"))
+
+	if days != 7 {
+		t.Fatalf("days = %d, want 7 distinct weigh-in days", days)
+	}
+	if math.Abs(rate-(-1.0)) > 0.3 {
+		t.Fatalf("rateKgPerWeek = %v, want ≈ -1 kg/week ±0.3", rate)
+	}
+	// Explicitly reject the historical index-spacing artifact.
+	if math.Abs(rate-(-7.0)) < 1.0 {
+		t.Fatalf("rateKgPerWeek = %v matches the old -7 kg/week bug", rate)
+	}
+	if math.Abs(trend-74.0) > 0.01 {
+		t.Fatalf("trendKg = %v, want 74 (fit evaluated at the newest weigh-in)", trend)
+	}
+}
+
 // TestComputeObservedTDEEImplausibleFallsBackToStatic guards the <1000 kcal
 // fallback that prevents nonsensical targets.
 func TestComputeObservedTDEEImplausibleFallsBackToStatic(t *testing.T) {
