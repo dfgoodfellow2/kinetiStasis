@@ -244,6 +244,9 @@ type CheckinPreview struct {
 	WeightStart  float64 `json:"weightStart"`
 	WeightEnd    float64 `json:"weightEnd"`
 	WeightChange float64 `json:"weightChange"`
+	// HasWeighinData is false when the window has no weight-bearing logs; the
+	// UI uses it to render empty weight markers instead of misleading zeros.
+	HasWeighinData bool `json:"hasWeighinData"`
 
 	// Current nutritional state
 	CurrentCalories float64 `json:"currentCalories"`
@@ -252,6 +255,13 @@ type CheckinPreview struct {
 	// Recommendation from adaptive engine
 	RecommendedCalories int     `json:"recommendedCalories"`
 	CalorieAdjustment   float64 `json:"calorieAdjustment"`
+
+	// Target-update policy. WeightReliable mirrors the engine's reliability
+	// gate; TargetUpdateBlocked suppresses calorie/macro changes while still
+	// allowing the check-in itself to be recorded.
+	WeightReliable      bool   `json:"weightReliable"`
+	TargetUpdateBlocked bool   `json:"targetUpdateBlocked"`
+	Warning             string `json:"warning,omitempty"`
 }
 
 // SavedMeal is a named, reusable meal with its macro breakdown.
@@ -397,6 +407,17 @@ type TDEEResult struct {
 	LookbackDays   int     `json:"lookbackDays"`
 	Method         string  `json:"method"`
 	EmergencyAlert bool    `json:"emergencyAlert"`
+
+	// WeightReliable reports whether the body-energy term (weight trend slope
+	// x 7700 kcal/kg) was trusted. It requires >= 7 distinct weight-bearing log
+	// days spanning >= 7 calendar days inside the lookback window.
+	WeightReliable bool `json:"weightReliable"`
+	// TargetUpdateBlocked is true when the check-in must not change targets
+	// (unreliable weight history or a failed readiness gate).
+	TargetUpdateBlocked bool `json:"targetUpdateBlocked"`
+	// Warning carries a human-readable reason when the estimate is guarded or
+	// target updates are suppressed.
+	Warning string `json:"warning,omitempty"`
 }
 
 type MacroResult struct {
@@ -549,7 +570,10 @@ func ageFromBirthdateAt(birthdate string, now time.Time) int {
 	if birthdate == "" {
 		return 0
 	}
-	bd, err := time.Parse("2006-01-02", birthdate)
+	// Parse in the caller's location so a date-only value compares against now
+	// in the same zone. Parsing as UTC can make "tomorrow" land before "now"
+	// on evenings in negative UTC offsets, producing a negative age.
+	bd, err := time.ParseInLocation("2006-01-02", birthdate, now.Location())
 	if err != nil {
 		return 0
 	}

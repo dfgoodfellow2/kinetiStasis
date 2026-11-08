@@ -78,9 +78,10 @@ func TestComputeObservedTDEEStaticFallbackMatchesNutrition(t *testing.T) {
 				t.Fatalf("EstimatedTDEE = %v, want %v (nutrition.ComputeStaticTDEE)", got.EstimatedTDEE, want)
 			}
 
-			// The statistical tiering must remain untouched by the delegation.
-			if got.Method != "linear_regression" {
-				t.Errorf("Method = %q, want %q", got.Method, "linear_regression")
+			// The sub-four-day tier now uses a plain mean; the statistical
+			// tiering must remain untouched by the static delegation.
+			if got.Method != "mean" {
+				t.Errorf("Method = %q, want %q", got.Method, "mean")
 			}
 			if got.ObservedTDEE != 2000 {
 				t.Errorf("ObservedTDEE = %v, want 2000", got.ObservedTDEE)
@@ -128,5 +129,156 @@ func TestComputeObservedTDEEHighBodyFatDiffersFromMifflin(t *testing.T) {
 		float64(nutrition.CalcRunningCalories(weightKg, profile.RunningKm))
 	if got == mifflinTDEE {
 		t.Errorf("EstimatedTDEE = %v matches Mifflin-only estimate; expected Katch-McArdle", got)
+	}
+}
+
+// windowDates returns n consecutive YYYY-MM-DD dates ending today, oldest
+// first. Tests deliberately anchor to the wall clock because the estimator
+// applies its own lookback cutoff internally.
+func windowDates(n int) []string {
+	now := time.Now()
+	out := make([]string, n)
+	for i := range out {
+		out[i] = now.AddDate(0, 0, -(n - 1 - i)).Format("2006-01-02")
+	}
+	return out
+}
+
+func nutritionSeries(dates []string, calories ...float64) []models.NutritionLog {
+	logs := make([]models.NutritionLog, len(dates))
+	for i, date := range dates {
+		cals := 0.0
+		if len(calories) > 0 {
+			cals = calories[0]
+		}
+		if i < len(calories) {
+			cals = calories[i]
+		}
+		logs[i] = models.NutritionLog{Date: date, Calories: cals}
+	}
+	return logs
+}
+
+func weightSeries(dates []string, startKg, totalChangeKg float64) []models.BiometricLog {
+	bios := make([]models.BiometricLog, len(dates))
+	span := float64(len(dates) - 1)
+	for i, date := range dates {
+		w := startKg
+		if span > 0 {
+			w += totalChangeKg * float64(i) / span
+		}
+		bios[i] = models.BiometricLog{Date: date, WeightKg: w}
+	}
+	return bios
+}
+
+// TestComputeObservedTDEEFlatWeightEqualsIntake pins the energy-balance model
+// at zero weight change: expenditure must equal the intake estimate.
+func TestComputeObservedTDEEFlatWeightEqualsIntake(t *testing.T) {
+	dates := windowDates(8)
+	logs := nutritionSeries(dates, 2900)
+	bios := weightSeries(dates, 82.0, 0)
+
+	res := ComputeObservedTDEE(logs, bios, models.Profile{}, 0)
+
+	if !res.WeightReliable {
+		t.Fatal("WeightReliable = false, want true for 8 weigh-ins spanning 7 days")
+	}
+	if math.Abs(res.ObservedTDEE-2900) > 25 {
+		t.Fatalf("ObservedTDEE = %v, want 2900 ±25 (flat weight => intake)", res.ObservedTDEE)
+	}
+}
+
+// TestComputeObservedTDEEGainSubtractsStoredEnergy pins the SBS/MacroFactor
+// identity: intake - (weight slope x 7700 kcal/kg). A +0.5 kg/week trend stores
+// 550 kcal/day, so observed expenditure is 550 below intake.
+func TestComputeObservedTDEEGainSubtractsStoredEnergy(t *testing.T) {
+	dates := windowDates(8)
+	logs := nutritionSeries(dates, 2900)
+	bios := weightSeries(dates, 82.0, 0.5) // +0.5 kg across 7 days
+
+	res := ComputeObservedTDEE(logs, bios, models.Profile{}, 0)
+
+	if !res.WeightReliable {
+		t.Fatal("WeightReliable = false, want true")
+	}
+	// 2900 - (0.5/7)*7700 = 2900 - 550 = 2350.
+	if math.Abs(res.ObservedTDEE-2350) > 30 {
+		t.Fatalf("ObservedTDEE = %v, want 2350 ±30 (intake - 550 kcal/day stored)", res.ObservedTDEE)
+	}
+}
+
+// TestComputeObservedTDEEShortWeightHistoryIsIntakeOnly verifies that fewer
+// than seven weight-bearing log days disables the body-energy term entirely.
+func TestComputeObservedTDEEShortWeightHistoryIsIntakeOnly(t *testing.T) {
+	dates := windowDates(8)
+	logs := nutritionSeries(dates, 2900)
+	bios := weightSeries(dates[2:], 82.0, 6.0) // only 6 weigh-ins, no term
+
+	res := ComputeObservedTDEE(logs, bios, models.Profile{}, 0)
+
+	if res.WeightReliable {
+		t.Fatal("WeightReliable = true, want false for 6 weight days")
+	}
+	if !res.TargetUpdateBlocked {
+		t.Error("TargetUpdateBlocked = false, want true when weight is unreliable")
+	}
+	// Intake-only estimate over a constant series is exactly 2900.
+	if math.Abs(res.ObservedTDEE-2900) > 25 {
+		t.Fatalf("ObservedTDEE = %v, want intake-only 2900 ±25", res.ObservedTDEE)
+	}
+}
+
+// TestComputeObservedTDEEShortSeriesUsesFittedLevelNotForecast guards the raise
+// bug: [3000,3200,3400,4600] must yield the regression level at the last
+// observation (≈4300), not the one-step forecast beyond the series (4800).
+func TestComputeObservedTDEEShortSeriesUsesFittedLevelNotForecast(t *testing.T) {
+	dates := windowDates(4)
+	spikes := []float64{3000, 3200, 3400, 4600}
+	logs := nutritionSeries(dates, spikes...)
+
+	res := ComputeObservedTDEE(logs, nil, models.Profile{}, 0)
+
+	if res.Method != "linear_regression" {
+		t.Fatalf("Method = %q, want linear_regression", res.Method)
+	}
+	slope, intercept, forecast := LinearRegression(spikes)
+	fittedLevel := slope*float64(len(spikes)-1) + intercept
+
+	if math.Abs(res.ObservedTDEE-fittedLevel) > 1 {
+		t.Fatalf("ObservedTDEE = %v, want fitted level %v", res.ObservedTDEE, fittedLevel)
+	}
+	if res.ObservedTDEE >= forecast {
+		t.Fatalf("ObservedTDEE = %v must be below the one-step forecast %v", res.ObservedTDEE, forecast)
+	}
+	// No forecast amplification: 4800 was the bug; the fitted level stays in a
+	// sane band around the observed series.
+	if res.ObservedTDEE > 4400 {
+		t.Fatalf("ObservedTDEE = %v, want <= 4400 (no forecast amplification)", res.ObservedTDEE)
+	}
+	if res.ObservedTDEE < 3400 {
+		t.Fatalf("ObservedTDEE = %v, want >= 3400 (fitted level, not collapsed)", res.ObservedTDEE)
+	}
+}
+
+// TestComputeObservedTDEEImplausibleFallsBackToStatic guards the <1000 kcal
+// fallback that prevents nonsensical targets.
+func TestComputeObservedTDEEImplausibleFallsBackToStatic(t *testing.T) {
+	dates := windowDates(8)
+	logs := nutritionSeries(dates, 500) // low intake
+	bios := weightSeries(dates, 82.0, 0)
+	profile := models.Profile{Sex: "male", HeightCm: 180, Age: 35, Activity: "moderately_active", ExerciseFreq: 3}
+
+	res := ComputeObservedTDEE(logs, bios, profile, 0)
+
+	if res.Method != "static_fallback" {
+		t.Fatalf("Method = %q, want static_fallback", res.Method)
+	}
+	want := nutrition.ComputeStaticTDEE(profile, 82.0)
+	if math.Abs(res.ObservedTDEE-want) > 1 {
+		t.Fatalf("ObservedTDEE = %v, want static %v", res.ObservedTDEE, want)
+	}
+	if res.Warning == "" {
+		t.Error("Warning is empty, want implausible-estimate notice")
 	}
 }

@@ -27,9 +27,15 @@ const (
 	// between weekly check-ins to prevent reactive adjustments from noisy data.
 	MinCheckinIntervalDays = 5
 
-	// MinBiometricLogsForCheckin is the minimum number of biometric log entries
-	// required to perform a weekly check-in (ensures enough weight data).
-	MinBiometricLogsForCheckin = 3
+	// MinWeighInsForCheckin is the minimum number of distinct weight-bearing
+	// biometric logs (WeightKg > 0) inside the lookback window required to
+	// perform a weekly check-in. The gate is intentionally about WEIGH-INS, not
+	// arbitrary biometric rows: sleep/grip-only rows must never unlock it.
+	MinWeighInsForCheckin = 3
+
+	// MinBiometricLogsForCheckin is retained as a compatibility alias for the
+	// old name. It means the same thing as MinWeighInsForCheckin.
+	MinBiometricLogsForCheckin = MinWeighInsForCheckin
 
 	// MinCalorieFloor is the absolute minimum daily calorie target that the adaptive
 	// TDEE algorithm will ever recommend, regardless of goal or adjustment.
