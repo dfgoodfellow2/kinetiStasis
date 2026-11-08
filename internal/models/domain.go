@@ -256,6 +256,11 @@ type CheckinPreview struct {
 	RecommendedCalories int     `json:"recommendedCalories"`
 	CalorieAdjustment   float64 `json:"calorieAdjustment"`
 
+	// WeighInCount is the number of weight-bearing logs (WeightKg > 0) inside
+	// the lookback window. It backs the canCheckIn>=3 gate and lets the UI show
+	// progress toward the 7 needed for a reliable target update.
+	WeighInCount int `json:"weighInCount"`
+
 	// Target-update policy. WeightReliable mirrors the engine's reliability
 	// gate; TargetUpdateBlocked suppresses calorie/macro changes while still
 	// allowing the check-in itself to be recorded.

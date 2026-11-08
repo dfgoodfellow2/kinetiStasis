@@ -676,7 +676,8 @@
               <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3">
                 <div class="text-amber-300 font-bold">Targets on hold</div>
                 <div class="text-sm text-amber-200">
-                  {checkinPreview.warning || 'Not enough weigh-in history to update targets — keep logging daily (7 needed).'}
+                  Not enough weigh-in history to update targets —
+                  <b>{Math.min(checkinPreview.weighInCount ?? 0, 7)} of 7</b> weigh-ins logged. Keep logging daily.
                 </div>
               </div>
             {/if}

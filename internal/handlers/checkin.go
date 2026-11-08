@@ -232,6 +232,7 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		RecommendedCalories: recCals,
 		CalorieAdjustment:   adjustment,
 
+		WeighInCount:        state.weighInCount,
 		WeightReliable:      state.tdee.WeightReliable,
 		TargetUpdateBlocked: targetUpdateBlocked,
 		Warning:             warning,

@@ -141,6 +141,9 @@ func TestCheckinZeroWeighInsBlocksCheckin(t *testing.T) {
 	if preview.HasWeighinData {
 		t.Error("HasWeighinData = true, want false with zero weigh-ins")
 	}
+	if preview.WeighInCount != 0 {
+		t.Errorf("WeighInCount = %d, want 0 with zero weigh-ins", preview.WeighInCount)
+	}
 	if preview.RecommendedCalories != 2000 {
 		t.Errorf("RecommendedCalories = %d, want current target 2000", preview.RecommendedCalories)
 	}
@@ -204,6 +207,9 @@ func TestCheckinInsufficientWeightHistoryRecordsButDoesNotUpdate(t *testing.T) {
 	preview := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
 	if !preview.CanCheckIn {
 		t.Fatal("CanCheckIn = false with 3 weigh-ins, want true")
+	}
+	if preview.WeighInCount != 3 {
+		t.Errorf("WeighInCount = %d, want 3 (banner progress)", preview.WeighInCount)
 	}
 	if preview.WeightReliable {
 		t.Error("WeightReliable = true with 3 weight days, want false")
@@ -270,6 +276,9 @@ func TestCheckinFullPathUpdatesCaloriesAndMacros(t *testing.T) {
 	}
 	if !preview.WeightReliable {
 		t.Fatal("WeightReliable = false, want true with 8 weigh-ins over 7 days")
+	}
+	if preview.WeighInCount != 8 {
+		t.Errorf("WeighInCount = %d, want 8", preview.WeighInCount)
 	}
 	if preview.TargetUpdateBlocked {
 		t.Fatal("TargetUpdateBlocked = true, want false on the full path")

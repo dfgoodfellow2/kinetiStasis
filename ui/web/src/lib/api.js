@@ -42,6 +42,7 @@ const BASE = '/v1'
  * @property {boolean} eatBackExercise
  * @property {number} recommendedCalories  Equals currentCalories while TargetUpdateBlocked
  * @property {number} calorieAdjustment    0 while TargetUpdateBlocked
+ * @property {number} weighInCount         Weight-bearing logs in the lookback window (0 of 7 unlocks nothing)
  * @property {boolean} weightReliable      True once the weight term has 7 weigh-in days
  * @property {boolean} targetUpdateBlocked Suppresses calorie/macro changes at check-in
  * @property {string} warning              Human-readable reason when a gate is closed
