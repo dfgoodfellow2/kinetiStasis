@@ -37,6 +37,9 @@ export const guideSections = [
       },
       {
         tip: 'Missing a day is not a failure. The app is built to keep going; it just needs a few honest data points to work with.'
+      },
+      {
+        tip: 'You can change your password any time on the Profile page. If you forget it, ask the household owner for a one-time reset — they’ll give you a temporary password you can replace after signing in.'
       }
     ],
     underTheHood: [

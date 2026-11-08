@@ -129,6 +129,35 @@
   function openExport() {
     setCurrentPage('export')
   }
+
+  // ── Change password ─────────────────────────────────────
+  let pw = $state({ current: '', next: '', confirm: '' })
+  let pwError = $state('')
+  let pwSuccess = $state('')
+  let pwLoading = $state(false)
+
+  async function submitPassword() {
+    pwError = ''
+    pwSuccess = ''
+    if (pw.next.length < 8) {
+      pwError = 'New password must be at least 8 characters.'
+      return
+    }
+    if (pw.next !== pw.confirm) {
+      pwError = 'New password and confirmation do not match.'
+      return
+    }
+    pwLoading = true
+    try {
+      await api.changePassword(pw.current, pw.next)
+      pw = { current: '', next: '', confirm: '' }
+      pwSuccess = 'Password changed — other devices have been logged out.'
+    } catch (e) {
+      pwError = e.message || 'Could not change password.'
+    } finally {
+      pwLoading = false
+    }
+  }
 </script>
 
 <!-- ── Profile form ──────────────────────────────────────── -->
@@ -300,6 +329,30 @@
         <div class="text-white font-mono">{targetText(targets.waterMl, 'ml')}</div>
       </div>
     </div>
+  </div>
+
+  <!-- Change password -->
+  <div class="pt-2 border-t border-gray-700 space-y-3">
+    <h3 class="text-emerald-400 font-semibold text-sm">Change password</h3>
+    {#if pwError}<Alert type="error" message={pwError} />{/if}
+    {#if pwSuccess}<Alert type="success" message={pwSuccess} />{/if}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div>
+        <label class="text-xs text-gray-400" for="pw-current">Current password</label>
+        <input class="input" id="pw-current" type="password" autocomplete="current-password" bind:value={pw.current} />
+      </div>
+      <div>
+        <label class="text-xs text-gray-400" for="pw-new">New password</label>
+        <input class="input" id="pw-new" type="password" autocomplete="new-password" bind:value={pw.next} />
+      </div>
+      <div>
+        <label class="text-xs text-gray-400" for="pw-confirm">Confirm new password</label>
+        <input class="input" id="pw-confirm" type="password" autocomplete="new-password" bind:value={pw.confirm} />
+      </div>
+    </div>
+    <button class="btn-primary" onclick={submitPassword} disabled={pwLoading} type="button">
+      {pwLoading ? 'Saving…' : 'Change password'}
+    </button>
   </div>
 
   <!-- Guide link -->

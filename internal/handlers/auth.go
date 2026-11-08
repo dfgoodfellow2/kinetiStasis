@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	respond "github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
@@ -208,6 +211,160 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.ClearAuthCookies(w, h.cfg.IsProd())
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "logged out"})
+}
+
+// ChangePassword handles POST /v1/auth/password. It verifies the current
+// password, stores a fresh bcrypt hash, revokes every refresh token for the
+// user (all devices, including this one) and then issues a fresh token pair so
+// the caller stays signed in.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	claims := auth.ClaimsFromCtx(r)
+	if claims == nil {
+		respond.Error(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if !respond.Decode(w, r, &req) {
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		respond.Error(w, http.StatusBadRequest, "currentPassword and newPassword are required")
+		return
+	}
+
+	hash, err := h.s.GetUserPasswordHash(r.Context(), claims.UserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		respond.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get password hash for change", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	// A wrong current password is an auth failure, not a server error — use
+	// the same generic message as Login so the response reveals nothing.
+	if err := auth.CheckPassword(hash, req.CurrentPassword); err != nil {
+		respond.Error(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	if len(req.NewPassword) < 8 {
+		respond.Error(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		slog.Error("hash new password", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not hash password")
+		return
+	}
+
+	if err := h.s.UpdateUserPassword(r.Context(), claims.UserID, newHash); err != nil {
+		slog.Error("update user password", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	// Every existing refresh token dies, including the caller's. The fresh
+	// pair issued below becomes the only live session for this device.
+	if err := h.s.DeleteUserRefreshTokens(r.Context(), claims.UserID); err != nil {
+		slog.Error("delete refresh tokens after password change", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	if err := h.issueTokenPair(w, r, claims.UserID, claims.IsAdmin); err != nil {
+		slog.Error("issue token pair after password change", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not issue tokens")
+		return
+	}
+
+	slog.Info("password changed", "user_id", claims.UserID)
+	respond.JSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// AdminResetPassword handles POST /v1/admin/users/{userID}/reset-password.
+// It sets a random one-time temporary password, returns it exactly once, and
+// revokes the target user's refresh tokens. The temporary password is never
+// written to logs.
+func (h *AuthHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	claims := auth.ClaimsFromCtx(r)
+	targetID := chi.URLParam(r, "userID")
+
+	// Admins change their own password through the self-service flow; this
+	// endpoint exists for household members who cannot sign in.
+	if claims != nil && claims.UserID == targetID {
+		respond.Error(w, http.StatusBadRequest, "use the change-password flow to change your own password")
+		return
+	}
+
+	if _, err := h.s.GetUserByID(r.Context(), targetID); errors.Is(err, sql.ErrNoRows) {
+		respond.Error(w, http.StatusNotFound, "user not found")
+		return
+	} else if err != nil {
+		slog.Error("get user for admin password reset", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	tempPassword, err := generateTempPassword()
+	if err != nil {
+		slog.Error("generate temporary password", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not generate temporary password")
+		return
+	}
+
+	hash, err := auth.HashPassword(tempPassword)
+	if err != nil {
+		slog.Error("hash temporary password", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not hash password")
+		return
+	}
+
+	if err := h.s.UpdateUserPassword(r.Context(), targetID, hash); err != nil {
+		slog.Error("update user password during admin reset", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	if err := h.s.DeleteUserRefreshTokens(r.Context(), targetID); err != nil {
+		slog.Error("delete refresh tokens during admin reset", "target_user_id", targetID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	adminID := ""
+	if claims != nil {
+		adminID = claims.UserID
+	}
+	slog.Info("password reset by admin", "admin_id", adminID, "target_user_id", targetID)
+
+	respond.JSON(w, http.StatusOK, map[string]string{"tempPassword": tempPassword})
+}
+
+// tempPasswordLen is long enough to be a real password, short enough to read
+// over the phone. It uses the same no-ambiguous alphabet as group invites.
+const tempPasswordLen = 12
+
+// generateTempPassword returns a cryptographically random temporary password.
+func generateTempPassword() (string, error) {
+	buf := make([]byte, tempPasswordLen)
+	max := big.NewInt(int64(len(inviteAlphabet)))
+	for i := range buf {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		buf[i] = inviteAlphabet[n.Int64()]
+	}
+	return string(buf), nil
 }
 
 // Me handles GET /v1/auth/me — returns current user info.

@@ -93,6 +93,8 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 
 			// Current user info
 			r.Get("/auth/me", authH.Me)
+			// Self-service password change
+			r.Post("/auth/password", authH.ChangePassword)
 
 			// Admin routes — also require is_admin=true
 			r.Route("/admin", func(r chi.Router) {
@@ -101,6 +103,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 				r.Delete("/users/{userID}", adminH.DeleteUser)
 				r.Post("/users/{userID}/promote", adminH.PromoteUser)
 				r.Post("/users/{userID}/demote", adminH.DemoteUser)
+				r.Post("/users/{userID}/reset-password", authH.AdminResetPassword)
 			})
 
 			r.Get("/profile", profileH.Get)

@@ -369,6 +369,33 @@ func (s *SQLiteStore) GetUserByID(ctx context.Context, userID string) (models.Us
 	return u, nil
 }
 
+// GetUserPasswordHash returns the bcrypt hash stored for a user. Callers must
+// never log the returned value.
+func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, userID string) (string, error) {
+	var hash string
+	if err := s.db.QueryRowContext(ctx, `SELECT password FROM users WHERE id = ?`, userID).Scan(&hash); err != nil {
+		return "", fmt.Errorf("get user password hash: %w", err)
+	}
+	return hash, nil
+}
+
+// UpdateUserPassword replaces the stored bcrypt hash and bumps updated_at.
+func (s *SQLiteStore) UpdateUserPassword(ctx context.Context, userID, passwordHash string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET password = ?, updated_at = ? WHERE id = ?`,
+		passwordHash, time.Now().UTC().Format(time.RFC3339), userID)
+	if err != nil {
+		return fmt.Errorf("update user password: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update user password rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) SaveRefreshToken(ctx context.Context, id, userID, tokenHash, expiresAt, createdAt string) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at) VALUES (?,?,?,?,?)`, id, userID, tokenHash, expiresAt, createdAt)
 	if err != nil {
@@ -390,6 +417,15 @@ func (s *SQLiteStore) DeleteRefreshToken(ctx context.Context, tokenHash string) 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash)
 	if err != nil {
 		return fmt.Errorf("delete refresh token: %w", err)
+	}
+	return nil
+}
+
+// DeleteUserRefreshTokens revokes every refresh-token row for a user. Used on
+// password change/reset so sessions on other devices cannot be refreshed.
+func (s *SQLiteStore) DeleteUserRefreshTokens(ctx context.Context, userID string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM refresh_tokens WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("delete user refresh tokens: %w", err)
 	}
 	return nil
 }

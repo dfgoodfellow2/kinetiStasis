@@ -168,6 +168,10 @@ export const api = {
   register: (username, email, password) => req('POST', '/auth/register', { username, email, password }),
   logout: () => req('POST', '/auth/logout'),
   me: () => req('GET', '/auth/me'),
+  // Self-service password change. The server revokes other sessions and
+  // refreshes this device's cookies, so no client-side re-login is needed.
+  changePassword: (currentPassword, newPassword) =>
+    req('POST', '/auth/password', { currentPassword, newPassword }),
 
   // Profile
   getProfile: () => req('GET', '/profile'),

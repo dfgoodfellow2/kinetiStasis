@@ -62,6 +62,11 @@ type UserStore interface {
 	CreateUser(ctx context.Context, id, username, email, passwordHash string, isAdmin bool, createdAt, updatedAt string) error
 	FindUserByLogin(ctx context.Context, login string) (id, username, passwordHash string, isAdmin bool, err error)
 	GetUserByID(ctx context.Context, userID string) (models.User, error)
+	GetUserPasswordHash(ctx context.Context, userID string) (string, error)
+
+	// password management
+	UpdateUserPassword(ctx context.Context, userID, passwordHash string) error
+	DeleteUserRefreshTokens(ctx context.Context, userID string) error
 
 	// convenience lookups (added for compatibility)
 	FindUserByUsername(ctx context.Context, username string) (models.User, error)
@@ -127,6 +132,8 @@ type AuthStore interface {
 	SaveRefreshToken(ctx context.Context, id, userID, tokenHash, expiresAt, createdAt string) error
 	FindRefreshToken(ctx context.Context, tokenHash string) (userID string, isAdmin bool, expiresAt string, err error)
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
+	DeleteUserRefreshTokens(ctx context.Context, userID string) error
+	UpdateUserPassword(ctx context.Context, userID, passwordHash string) error
 	PromoteUser(ctx context.Context, userID, now string) error
 	DemoteUser(ctx context.Context, userID, now string) error
 	DeleteUser(ctx context.Context, userID string) error
