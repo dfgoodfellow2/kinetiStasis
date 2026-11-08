@@ -317,3 +317,92 @@ func TestCheckinFullPathUpdatesCaloriesAndMacros(t *testing.T) {
 		t.Fatalf("history resultingCalories = %d, want 2500; entry=%+v", history[0].ResultingCalories, history[0])
 	}
 }
+
+// TestCheckinEatBackAddsTodaysWorkoutCalories pins N3: when eat-back is ON,
+// the check-in recommendation includes calories burned by workouts on the
+// relevant date. Preview uses today; Create uses the check-in's own date.
+// When OFF, the recommendation is the identical baseline.
+func TestCheckinEatBackAddsTodaysWorkoutCalories(t *testing.T) {
+	h := newHarness(t)
+	seedCheckinProfile(t, h)
+
+	// Eat-back ON from the start.
+	h.do(t, http.MethodPut, "/v1/targets", map[string]any{
+		"calories":        2500,
+		"proteinG":        150,
+		"carbsG":          200,
+		"fatG":            70,
+		"fiberG":          30,
+		"waterMl":         2500,
+		"eatBackExercise": true,
+	}, http.StatusOK)
+
+	// Eight weight days over seven days (reliable) with constant 2600 kcal
+	// intake, so observed expenditure is ~2600 at zero weight change.
+	for i := -7; i <= 0; i++ {
+		doFromIP(t, h, fmt.Sprintf("198.51.100.%d", i+8), http.MethodPost, "/v1/biometrics", map[string]any{
+			"date":     shiftDate(testDate, i),
+			"weightKg": 82.0,
+		}, http.StatusOK)
+		doFromIP(t, h, fmt.Sprintf("203.0.113.%d", i+8), http.MethodPost, "/v1/nutrition/logs", map[string]any{
+			"date":     shiftDate(testDate, i),
+			"calories": 2600,
+		}, http.StatusCreated)
+	}
+
+	today := time.Now().UTC().Format("2006-01-02")
+	h.do(t, http.MethodPost, "/v1/workouts", map[string]any{
+		"date":           today,
+		"slot":           "am",
+		"title":          "run",
+		"durationMin":    45,
+		"caloriesBurned": 400,
+	}, http.StatusOK)
+
+	preview := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
+	if preview.TargetUpdateBlocked {
+		t.Fatalf("TargetUpdateBlocked = true, want false: %+v", preview)
+	}
+	// observed 2600 + 400 eaten back = 3000; current 2500 so delta is +500.
+	if preview.RecommendedCalories != 3000 {
+		t.Fatalf("RecommendedCalories with eat-back = %d, want 3000 (observed 2600 + workout 400)", preview.RecommendedCalories)
+	}
+
+	// OFF: same inputs minus the add-back must reproduce the baseline 2600.
+	// The snapshot unique key is (user, effective_date, created_at at second
+	// precision), so wait out the second before a same-day target update.
+	time.Sleep(1100 * time.Millisecond)
+	h.do(t, http.MethodPut, "/v1/targets", map[string]any{
+		"calories":        2500,
+		"proteinG":        150,
+		"carbsG":          200,
+		"fatG":            70,
+		"fiberG":          30,
+		"waterMl":         2500,
+		"eatBackExercise": false,
+	}, http.StatusOK)
+	previewOff := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
+	if previewOff.RecommendedCalories != 2600 {
+		t.Fatalf("RecommendedCalories without eat-back = %d, want baseline 2600", previewOff.RecommendedCalories)
+	}
+	if previewOff.RecommendedCalories == preview.RecommendedCalories {
+		t.Fatal("eat-back OFF produced the same recommendation as ON; add-back not wired")
+	}
+
+	// Create uses the check-in date (today), so the same 400 kcal is added.
+	time.Sleep(1100 * time.Millisecond)
+	h.do(t, http.MethodPut, "/v1/targets", map[string]any{
+		"calories":        2500,
+		"proteinG":        150,
+		"carbsG":          200,
+		"fatG":            70,
+		"fiberG":          30,
+		"waterMl":         2500,
+		"eatBackExercise": true,
+	}, http.StatusOK)
+	time.Sleep(1100 * time.Millisecond)
+	created := decodeJSON[models.CheckInLog](t, h.do(t, http.MethodPost, "/v1/checkin", map[string]any{"checkInDate": today}, http.StatusCreated))
+	if created.CaloriesAfter != 3000 {
+		t.Fatalf("persisted CaloriesAfter = %d, want 3000 (create includes eat-back)", created.CaloriesAfter)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 )
 
 type ProfileHandler struct{ s store.Store }
@@ -92,6 +93,14 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := validateBirthdate(p.Birthdate, time.Now().UTC()); err != nil {
 		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	// Body-fat percentage drives Katch-McArdle BMR, so a nonsensical value
+	// silently distorts every downstream target. Zero means "not provided".
+	if p.BfPct != 0 {
+		if err := validate.NumericRange("bfPct", p.BfPct, 1, 70); err != nil {
+			respond.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	dist, ok := normalizeMacroDistribution(p.MacroDistribution)
 	if !ok {

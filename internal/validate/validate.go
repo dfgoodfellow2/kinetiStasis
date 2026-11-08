@@ -40,6 +40,21 @@ func NonNegativeBounded(name string, v, max float64) error {
 	return nil
 }
 
+// NumericRange checks that v is a finite number in [min, max]. NaN and ±Inf
+// are rejected up front so they can never slip past the bounds comparisons.
+func NumericRange(name string, v, min, max float64) error {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return fmt.Errorf("%s must be a finite number", name)
+	}
+	if v < min {
+		return fmt.Errorf("%s must be >= %g", name, min)
+	}
+	if v > max {
+		return fmt.Errorf("%s must be <= %g", name, max)
+	}
+	return nil
+}
+
 // NonNegativeBoundedInt checks that v is in [0, max].
 func NonNegativeBoundedInt(name string, v, max int) error {
 	if v < 0 {

@@ -259,6 +259,17 @@ func (s *SQLiteStore) FetchGripPB(ctx context.Context, userID, today string) (fl
 	return gripPB, nil
 }
 
+// SumWorkoutCaloriesForDate returns the total calories burned by all workouts
+// logged on a single date. No rows yields 0, not an error.
+func (s *SQLiteStore) SumWorkoutCaloriesForDate(ctx context.Context, userID, date string) (float64, error) {
+	var total float64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(calories_burned),0) FROM workouts WHERE user_id=? AND date=?`, userID, date).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("sum workout calories for date: %w", err)
+	}
+	return total, nil
+}
+
 // WorkoutStore
 func (s *SQLiteStore) FetchWorkouts(ctx context.Context, userID, since string) ([]models.WorkoutEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, user_id, date, slot, COALESCE(title,''), COALESCE(raw_notes,''), COALESCE(duration_min,0), COALESCE(calories_burned,0), COALESCE(mwv,0), COALESCE(nds,0), COALESCE(session_density,0), COALESCE(exercises_json,'[]'), COALESCE(metadata_json,'{}'), updated_at FROM workouts WHERE user_id=? AND date >= ? ORDER BY date ASC`, userID, since)

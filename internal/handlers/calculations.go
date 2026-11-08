@@ -25,6 +25,19 @@ type CalcHandler struct{ s store.Store }
 
 func NewCalcHandler(s store.Store) *CalcHandler { return &CalcHandler{s: s} }
 
+// requestDate resolves the client's local calendar day from the ?date query
+// parameter (YYYY-MM-DD). A missing or malformed value falls back to the
+// server's local day. Date-only strings carry no timezone, so the resolved
+// value can be threaded into rolling windows without UTC/local drift.
+func requestDate(r *http.Request) string {
+	if d := r.URL.Query().Get("date"); d != "" {
+		if _, err := time.Parse(constants.DateFormat, d); err == nil {
+			return d
+		}
+	}
+	return time.Now().Format(constants.DateFormat)
+}
+
 // GET /v1/calc/tdee
 func (h *CalcHandler) TDEE(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromCtx(r)
@@ -104,8 +117,8 @@ func (h *CalcHandler) Macros(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
-	plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
-	respond.JSON(w, http.StatusOK, plan)
+	basis := nutrition.ComputeTargetBasis(profile, weight, observed.ObservedTDEE, observed.WeightReliable)
+	respond.JSON(w, http.StatusOK, nutrition.ComputeTargetPlan(profile, weight, basis))
 }
 
 type DistributeMacrosRequest struct {
@@ -172,13 +185,16 @@ func (h *CalcHandler) Readiness(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, time.Now().UTC().AddDate(0, 0, -constants.DefaultReadinessLookbackDays).Format(constants.DateFormat))
+	asOf := requestDate(r)
+	asOfTime, _ := time.Parse(constants.DateFormat, asOf)
+	since := asOfTime.AddDate(0, 0, -constants.DefaultReadinessLookbackDays).Format(constants.DateFormat)
+	bioLogs, err := h.s.FetchBiometricLogs(r.Context(), claims.UserID, since)
 	if err != nil {
 		slog.Error("fetch biometric logs for readiness", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "database error: "+err.Error())
 		return
 	}
-	res := readiness.ComputeReadiness(bioLogs, profile)
+	res := readiness.ComputeReadiness(bioLogs, profile, asOf)
 	respond.JSON(w, http.StatusOK, res)
 }
 
@@ -251,12 +267,7 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Use client-supplied local date if valid (avoids UTC timezone mismatch).
 	// Frontend passes ?date=YYYY-MM-DD reflecting the user's local calendar day.
-	today := r.URL.Query().Get("date")
-	if len(today) != 10 {
-		today = time.Now().UTC().Format(constants.DateFormat)
-	} else if _, parseErr := time.Parse(constants.DateFormat, today); parseErr != nil {
-		today = time.Now().UTC().Format(constants.DateFormat)
-	}
+	today := requestDate(r)
 
 	// Derive lookback windows relative to the resolved today
 	todayTime, _ := time.Parse(constants.DateFormat, today)
@@ -309,7 +320,8 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tdeeRes := calculator.ComputeObservedTDEE(nut90, bio30, profile, 0)
-	macros := nutrition.FullDietPlan(profile, weight, tdeeRes.ObservedTDEE)
+	basis := nutrition.ComputeTargetBasis(profile, weight, tdeeRes.ObservedTDEE, tdeeRes.WeightReliable)
+	macros := nutrition.ComputeTargetPlan(profile, weight, basis)
 
 	targets, terr := h.s.FetchTargets(r.Context(), claims.UserID)
 	if terr != nil {
@@ -327,8 +339,8 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: "",
 		}
 	}
-	readinessRes := readiness.ComputeReadiness(bio30, profile)
-	_, _, velDelta, velArrow := readiness.ComputeReadinessVelocity(bio30, profile)
+	readinessRes := readiness.ComputeReadiness(bio30, profile, today)
+	_, _, velDelta, velArrow := readiness.ComputeReadinessVelocity(bio30, profile, today)
 	velTrend := "stable"
 	if velArrow == "↑" {
 		velTrend = "improving"

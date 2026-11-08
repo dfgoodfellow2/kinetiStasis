@@ -98,7 +98,8 @@ func (h *TargetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 
 		observed := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
-		plan := nutrition.FullDietPlan(profile, weight, observed.ObservedTDEE)
+		basis := nutrition.ComputeTargetBasis(profile, weight, observed.ObservedTDEE, observed.WeightReliable)
+		plan := nutrition.ComputeTargetPlan(profile, weight, basis)
 
 		// map MacroResult -> Targets
 		computed := models.Targets{

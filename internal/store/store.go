@@ -136,6 +136,9 @@ type AuthStore interface {
 type WorkoutStore interface {
 	FetchWorkouts(ctx context.Context, userID, since string) ([]models.WorkoutEntry, error)
 	FetchWorkoutsRange(ctx context.Context, userID, from, to string) ([]models.WorkoutEntry, error)
+	// SumWorkoutCaloriesForDate returns the total calories burned by all
+	// workouts on `date`, or 0 when none exist.
+	SumWorkoutCaloriesForDate(ctx context.Context, userID, date string) (float64, error)
 	GetWorkout(ctx context.Context, userID, date, slot string) (models.WorkoutEntry, error)
 	UpsertWorkout(ctx context.Context, w *models.WorkoutEntry) error
 	UpdateWorkout(ctx context.Context, w *models.WorkoutEntry) (models.WorkoutEntry, error)

@@ -46,7 +46,8 @@ func TestPositiveGripStreakStaysGreen(t *testing.T) {
 	values := repeat(120, 11)
 	values = append(values, 133.18, 145.40, 190.68)
 
-	res := ComputeReadiness(gripSeries(values), models.Profile{})
+	asOf := time.Now().UTC().Format("2006-01-02")
+	res := ComputeReadiness(gripSeries(values), models.Profile{}, asOf)
 
 	if res.GripZ < 1.0 {
 		t.Fatalf("GripZ = %v, want positive informational deviation >= 1", res.GripZ)
@@ -75,7 +76,8 @@ func TestNegativeGripStreakEscalatesToRed(t *testing.T) {
 	values := repeat(120, 14)
 	values = append(values, 115, 90, 60)
 
-	res := ComputeReadiness(gripSeries(values), models.Profile{})
+	asOf := time.Now().UTC().Format("2006-01-02")
+	res := ComputeReadiness(gripSeries(values), models.Profile{}, asOf)
 
 	if res.GripZ > -2.0 {
 		t.Fatalf("GripZ = %v, want <= -2 for the severe zone", res.GripZ)

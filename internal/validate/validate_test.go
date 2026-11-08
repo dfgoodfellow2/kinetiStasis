@@ -63,6 +63,36 @@ func TestNonNegativeBounded(t *testing.T) {
 	}
 }
 
+func TestNumericRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		v       float64
+		min     float64
+		max     float64
+		wantErr bool
+	}{
+		{name: "valid middle", v: 24.5, min: 1, max: 70},
+		{name: "valid lower bound", v: 1, min: 1, max: 70},
+		{name: "valid upper bound", v: 70, min: 1, max: 70},
+		{name: "below min", v: 0.5, min: 1, max: 70, wantErr: true},
+		{name: "above max", v: 70.1, min: 1, max: 70, wantErr: true},
+		{name: "NaN", v: math.NaN(), min: 1, max: 70, wantErr: true},
+		{name: "positive infinity", v: math.Inf(1), min: 1, max: 70, wantErr: true},
+		{name: "negative infinity", v: math.Inf(-1), min: 1, max: 70, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := NumericRange("field", tt.v, tt.min, tt.max)
+			if tt.wantErr && err == nil {
+				t.Fatalf("NumericRange(%v, %v, %v) = nil, want error", tt.v, tt.min, tt.max)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("NumericRange(%v, %v, %v) = %v, want nil", tt.v, tt.min, tt.max, err)
+			}
+		})
+	}
+}
+
 func TestNonNegativeBoundedInt(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -186,7 +186,9 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	adjustment := 0.0
 	targetUpdateBlocked := !state.canCheckIn || !state.tdee.WeightReliable
 	if !targetUpdateBlocked {
-		recCals, adjustment = calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCals, 0, state.targets.EatBackExercise)
+		exerciseCals := h.exerciseCaloriesForDate(r.Context(), claims.UserID,
+			time.Now().UTC().Format(constants.DateFormat), state.targets.EatBackExercise)
+		recCals, adjustment = calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCals, exerciseCals, state.targets.EatBackExercise)
 	}
 
 	// Weight context is display-only and must not imply usable history when the
@@ -303,7 +305,8 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if targetUpdateBlocked {
 		in.CaloriesAfter = int(math.Round(currentCalories))
 	} else {
-		recommended, _ := calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCalories, 0, state.targets.EatBackExercise)
+		exerciseCals := h.exerciseCaloriesForDate(r.Context(), claims.UserID, in.CheckInDate, state.targets.EatBackExercise)
+		recommended, _ := calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCalories, exerciseCals, state.targets.EatBackExercise)
 		in.CaloriesAfter = recommended
 
 		// Capture the superseded targets BEFORE mutating the row. These are the
@@ -367,6 +370,22 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusCreated, in)
+}
+
+// exerciseCaloriesForDate returns the eaten-back exercise calories for a date
+// when the user has enabled eat-back. Any store error is downgraded to zero
+// with a warning: a missing workout sum must never fail a check-in.
+func (h *CheckinHandler) exerciseCaloriesForDate(ctx context.Context, userID, date string, enabled bool) float64 {
+	if !enabled {
+		return 0
+	}
+	cals, err := h.s.SumWorkoutCaloriesForDate(ctx, userID, date)
+	if err != nil {
+		slog.Warn("sum workout calories for eat-back failed; treating as zero",
+			"user", userID, "date", date, "err", err)
+		return 0
+	}
+	return cals
 }
 
 // latestPlausibleWeight returns the most recent weight in the human range,

@@ -133,7 +133,7 @@ func filterLogsUpTo(logs []models.BiometricLog, date string) []models.BiometricL
 
 // computeRzHistory computes the combined Rz for each of the last `days` days.
 // Days are ordered from oldest to newest (index 0 = days-1 days ago).
-func computeRzHistory(logs []models.BiometricLog, profile models.Profile, days int) []float64 {
+func computeRzHistory(logs []models.BiometricLog, profile models.Profile, days int, asOf string) []float64 {
 	if len(logs) == 0 {
 		return make([]float64, days)
 	}
@@ -143,7 +143,7 @@ func computeRzHistory(logs []models.BiometricLog, profile models.Profile, days i
 		gripWeight = 0.5
 	}
 
-	today := time.Now().UTC()
+	today := parseAsOf(asOf)
 	rzSeries := make([]float64, days)
 	for i := 0; i < days; i++ {
 		targetDate := today.AddDate(0, 0, -(days - 1 - i)).Format("2006-01-02")
@@ -181,9 +181,26 @@ func countDaysInRange(rzHistory []float64, minZ, maxZ float64) int {
 	return count
 }
 
+// parseAsOf converts an optional YYYY-MM-DD client date into a UTC time. An
+// empty or malformed value falls back to the server's current UTC day so
+// callers never silently lose a reference date.
+func parseAsOf(asOf string) time.Time {
+	if asOf != "" {
+		if d, err := time.Parse("2006-01-02", asOf); err == nil {
+			return d.UTC()
+		}
+	}
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 // ComputeReadiness computes CNS readiness using weighted Z-scores from grip and BOLT,
 // with consecutive-day threshold escalation informed by Andy Galpin's HRV framework.
-func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) models.ReadinessResult {
+// asOf (YYYY-MM-DD) is the client's reference date: logs after it are ignored
+// and every rolling window is anchored to it. Empty falls back to server today.
+func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile, asOf string) models.ReadinessResult {
+	// Never let the future leak into a historical readiness view.
+	biometrics = filterLogsUpTo(biometrics, parseAsOf(asOf).Format("2006-01-02"))
 	gripWeight := profile.GripWeight
 	if gripWeight <= 0 || gripWeight >= 1 {
 		gripWeight = 0.5
@@ -240,6 +257,10 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 			Score:           score,
 			Category:        category,
 			ConsecutiveDays: consecutiveDays,
+			// A readiness score is meaningful when at least one signal has the
+			// two readings needed for EMA/SD. This is the inverse of the
+			// "Learning..." path below.
+			HasSufficientData: grip.HasSufficientData || bolt.HasSufficientData,
 		}
 	}
 
@@ -263,7 +284,7 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 	}
 
 	// Check consecutive-day thresholds
-	rzHistory := computeRzHistory(biometrics, profile, 14) // 14-day history for streak detection
+	rzHistory := computeRzHistory(biometrics, profile, 14, asOf) // 14-day history for streak detection
 
 	level := "green"
 	msg := "Ready"
@@ -307,13 +328,15 @@ func ComputeReadiness(biometrics []models.BiometricLog, profile models.Profile) 
 }
 
 // ComputeReadinessVelocity computes the 7-day rolling average Rz vs the prior
-// 7-day average and returns (currentAvgRz, yesterdayRz, delta, arrow).
-func ComputeReadinessVelocity(biometrics []models.BiometricLog, profile models.Profile) (currAvg, yesterdayRz, delta float64, arrow string) {
+// 7-day average and returns (currentAvgRz, yesterdayRz, delta, arrow). asOf
+// (YYYY-MM-DD) anchors both windows; empty falls back to server today.
+func ComputeReadinessVelocity(biometrics []models.BiometricLog, profile models.Profile, asOf string) (currAvg, yesterdayRz, delta float64, arrow string) {
+	biometrics = filterLogsUpTo(biometrics, parseAsOf(asOf).Format("2006-01-02"))
 	if len(biometrics) == 0 {
 		return 0, 0, 0, "→"
 	}
 
-	today := time.Now().UTC()
+	today := parseAsOf(asOf)
 
 	rzSeries := make([]float64, 14)
 	for i, daysAgo := range [14]int{13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0} {
@@ -323,7 +346,7 @@ func ComputeReadinessVelocity(biometrics []models.BiometricLog, profile models.P
 			rzSeries[i] = 0
 			continue
 		}
-		res := ComputeReadiness(window, profile)
+		res := ComputeReadiness(window, profile, targetDate)
 		rzSeries[i] = res.Rz
 	}
 

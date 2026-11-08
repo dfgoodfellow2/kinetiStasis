@@ -369,23 +369,31 @@ func DistributeMacros(p models.Profile, targetCalories float64, weightKg float64
 	}
 }
 
-// FullDietPlan combines static+observed TDEE and returns macro plan
-func FullDietPlan(p models.Profile, weightKg float64, observedTDEE float64) models.MacroResult {
-	static := ComputeStaticTDEE(p, weightKg)
-	// Combine static and observed: if observed provided (>0) average them
-	var tdee float64
-	if observedTDEE > 0 {
-		// Safety: if observed TDEE is implausibly low, prefer static estimate and log
-		if observedTDEE < 1000 {
-			log.Printf("observedTDEE is very low (%v) - using static TDEE (%v) instead", observedTDEE, static)
-			tdee = static
-		} else {
-			tdee = (static + observedTDEE) / 2
-		}
-	} else {
-		tdee = static
+// ComputeTargetBasis returns the pre-goal calorie basis from which a calorie
+// target is derived. The adaptive observation is authoritative when the engine
+// considers it reliable (WeightReliable), and is used alone. The static
+// profile estimate is only a FLOOR for the case where an observation is
+// absent or unreliable: it is never averaged with observed data. The absolute
+// MinCalorieFloor is applied to the basis as well, so neither source can
+// produce a sub-floor basis.
+//
+// Callers must apply the goal multiplier AFTER the basis (see
+// ComputeTargetPlan); the basis is total daily expenditure, not a target.
+func ComputeTargetBasis(p models.Profile, weightKg float64, observedTDEE float64, weightReliable bool) float64 {
+	if weightReliable && observedTDEE > 0 {
+		return observedTDEE
 	}
-	target := ComputeTargetCalories(tdee, p.Goal)
+	static := ComputeStaticTDEE(p, weightKg)
+	if static < constants.MinCalorieFloor {
+		static = constants.MinCalorieFloor
+	}
+	return static
+}
+
+// ComputeTargetPlan turns a calorie basis into a complete macro plan: goal
+// multiplier first, then the absolute calorie floor, then macro distribution.
+func ComputeTargetPlan(p models.Profile, weightKg, basis float64) models.MacroResult {
+	target := ComputeTargetCalories(basis, p.Goal)
 	// Enforce absolute minimum calorie floor
 	if target < constants.MinCalorieFloor {
 		log.Printf("Computed calories %v below MinCalorieFloor %v - enforcing floor", target, constants.MinCalorieFloor)

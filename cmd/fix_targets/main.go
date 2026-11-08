@@ -106,20 +106,14 @@ func main() {
 
 	tdeeRes := calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, 0)
 
-	// If observed TDEE looks clearly wrong (very low or too few days), prefer static
-	useObserved := true
-	if tdeeRes.DaysOfData < 14 || tdeeRes.ObservedTDEE < 1000 {
-		useObserved = false
+	// The engine's reliability gate decides between observed and static. When
+	// the observation is unreliable the basis falls back to the static floor;
+	// it is never blended with observed data.
+	if !tdeeRes.WeightReliable {
+		log.Printf("ignoring observed TDEE (weightReliable=false days=%d observed=%.0f), using static TDEE instead", tdeeRes.DaysOfData, tdeeRes.ObservedTDEE)
 	}
-
-	var plan models.MacroResult
-	if useObserved {
-		plan = nutrition.FullDietPlan(profile, weight, tdeeRes.ObservedTDEE)
-	} else {
-		// pass 0 to FullDietPlan so it falls back to static TDEE only
-		log.Printf("ignoring observed TDEE (days=%d observed=%.0f), using static TDEE instead", tdeeRes.DaysOfData, tdeeRes.ObservedTDEE)
-		plan = nutrition.FullDietPlan(profile, weight, 0)
-	}
+	basis := nutrition.ComputeTargetBasis(profile, weight, tdeeRes.ObservedTDEE, tdeeRes.WeightReliable)
+	plan := nutrition.ComputeTargetPlan(profile, weight, basis)
 
 	// Ensure MinCalorieFloor enforced
 	if plan.Calories < constants.MinCalorieFloor {

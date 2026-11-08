@@ -316,3 +316,98 @@ func TestRunnerTDEENoDoubleCount(t *testing.T) {
 		t.Fatalf("ComputeStaticTDEE = %v, want well below the double-counted %v", got, doubleCounted)
 	}
 }
+
+// TestComputeTargetBasisReliableObservedWins proves that a reliable adaptive
+// observation is used on its own — no blending with the static profile
+// estimate. This is the N1 contract: scale data wins outright.
+func TestComputeTargetBasisReliableObservedWins(t *testing.T) {
+	p := models.Profile{
+		Sex:          "male",
+		HeightCm:     180,
+		Age:          38,
+		Activity:     "moderately_active",
+		ExerciseFreq: 0,
+		Goal:         "maintenance",
+	}
+	const (
+		weightKg     = 80.0
+		observedTDEE = 2850.0
+	)
+	static := ComputeStaticTDEE(p, weightKg)
+	if math.Abs(static-observedTDEE) < 100 {
+		t.Fatalf("test setup: static %v too close to observed %v", static, observedTDEE)
+	}
+
+	got := ComputeTargetBasis(p, weightKg, observedTDEE, true)
+	if got != observedTDEE {
+		t.Fatalf("ComputeTargetBasis reliable = %v, want observed %v alone (static was %v)", got, observedTDEE, static)
+	}
+}
+
+// TestComputeTargetBasisUnreliableFallsBackToStatic proves that when the
+// observed estimate is not reliable, the basis is the static estimate — not
+// the old (static+observed)/2 blend.
+func TestComputeTargetBasisUnreliableFallsBackToStatic(t *testing.T) {
+	p := models.Profile{
+		Sex:          "male",
+		HeightCm:     180,
+		Age:          38,
+		Activity:     "moderately_active",
+		ExerciseFreq: 0,
+		Goal:         "maintenance",
+	}
+	const (
+		weightKg      = 80.0
+		unreliableObs = 4000.0
+	)
+	static := ComputeStaticTDEE(p, weightKg)
+	if static <= 0 {
+		t.Fatal("test setup: static TDEE must be positive")
+	}
+
+	got := ComputeTargetBasis(p, weightKg, unreliableObs, false)
+	if got != static {
+		t.Fatalf("ComputeTargetBasis unreliable = %v, want static %v (not the blend %v)", got, static, (static+unreliableObs)/2)
+	}
+}
+
+// TestComputeTargetBasisUnavailableUsesStaticFloor covers a missing
+// observation (0) and a very low static estimate being lifted to the absolute
+// floor.
+func TestComputeTargetBasisUnavailableUsesStaticFloor(t *testing.T) {
+	p := models.Profile{Sex: "female", HeightCm: 140, Age: 80, Activity: "sedentary", ExerciseFreq: 0, Goal: "maintenance"}
+	weight := 35.0
+
+	got := ComputeTargetBasis(p, weight, 0, false)
+	if got < 1200 {
+		t.Fatalf("ComputeTargetBasis = %v, want >= MinCalorieFloor 1200", got)
+	}
+	if static := ComputeStaticTDEE(p, weight); static >= 1200 && got != static {
+		t.Fatalf("ComputeTargetBasis = %v, want static %v when static is above floor", got, static)
+	}
+}
+
+// TestComputeTargetPlanAppliesGoalAfterBasis pins the ordering: the goal
+// multiplier is applied to the basis, then the floor, then macros.
+func TestComputeTargetPlanAppliesGoalAfterBasis(t *testing.T) {
+	p := models.Profile{
+		Sex:               "male",
+		HeightCm:          180,
+		Age:               38,
+		Activity:          "moderately_active",
+		Goal:              "cut_20",
+		MacroDistribution: "balanced",
+	}
+	const (
+		weight = 80.0
+		basis  = 2500.0
+	)
+	plan := ComputeTargetPlan(p, weight, basis)
+	want := ComputeTargetCalories(basis, p.Goal)
+	if plan.Calories != want {
+		t.Fatalf("plan.Calories = %v, want %v (basis × goal multiplier)", plan.Calories, want)
+	}
+	if plan.Calories == basis {
+		t.Fatal("goal multiplier was not applied after the basis")
+	}
+}

@@ -453,6 +453,11 @@ type ReadinessResult struct {
 	// Exponential moving average of the 14-day BOLT values
 	BoltEMA float64 `json:"boltEMA"`
 
+	// HasSufficientData is false only while both signals lack the two readings
+	// needed for EMA/SD analysis (the "Learning..." state). Clients use it to
+	// distinguish a genuinely neutral day from missing input.
+	HasSufficientData bool `json:"hasSufficientData"`
+
 	// Notes / warnings
 	Notes []string `json:"notes"`
 	// ConsecutiveDays tracks how many consecutive days the current alert level has been active (0 if green)
