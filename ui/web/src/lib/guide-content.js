@@ -38,6 +38,7 @@ export const guideSections = [
       {
         tip: 'Missing a day is not a failure. The app is built to keep going; it just needs a few honest data points to work with.'
       },
+      'Accounts on this instance are invite-only by default: the household owner mints a single-use code, and you register with it. If the owner ever opens registration for a wider launch, new accounts can be set to wait for their approval — the admin manages the registration mode, invite codes, and that approval queue from the 🛠 Admin page.',
       {
         tip: 'You can change your password any time on the Profile page. If you forget it, ask the household owner for a one-time reset — they’ll give you a temporary password you can replace after signing in.'
       }

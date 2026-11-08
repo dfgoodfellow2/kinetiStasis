@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
   import { dispHeightCm, heightFtInToCm, kmToMi, miToKm, distUnit } from '../lib/utils.js'
-  import { setUnits, setSleepQualityMax, setCurrentPage } from '../lib/stores.svelte.js'
+  import { setUnits, setSleepQualityMax, setCurrentPage, store } from '../lib/stores.svelte.js'
   import Alert from '../components/Alert.svelte'
   import InfoTip from '../components/InfoTip.svelte'
 
@@ -362,6 +362,16 @@
       📖 Guide
     </button>
   </div>
+
+  <!-- Admin link (admins only) -->
+  {#if store.user?.isAdmin}
+    <div class="flex items-center justify-between pt-2 border-t border-gray-700">
+      <span class="text-xs text-gray-500">Manage registration, invites, and approvals.</span>
+      <button class="text-xs text-emerald-400 underline" onclick={() => setCurrentPage('admin')} type="button">
+        🛠 Admin
+      </button>
+    </div>
+  {/if}
 
   <!-- Action row -->
   <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-700">

@@ -113,6 +113,28 @@ const BASE = '/v1'
  * @typedef {Object} GroupInvite
  * @property {string} code                    Single-use, 10 chars, no 0/O/1/I
  * @property {string} expiresAt               RFC3339, 7 days out
+ *
+ * @typedef {'invite_only'|'public'|'public_approval'} RegistrationMode
+ *
+ * @typedef {Object} RegistrationInfo
+ * @property {RegistrationMode} mode          Current instance registration posture
+ * @property {boolean} pendingApproval        True when registrations need admin approval
+ *
+ * @typedef {Object} RegistrationInvite
+ * @property {string} code                    Single-use, 10 chars, no 0/O/1/I
+ * @property {string} createdBy               Admin user ID that minted the code
+ * @property {string} expiresAt               RFC3339, 7 days out
+ * @property {string} [usedBy]                User ID that consumed the code (audit)
+ * @property {string} createdAt               RFC3339
+ *
+ * @typedef {Object} AdminUser
+ * @property {string} id
+ * @property {string} username
+ * @property {string} email
+ * @property {boolean} isAdmin
+ * @property {boolean} [pendingApproval]
+ * @property {string} createdAt
+ * @property {string} updatedAt
  */
 
 async function req(method, path, body, extraHeaders = {}) {
@@ -165,13 +187,37 @@ function toCamel(v) {
 export const api = {
   // Auth
   login: (username, password) => req('POST', '/auth/login', { login: username, password }),
-  register: (username, email, password) => req('POST', '/auth/register', { username, email, password }),
+  // Public: the register form reads the instance posture before rendering.
+  registrationInfo: () => req('GET', '/auth/registration-info'),
+  // inviteCode is only sent when supplied; invite_only instances require it,
+  // public/public_approval instances ignore it. A pending registration returns
+  // { status: "pending", message } and issues no cookies.
+  register: (username, email, password, inviteCode) => {
+    const body = { username, email, password }
+    if (inviteCode) body.inviteCode = inviteCode
+    return req('POST', '/auth/register', body)
+  },
   logout: () => req('POST', '/auth/logout'),
+  // Returns { userId, username, email, isAdmin }.
   me: () => req('GET', '/auth/me'),
   // Self-service password change. The server revokes other sessions and
   // refreshes this device's cookies, so no client-side re-login is needed.
   changePassword: (currentPassword, newPassword) =>
     req('POST', '/auth/password', { currentPassword, newPassword }),
+
+  // Admin (RequireAdmin). Every call 403s for non-admin accounts.
+  // Registration gate: mode is one of the RegistrationMode values.
+  getRegistrationMode: () => req('GET', '/admin/registration-mode'),
+  setRegistrationMode: (mode) => req('PUT', '/admin/registration-mode', { mode }),
+  // Invites are single-use and expire 7 days out. create returns { code, expiresAt }.
+  listRegistrationInvites: () => req('GET', '/admin/register-invites'),
+  createRegistrationInvite: () => req('POST', '/admin/register-invites'),
+  revokeRegistrationInvite: (code) => req('DELETE', `/admin/register-invites/${encodeURIComponent(code)}`),
+  // Pending queue (AdminUser[]) and approval decisions.
+  listPendingUsers: () => req('GET', '/admin/pending-users'),
+  approveUser: (userId) => req('POST', `/admin/users/${encodeURIComponent(userId)}/approve`),
+  // Denying a pending account is a permanent delete (same endpoint as DeleteUser).
+  denyUser: (userId) => req('DELETE', `/admin/users/${encodeURIComponent(userId)}`),
 
   // Profile
   getProfile: () => req('GET', '/profile'),

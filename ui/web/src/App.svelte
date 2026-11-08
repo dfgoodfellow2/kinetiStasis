@@ -15,6 +15,7 @@
   import Targets from './pages/Targets.svelte'
   import Guide from './pages/Guide.svelte'
   import Groups from './pages/Groups.svelte'
+  import Admin from './pages/Admin.svelte'
   import Nav from './components/Nav.svelte'
   import BottomNav from './components/BottomNav.svelte'
 
@@ -96,6 +97,8 @@
       <Targets />
     {:else if store.currentPage === 'guide'}
       <Guide />
+    {:else if store.currentPage === 'admin'}
+      <Admin />
     {/if}
   </main>
 {/if}
