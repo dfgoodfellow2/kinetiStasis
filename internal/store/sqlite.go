@@ -439,6 +439,17 @@ func (s *SQLiteStore) DeleteUserRefreshTokens(ctx context.Context, userID string
 	return nil
 }
 
+// DeleteExpiredRefreshTokens removes only the already-expired rows for a user.
+// Refresh calls this on the expired-token rejection path so dead rows do not
+// accumulate indefinitely while live sessions are left untouched.
+func (s *SQLiteStore) DeleteExpiredRefreshTokens(ctx context.Context, userID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM refresh_tokens WHERE user_id = ? AND expires_at <= ?`, userID, now); err != nil {
+		return fmt.Errorf("delete expired refresh tokens: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ListUsers(ctx context.Context) ([]models.User, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, username, email, is_admin, pending_approval, created_at, updated_at FROM users ORDER BY created_at ASC`)
 	if err != nil {

@@ -166,6 +166,7 @@ type AuthStore interface {
 	FindRefreshToken(ctx context.Context, tokenHash string) (userID string, isAdmin bool, expiresAt string, err error)
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
 	DeleteUserRefreshTokens(ctx context.Context, userID string) error
+	DeleteExpiredRefreshTokens(ctx context.Context, userID string) error
 	UpdateUserPassword(ctx context.Context, userID, passwordHash string) error
 	PromoteUser(ctx context.Context, userID, now string) error
 	DemoteUser(ctx context.Context, userID, now string) error

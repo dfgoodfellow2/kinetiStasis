@@ -6,14 +6,13 @@ import (
 )
 
 // cookieFlags returns the SameSite mode and Secure flag matching the
-// environment. In development (isProd==false) cookies use SameSite=Lax over
-// plain HTTP so http://localhost works; in production the SPA and API may be
-// cross-site over HTTPS, so SameSite=None and Secure=true are required.
+// environment. The PWA and API are served from the same origin, so
+// SameSite=Lax is safe and closes CSRF for state-changing cross-site POSTs;
+// cross-site embedding is not a use case. In development (isProd==false)
+// cookies stay Lax over plain HTTP so http://localhost works; production adds
+// Secure=true.
 func cookieFlags(isProd bool) (http.SameSite, bool) {
-	if isProd {
-		return http.SameSiteNoneMode, true
-	}
-	return http.SameSiteLaxMode, false
+	return http.SameSiteLaxMode, isProd
 }
 
 // SetAccessCookie writes the JWT access token as a httpOnly cookie.
@@ -47,7 +46,7 @@ func SetRefreshCookie(w http.ResponseWriter, token string, isProd bool) {
 
 // ClearAuthCookies removes both auth cookies from the browser. The flags must
 // mirror those used when setting the cookies, otherwise browsers may refuse to
-// overwrite/expire them (e.g. SameSite=None; Secure cookies in production).
+// overwrite/expire them (SameSite=Lax everywhere; Secure in production).
 func ClearAuthCookies(w http.ResponseWriter, isProd bool) {
 	sameSite, secure := cookieFlags(isProd)
 	http.SetCookie(w, &http.Cookie{

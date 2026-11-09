@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -101,14 +102,23 @@ func (s *rateLimitStore) get(key string) *rate.Limiter {
 	return e.limiter
 }
 
+// clientIP returns the limiter key for a request. Behind the single fly edge
+// the last X-Forwarded-For entry is the hop the edge appended; earlier entries
+// can be supplied by the client, so keying on the first value would let a
+// caller choose its own bucket. With no usable XFF header the direct peer
+// (RemoteAddr) is used. Any port is stripped from RemoteAddr.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.SplitN(xff, ",", 2)[0]
+		parts := strings.Split(xff, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			if ip := strings.TrimSpace(parts[i]); ip != "" {
+				return ip
+			}
+		}
 	}
-	// Strip port from RemoteAddr
-	addr := r.RemoteAddr
-	if i := strings.LastIndex(addr, ":"); i != -1 {
-		addr = addr[:i]
+	addr := strings.TrimSpace(r.RemoteAddr)
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
 	}
 	return addr
 }

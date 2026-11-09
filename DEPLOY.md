@@ -84,6 +84,13 @@ make build
 # Open http://localhost:8080
 ```
 
+## Session cookies
+
+Auth cookies are `httpOnly` and `SameSite=Lax` in every environment (`Secure` in production).
+The PWA is served by the same origin as the API, so Lax is sufficient: it blocks cookies on
+cross-site state-changing POSTs, which closes CSRF. Cross-site embedding is not a use case,
+so `SameSite=None` is deliberately not used.
+
 ## Litestream Restore (disaster recovery)
 
 If the volume is wiped, Litestream restores automatically on next startup. The container CMD

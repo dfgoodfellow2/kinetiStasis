@@ -19,6 +19,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	respond "github.com/dfgoodfellow2/diet-tracker/v2/internal/respond"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/store"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/validate"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -100,6 +101,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Username == "" || req.Email == "" || req.Password == "" {
 		respond.Error(w, http.StatusBadRequest, "username, email and password are required")
+		return
+	}
+	if err := validate.Username(req.Username); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validate.Email(req.Email); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if len(req.Password) < 8 {
@@ -310,9 +319,14 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	exp, err := time.Parse(constants.TimeFormat, expiresAt)
 	if err != nil || time.Now().After(exp) {
-		// Clean up expired token
+		// Reject first, then lazily shed every expired row this user has
+		// accumulated. Deleting by user_id + expiry keeps live sessions intact
+		// and avoids relying on the expired token being presented again.
 		if err := h.s.DeleteRefreshToken(r.Context(), tokenHash); err != nil {
-			slog.Warn("failed to delete expired refresh token", "err", err)
+			slog.Warn("failed to delete expired refresh token", "user_id", userID, "err", err)
+		}
+		if err := h.s.DeleteExpiredRefreshTokens(r.Context(), userID); err != nil {
+			slog.Warn("failed to delete expired refresh tokens", "user_id", userID, "err", err)
 		}
 		respond.Error(w, http.StatusUnauthorized, "refresh token expired")
 		return

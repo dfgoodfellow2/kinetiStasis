@@ -24,7 +24,7 @@ A personal diet and fitness tracking application for family use (2-10 users). Fu
 - **Language**: Go 1.22+
 - **Router**: `github.com/go-chi/chi/v5`
 - **Database**: SQLite via `modernc.org/sqlite` (pure Go, no CGO)
-- **Auth**: JWT HS256 access tokens (15 min) + opaque refresh tokens (30 days) — both httpOnly cookies; dev uses `SameSite=Lax`, production uses `SameSite=None; Secure`
+- **Auth**: JWT HS256 access tokens (15 min) + opaque refresh tokens (30 days) — both httpOnly cookies; `SameSite=Lax` everywhere (`Secure` in production) because the PWA and API are same-origin, so Lax blocks cross-site state-changing POSTs and cross-site embedding is not a use case
 - **Passwords**: bcrypt cost 12
 - **Backup**: Litestream → Tigris/S3 continuous streaming
 - **AI Parsing**: Google Gemini API (`gemini-2.5-flash-lite`), server-side only

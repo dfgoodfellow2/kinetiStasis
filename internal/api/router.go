@@ -45,8 +45,9 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 	r.Use(middleware.SecureHeaders)
 
 	// Rate limiters
-	stdLimiter := middleware.RateLimit(rate.Every(time.Minute/100), 20) // 100 req/min, burst 20
-	parseLimiter := middleware.RateLimit(rate.Every(time.Minute/10), 3) // 10 req/min, burst 3
+	stdLimiter := middleware.RateLimit(rate.Every(time.Minute/100), 20)    // 100 req/min, burst 20
+	parseLimiter := middleware.RateLimit(rate.Every(time.Minute/10), 3)    // 10 req/min, burst 3
+	passwordLimiter := middleware.RateLimit(rate.Every(time.Minute/10), 5) // 10 req/min, burst 5
 
 	// Handler constructors
 	authH := handlers.NewAuthHandler(s, cfg)
@@ -96,8 +97,13 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 
 			// Current user info
 			r.Get("/auth/me", authH.Me)
-			// Self-service password change
-			r.Post("/auth/password", authH.ChangePassword)
+			// Self-service password change. The current-password check is a
+			// brute-force target, so this route gets its own stricter limiter
+			// in addition to the standard /v1 bucket.
+			r.Group(func(r chi.Router) {
+				r.Use(passwordLimiter)
+				r.Post("/auth/password", authH.ChangePassword)
+			})
 
 			// Admin routes — also require is_admin=true
 			r.Route("/admin", func(r chi.Router) {

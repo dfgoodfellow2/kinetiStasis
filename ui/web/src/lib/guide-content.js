@@ -45,6 +45,7 @@ export const guideSections = [
     ],
     underTheHood: [
       'Daily nutrition logs feed the observed-TDEE estimate. Biometric logs feed the weight trend and readiness.',
+      'Sessions use httpOnly cookies with SameSite=Lax: the app and API share one origin, so the browser withholds the session on cross-site state-changing requests.',
       {
         list: [
           'Check-ins unlock after at least 5 days (MinCheckinIntervalDays) and need at least 3 weigh-ins; targets only move once 7 days of weigh-ins make the weight term reliable.',
