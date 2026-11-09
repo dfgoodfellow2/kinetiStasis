@@ -3,7 +3,7 @@
   import { api } from '../lib/api.js'
   import { setUser, setCurrentPage } from '../lib/stores.svelte.js'
   import Alert from '../components/Alert.svelte'
-  import Spinner from '../components/Spinner.svelte'
+  import Brand from '../components/Brand.svelte'
 
   let mode = $state('login')
   let username = $state('')
@@ -12,6 +12,11 @@
   let inviteCode = $state('')
   let error = $state('')
   let loading = $state(false)
+
+  // Presentation-only: shared by the login and register password fields.
+  let showPassword = $state(false)
+  // Decorative footer version; empty until /v1/health answers.
+  let version = $state('')
 
   // ── Two-step login ──────────────────────────────────────
   // A password-correct login on a 2FA account returns { status:
@@ -34,6 +39,13 @@
       regInfo = await api.registrationInfo()
     } catch {
       // Keep the conservative default; submit errors surface the truth.
+    }
+    try {
+      const health = await api.health()
+      version = health?.version || ''
+    } catch {
+      // Version is decorative: an unreachable or older server omits it and
+      // the footer keeps the "private household instance" line.
     }
   })
 
@@ -136,8 +148,14 @@
   }
 </script>
 
-<div class="max-w-md mx-auto mt-12">
+<div class="max-w-md mx-auto mt-12 px-4">
   <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+    <!-- Brand header: shown on the tabbed form, the pending screen, and MFA. -->
+    <div class="flex flex-col items-center text-center mb-5">
+      <Brand size="lg" />
+      <p class="text-sm text-gray-400 mt-1">Family nutrition &amp; training tracker</p>
+    </div>
+
     {#if mfaStep !== 'code'}
       <div class="mb-4 flex space-x-2">
         <button class={mode==='login'? 'px-3 py-1 rounded bg-emerald-600' : 'px-3 py-1 rounded bg-gray-700'} onclick={() => switchMode('login')}>Login</button>
@@ -169,26 +187,34 @@
           <Alert type="error" message={error} />
         {/if}
         {#if mfaRecoveryMode}
-          <input
-            class="input font-mono uppercase"
-            placeholder="Backup code"
-            autocomplete="one-time-code"
-            autocapitalize="characters"
-            spellcheck="false"
-            bind:value={mfaCode}
-            onkeydown={mfaKeydown}
-          />
+          <div>
+            <label class="text-xs text-gray-400 block mb-1" for="mfa-code">Backup code</label>
+            <input
+              class="input font-mono uppercase"
+              id="mfa-code"
+              placeholder="Backup code"
+              autocomplete="one-time-code"
+              autocapitalize="characters"
+              spellcheck="false"
+              bind:value={mfaCode}
+              onkeydown={mfaKeydown}
+            />
+          </div>
         {:else}
-          <input
-            class="input font-mono tracking-widest text-center text-xl"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="6"
-            placeholder="000000"
-            bind:value={mfaCode}
-            oninput={sanitizeMfaCode}
-            onkeydown={mfaKeydown}
-          />
+          <div>
+            <label class="text-xs text-gray-400 block mb-1" for="mfa-code">6-digit code from your authenticator app</label>
+            <input
+              class="input font-mono tracking-widest text-center text-xl"
+              id="mfa-code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="6"
+              placeholder="000000"
+              bind:value={mfaCode}
+              oninput={sanitizeMfaCode}
+              onkeydown={mfaKeydown}
+            />
+          </div>
         {/if}
         <label class="flex items-center space-x-2 text-sm">
           <input type="checkbox" bind:checked={rememberDevice} />
@@ -215,12 +241,52 @@
         <Alert type="error" message={error} />
       {/if}
 
-      <div class="space-y-3">
-        <input class="input" placeholder="Username" bind:value={username} />
+      <form class="space-y-3" onsubmit={(e) => { e.preventDefault(); submit() }}>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" for="auth-username">Username</label>
+          <input
+            class="input"
+            id="auth-username"
+            type="text"
+            placeholder="Username"
+            autocomplete="username"
+            bind:value={username}
+          />
+        </div>
         {#if mode === 'register'}
-          <input class="input" placeholder="Email" bind:value={email} />
+          <div>
+            <label class="text-xs text-gray-400 block mb-1" for="auth-email">Email</label>
+            <input
+              class="input"
+              id="auth-email"
+              type="email"
+              placeholder="Email"
+              autocomplete="email"
+              bind:value={email}
+            />
+          </div>
         {/if}
-        <input class="input" type="password" placeholder="Password" bind:value={password} />
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" for="auth-password">Password</label>
+          <div class="relative">
+            <input
+              class="input pr-16"
+              id="auth-password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Password"
+              autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
+              bind:value={password}
+            />
+            <button
+              class="absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-emerald-400 hover:text-emerald-300"
+              onclick={() => { showPassword = !showPassword }}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              type="button"
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </div>
         {#if mode === 'register' && regInfo?.mode !== 'public' && regInfo?.mode !== 'public_approval'}
           <div>
             <label class="text-xs text-gray-400 block mb-1" for="reg-invite">Invite code <span class="text-emerald-400">*</span></label>
@@ -243,7 +309,7 @@
           </p>
         {/if}
         <div class="flex items-center justify-between">
-          <button class="btn-primary" onclick={submit} disabled={loading}>
+          <button class="btn-primary" type="submit" disabled={loading}>
             {#if loading}
               <span>Working…</span>
             {:else}
@@ -251,7 +317,16 @@
             {/if}
           </button>
         </div>
-      </div>
+        {#if mode === 'login'}
+          <p class="text-xs text-gray-500">
+            Forgotten your password? The household owner can issue a one-time reset.
+          </p>
+        {/if}
+      </form>
     {/if}
   </div>
+
+  <p class="text-center text-xs text-gray-500 mt-4">
+    Kinetistasis{version ? ` v${version}` : ''} · private household instance
+  </p>
 </div>

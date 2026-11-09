@@ -197,6 +197,12 @@ function toCamel(v) {
 }
 
 export const api = {
+  // Liveness probe. Public and unauthenticated; returns
+  // { status, version, time, dbModifiedAgoSec, replicaAgeSec }.
+  // Skips the generic 401 refresh path: health never uses session cookies, so
+  // a 401 (a misrouted proxy, say) should surface as an error instead.
+  health: () => req('GET', '/health', undefined, {}, false),
+
   // Auth
   login: (username, password) => req('POST', '/auth/login', { login: username, password }),
   // Public: the register form reads the instance posture before rendering.
