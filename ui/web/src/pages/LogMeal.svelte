@@ -618,17 +618,19 @@
   async function saveParsed() {
     if (!aiResult) return
     try {
-      // Fix: use rawInput (camelCase) not raw_input
-    const { rawInput, ...payload } = aiResult
-    if (!payload.date) payload.date = today()
-    // payload should already be camelCase; trust camelCase fields only
-    payload.proteinG = payload.proteinG ?? 0
-    payload.carbsG = payload.carbsG ?? 0
-    payload.fatG = payload.fatG ?? 0
-    payload.fiberG = payload.fiberG ?? 0
-    payload.waterMl = payload.waterMl ?? 0
-    payload.mealNotes = rawInput || payload.mealNotes || ''
-    await api.postNutrition(payload)
+      const { rawInput, ...payload } = aiResult
+      if (!payload.date) payload.date = today()
+      // payload should already be camelCase; trust camelCase fields only
+      payload.proteinG = payload.proteinG ?? 0
+      payload.carbsG = payload.carbsG ?? 0
+      payload.fatG = payload.fatG ?? 0
+      payload.fiberG = payload.fiberG ?? 0
+      payload.waterMl = payload.waterMl ?? 0
+      // Merge, never overwrite: rawInput is what the user typed, while the
+      // server's mealNotes carry uncertainty flags ("low confidence: …").
+      // appendNote keeps both and skips a duplicate description.
+      payload.mealNotes = appendNote(rawInput, payload.mealNotes)
+      await api.postNutrition(payload)
       success = 'Saved parsed meal'
       aiResult = null
       aiText = ''

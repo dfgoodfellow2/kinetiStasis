@@ -242,6 +242,7 @@ export const guideSections = [
       'RPE is your rate of perceived exertion, from 1 to 10. Think of 1 as barely moving, 5 as working but comfortable, 7 as hard but sustainable, 9 as one rep left, and 10 as everything you have. Be honest; it’s a better input than a guess.',
       'Leave calories at 0 and the app estimates the burn from METs and your recent bodyweight. If you know the number from a watch, enter it and the app will use yours.',
       'You can type a session, paste YAML for a preplanned workout, or describe it in plain language and let the AI parse it.',
+      'Implausible numbers from the model are auto-clamped, and anything uncertain is flagged in the meal notes for your review.',
       {
         tip: 'Always review a parsed session before saving. AI is a fast typist, not a coach. And log the session you actually did, not the one you planned.'
       }
