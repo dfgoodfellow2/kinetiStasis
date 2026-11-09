@@ -102,6 +102,26 @@ To manually restore to a local path:
 litestream restore -config litestream.yml -o ./recovered.db /data/diet.db
 ```
 
+## Restore Drill (quarterly)
+
+An untested backup is not a backup. Quarterly — and after any bucket, credential, or
+Litestream version change — run the drill on a machine with the Tigris credentials in
+`.env` and `litestream` installed (`brew install litestream`, or a GitHub release binary):
+
+```bash
+make restore-drill
+```
+
+It restores `s3://$BUCKET_NAME/diet.db` to `/tmp/opencode/restore_drill/diet.db` (never
+touching production), then runs `go run ./cmd/dbcheck` against the restored file. The
+checker opens the DB read-only (no migrations), verifies all 12 application tables exist,
+and prints per-table row counts, the `nutrition_logs` date range, and the latest check-in.
+
+PASS means the replica downloaded, has the real schema, and contains at least one
+`nutrition_logs` row. Anything else fails loudly: a missing table means the wrong file or
+a broken restore, and zero nutrition rows means the replica is empty/stale. The restored
+file is kept for inspection; delete `/tmp/opencode/restore_drill` when done.
+
 ## Updating
 
 ```bash

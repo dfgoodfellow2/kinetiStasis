@@ -1,5 +1,5 @@
 
-.PHONY: dev dev-web test build pwa-build run tidy tui dietctl clean-all kill-server check-env dev-full smoke-test deploy gen-icons
+.PHONY: dev dev-web test build pwa-build run tidy tui dietctl clean-all kill-server check-env dev-full smoke-test restore-drill deploy gen-icons
 
 DB_PATH ?= ./data/diet.db
 
@@ -105,6 +105,9 @@ gen-icons:
 
 smoke-test:
 	@bash scripts/smoke_test.sh
+
+restore-drill:
+	@bash scripts/restore_drill.sh
 
 deploy:
 	fly deploy
