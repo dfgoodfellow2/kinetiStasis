@@ -323,10 +323,11 @@ export const api = {
   },
   parseWorkout: (text, format = 'ai') => req('POST', '/parse/workout', { text, format }),
 
-  // Export — returns { content: "..." }
+  // Export — returns { content: "..." }. All three wrappers take the same
+  // format argument ('md' | 'csv') so the server renders the chosen flavour.
   exportNutrition: (from, to, format) => req('GET', `/export/nutrition?from=${from}&to=${to}&format=${format}`, undefined, { Accept: 'application/json' }),
   exportWorkouts: (from, to, format) => req('GET', `/export/workouts?from=${from}&to=${to}&format=${format}`, undefined, { Accept: 'application/json' }),
-  exportCombined: (from, to) => req('GET', `/export/combined?from=${from}&to=${to}`, undefined, { Accept: 'application/json' }),
+  exportCombined: (from, to, format) => req('GET', `/export/combined?from=${from}&to=${to}&format=${format}`, undefined, { Accept: 'application/json' }),
 
   // Weekly Check-in
   // Returns CheckinPreview (see typedef above). tdeeConfidence may arrive as

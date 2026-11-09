@@ -34,7 +34,7 @@
   async function exportCombined() {
     error = ''
     try {
-      const res = await api.exportCombined(from, to)
+      const res = await api.exportCombined(from, to, format)
       content = res.content || ''
     } catch (e) {
       error = e.message
