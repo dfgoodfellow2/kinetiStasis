@@ -277,6 +277,41 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Opt-in second factor. A remembered device (valid dt_device cookie bound
+	// to this user and unexpired) skips the code and receives a full session.
+	// Otherwise password success alone issues NO cookies or tokens: the caller
+	// must complete POST /v1/auth/mfa/verify with a TOTP or recovery code.
+	secret, err := h.s.GetUserTOTPSecret(r.Context(), userID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("read totp secret during login", "user_id", userID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if secret != "" && !h.trustedDeviceValid(r, userID) {
+		challenge, err := auth.GenerateChallengeToken()
+		if err != nil {
+			slog.Error("generate mfa challenge", "user_id", userID, "err", err)
+			respond.Error(w, http.StatusInternalServerError, "could not start verification")
+			return
+		}
+		now := time.Now().UTC()
+		// Best-effort shed of this user's dead challenges; a failure must not
+		// block a legitimate login.
+		if err := h.s.DeleteExpiredLoginChallenges(r.Context(), userID, now.Format(constants.TimeFormat)); err != nil {
+			slog.Warn("delete expired login challenges", "user_id", userID, "err", err)
+		}
+		if err := h.s.CreateLoginChallenge(r.Context(), auth.HashOpaqueToken(challenge), userID, now.Add(auth.MFAChallengeTTL).Format(constants.TimeFormat)); err != nil {
+			slog.Error("create mfa challenge", "user_id", userID, "err", err)
+			respond.Error(w, http.StatusInternalServerError, "could not start verification")
+			return
+		}
+		respond.JSON(w, http.StatusOK, map[string]any{
+			"status":    "mfa_required",
+			"challenge": challenge,
+		})
+		return
+	}
+
 	if err := h.issueTokenPair(w, r, userID, isAdmin); err != nil {
 		slog.Error("issue token pair during login", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not issue tokens")
@@ -528,11 +563,19 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	username = u.Username
 	email = u.Email
 
+	totpSecret, err := h.s.GetUserTOTPSecret(r.Context(), claims.UserID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		slog.Error("read totp status for /me", "user_id", claims.UserID, "err", err)
+		respond.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
 	respond.JSON(w, http.StatusOK, map[string]any{
-		"userId":   claims.UserID,
-		"username": username,
-		"email":    email,
-		"isAdmin":  claims.IsAdmin,
+		"userId":     claims.UserID,
+		"username":   username,
+		"email":      email,
+		"isAdmin":    claims.IsAdmin,
+		"mfaEnabled": totpSecret != "",
 	})
 }
 

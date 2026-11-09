@@ -91,6 +91,27 @@ The PWA is served by the same origin as the API, so Lax is sufficient: it blocks
 cross-site state-changing POSTs, which closes CSRF. Cross-site embedding is not a use case,
 so `SameSite=None` is deliberately not used.
 
+## Break-glass: reset a lost 2FA
+
+Two-factor authentication is opt-in per user. If a user enabled it and then lost their
+authenticator **and** every recovery code and remembered device, they are locked out. The
+owner performs an admin-side reset that clears only the second factor — the password is
+never touched.
+
+When: the user enabled 2FA and has no working device or recovery code left.
+
+```bash
+fly ssh console -a diet-tracker-v2
+# inside the machine:
+/app/reset-2fa /data/diet.db user@example.com
+```
+
+The tool opens the SQLite file directly (it does **not** run migrations), clears
+`users.totp_secret`, deletes that user's recovery codes, and revokes their trusted devices.
+It prints how many rows were removed and never echoes a secret. An unknown email exits 1
+with a clear message. The user can then sign in with their password only and re-enrol an
+authenticator from Profile.
+
 ## Litestream Restore (disaster recovery)
 
 If the volume is wiped, Litestream restores automatically on next startup. The container CMD

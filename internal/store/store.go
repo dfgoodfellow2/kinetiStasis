@@ -63,10 +63,44 @@ type Store interface {
 	CheckinStore
 	MeasurementStore
 	AuthStore
+	TwoFactorStore
 	GroupStore
 	IntegrityStore
 	// For health check
 	PingContext(ctx context.Context) error
+}
+
+// TwoFactorStore groups opt-in TOTP registration, single-use recovery codes,
+// two-step login challenges and trusted-device rows. Every value handed to a
+// client (secret, challenge, device token, recovery code) is stored only as a
+// hash; plaintext never reaches the database.
+type TwoFactorStore interface {
+	GetUserTOTPSecret(ctx context.Context, userID string) (string, error)
+	// EnableTOTP commits the confirmed secret and replaces the user's recovery
+	// codes in one transaction, so an enabled account never lacks backup codes.
+	EnableTOTP(ctx context.Context, userID, secret string, codeHashes []string, now string) error
+	// DisableTOTP clears the secret, burns every recovery code and revokes
+	// every remembered device in one transaction.
+	DisableTOTP(ctx context.Context, userID, now string) error
+
+	// ReplaceRecoveryCodes burns all existing codes and installs a fresh set.
+	ReplaceRecoveryCodes(ctx context.Context, userID string, codeHashes []string, createdAt string) error
+	// BurnRecoveryCode marks an unused code used and reports whether a live row
+	// matched. A second call with the same hash returns false.
+	BurnRecoveryCode(ctx context.Context, userID, codeHash, usedAt string) (bool, error)
+	DeleteRecoveryCodes(ctx context.Context, userID string) error
+	CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error)
+
+	CreateLoginChallenge(ctx context.Context, challengeHash, userID, expiresAt string) error
+	FindLoginChallenge(ctx context.Context, challengeHash string) (userID, expiresAt string, err error)
+	DeleteLoginChallenge(ctx context.Context, challengeHash string) error
+	DeleteExpiredLoginChallenges(ctx context.Context, userID, now string) error
+
+	CreateTrustedDevice(ctx context.Context, id, userID, deviceHash, createdAt, expiresAt string) error
+	FindTrustedDevice(ctx context.Context, userID, deviceHash string) (expiresAt string, err error)
+	TouchTrustedDevice(ctx context.Context, userID, deviceHash, lastUsedAt string) error
+	DeleteTrustedDevice(ctx context.Context, userID, deviceHash string) error
+	DeleteUserTrustedDevices(ctx context.Context, userID string) error
 }
 
 // UserStore handles user and profile data.

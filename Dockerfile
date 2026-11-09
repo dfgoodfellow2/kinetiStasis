@@ -32,6 +32,10 @@ COPY --from=pwa-builder /app/ui/web/dist ./internal/web/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -tags pwa -ldflags="-s -w" \
     -o /diet-tracker-server ./cmd/server
 
+# Break-glass 2FA reset tool (no pwa tag needed; no web assets embedded)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" \
+    -o /app/reset-2fa ./cmd/reset-2fa
+
 # ── Stage 3: Minimal runtime ───────────────────────────────────────────────
 FROM alpine:3.19
 
@@ -44,6 +48,7 @@ RUN tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz && rm /tmp/litestream.tar.
 WORKDIR /app
 
 COPY --from=go-builder /diet-tracker-server .
+COPY --from=go-builder /app/reset-2fa .
 COPY litestream.yml .
 
 RUN mkdir -p /data

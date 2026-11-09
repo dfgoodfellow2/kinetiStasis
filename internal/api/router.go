@@ -89,6 +89,14 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 			r.Post("/logout", authH.Logout)
 			// Public: tells the register form which posture this instance uses.
 			r.Get("/registration-info", authH.RegistrationInfo)
+
+			// Two-step login exchange. The challenge proves the password step;
+			// the code is a guessable 6 digit (or 12 char recovery) surface, so
+			// it shares the password-grade limiter (10/min, burst 5).
+			r.Group(func(r chi.Router) {
+				r.Use(passwordLimiter)
+				r.Post("/mfa/verify", authH.MFAVerify)
+			})
 		})
 
 		// Protected routes — require valid access token cookie
@@ -97,6 +105,14 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 
 			// Current user info
 			r.Get("/auth/me", authH.Me)
+
+			// Opt-in TOTP management. Setup/confirm never force enrolment:
+			// nothing is committed until a live code confirms the secret.
+			r.Post("/auth/mfa/setup", authH.MFASetup)
+			r.Post("/auth/mfa/confirm", authH.MFAConfirm)
+			r.Post("/auth/mfa/disable", authH.MFADisable)
+			r.Post("/auth/mfa/recovery-codes/regenerate", authH.MFARegenerateRecoveryCodes)
+			r.Get("/auth/mfa/qr", authH.MFAQR)
 			// Self-service password change. The current-password check is a
 			// brute-force target, so this route gets its own stricter limiter
 			// in addition to the standard /v1 bucket.
