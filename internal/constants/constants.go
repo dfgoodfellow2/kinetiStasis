@@ -54,4 +54,31 @@ const (
 
 	// MaxRequestBodyBytes is the maximum allowed HTTP request body size (10 MB).
 	MaxRequestBodyBytes int64 = 10 << 20
+
+	// GeminiParseTimeout bounds a single Gemini parse call (including the one
+	// automatic retry for 429/503). It is deliberately shorter than the server
+	// WriteTimeout so a model call can never outlive the HTTP response budget.
+	GeminiParseTimeout = 45 * time.Second
+
+	// GeminiMealMaxOutputTokens / GeminiWorkoutMaxOutputTokens cap generated
+	// output so a runaway model response cannot blow up latency or cost.
+	GeminiMealMaxOutputTokens    int32 = 2048
+	GeminiWorkoutMaxOutputTokens int32 = 4096
+
+	// MaxParseTextChars is the maximum accepted length of user-supplied parse
+	// text (meal descriptions and workout text/YAML). Long inputs are rejected
+	// with 400 before any model call is made.
+	MaxParseTextChars = 4000
+
+	// Meal plausibility bounds applied to AI-parsed results before they are
+	// returned for human review. Zero calories are preserved for the explicit
+	// "no food visible" result; the floor only applies to non-zero estimates.
+	MinMealCalories   = 50.0
+	MaxMealCalories   = 6000.0
+	MaxMealMacroGrams = 1500.0
+
+	// Workout plausibility bounds applied to AI-parsed results.
+	MaxWorkoutSets       = 100
+	MaxRestSecondsPerSet = 600.0
+	MaxRepsPerSet        = 100
 )

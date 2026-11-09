@@ -3,8 +3,13 @@ package handlers
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 )
 
 func TestValidateMealRequestTextOnly(t *testing.T) {
@@ -101,6 +106,95 @@ func TestValidateMealRequestRejectsOversizedImage(t *testing.T) {
 	}
 	if _, err := validateMealRequest(req); err == nil {
 		t.Fatal("expected error for image over 4MB")
+	}
+}
+
+func TestValidateMealRequestRejectsOversizedText(t *testing.T) {
+	overLimit := strings.Repeat("a", constants.MaxParseTextChars+1)
+	if _, err := validateMealRequest(mealParseRequest{Text: overLimit}); err == nil {
+		t.Fatal("expected error for text over the parse cap")
+	} else if !strings.Contains(err.Error(), "description too long") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	atLimit := strings.Repeat("a", constants.MaxParseTextChars)
+	in, err := validateMealRequest(mealParseRequest{Text: atLimit})
+	if err != nil {
+		t.Fatalf("text exactly at the cap should pass: %v", err)
+	}
+	if len(in.Text) != constants.MaxParseTextChars {
+		t.Fatalf("text truncated unexpectedly: %d chars", len(in.Text))
+	}
+}
+
+func TestValidateMealRequestPhotoOnlyUnaffectedByTextCap(t *testing.T) {
+	req := mealParseRequest{
+		ImageBase64: base64.StdEncoding.EncodeToString([]byte("fake-jpeg-bytes")),
+		MimeType:    "image/jpeg",
+	}
+	in, err := validateMealRequest(req)
+	if err != nil {
+		t.Fatalf("photo-only request must pass validation: %v", err)
+	}
+	if strings.TrimSpace(in.Text) != "" {
+		t.Fatalf("unexpected text: %q", in.Text)
+	}
+	if in.Image == nil || len(in.Image.Data) == 0 {
+		t.Fatal("expected decoded image for photo-only request")
+	}
+}
+
+func postParseJSON(t *testing.T, h http.HandlerFunc, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	buf, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(buf))
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return rec
+}
+
+func TestParseMealHandlerRejectsOversizedText(t *testing.T) {
+	h := &ParseHandler{}
+	rec := postParseJSON(t, h.Meal, mealParseRequest{
+		Text: strings.Repeat("a", constants.MaxParseTextChars+1),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "description too long") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestParseMealHandlerPhotoOnlyReachesModelPath(t *testing.T) {
+	h := &ParseHandler{}
+	rec := postParseJSON(t, h.Meal, mealParseRequest{
+		ImageBase64: base64.StdEncoding.EncodeToString([]byte("fake-png-bytes")),
+		MimeType:    "image/png",
+	})
+	// No Gemini client is configured, so validation succeeding surfaces as a
+	// 503 (AI unavailable) rather than the 400 used for an empty request.
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
+func TestParseWorkoutHandlerRejectsOversizedText(t *testing.T) {
+	h := &ParseHandler{}
+	rec := postParseJSON(t, h.Workout, struct {
+		Text   string `json:"text"`
+		Format string `json:"format"`
+	}{
+		Text: strings.Repeat("a", constants.MaxParseTextChars+1),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "description too long") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }
 

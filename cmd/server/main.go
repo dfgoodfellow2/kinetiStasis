@@ -53,9 +53,17 @@ func main() {
 	addr := ":" + cfg.Port
 	slog.Info("server starting", "addr", addr, "env", cfg.Env, "db", cfg.DBPath)
 
+	// Timeouts are generous enough for a ~4 MiB base64 photo upload plus the
+	// AI parse proxy (45s Gemini budget + retry), while still bounding slow
+	// or hung clients. No handler-level timeout is set: it could cut off the
+	// PWA's service worker/static streaming responses.
 	server := &http.Server{
-		Addr:    addr,
-		Handler: router,
+		Addr:              addr,
+		Handler:           router,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Shut down cleanly on SIGINT/SIGTERM.

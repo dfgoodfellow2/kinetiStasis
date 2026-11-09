@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/gemini"
 )
 
@@ -42,6 +43,11 @@ func validateMealRequest(req mealParseRequest) (mealParseInput, error) {
 	hasImage := req.ImageBase64 != ""
 	if strings.TrimSpace(req.Text) == "" && !hasImage {
 		return in, errors.New("text or imageBase64 is required")
+	}
+	// Bound free-text input before any model call. Images have their own decoded
+	// size cap below.
+	if len(req.Text) > constants.MaxParseTextChars {
+		return in, errors.New("description too long")
 	}
 
 	mimeType := strings.TrimSpace(req.MimeType)
