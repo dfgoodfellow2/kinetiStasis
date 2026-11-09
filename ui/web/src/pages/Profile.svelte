@@ -1,8 +1,8 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
-  import { dispHeightCm, heightFtInToCm, kmToMi, miToKm, distUnit } from '../lib/utils.js'
-  import { setUnits, setSleepQualityMax, setCurrentPage, store } from '../lib/stores.svelte.js'
+  import { dispHeightCm, heightFtInToCm, kmToMi, miToKm, distUnit, copyToClipboard } from '../lib/utils.js'
+  import { setUnits, setSleepQualityMax, setCurrentPage, setUser, store } from '../lib/stores.svelte.js'
   import Alert from '../components/Alert.svelte'
   import InfoTip from '../components/InfoTip.svelte'
 
@@ -157,6 +157,158 @@
     } finally {
       pwLoading = false
     }
+  }
+
+  // ── Two-factor authentication ───────────────────────────
+  // Enrolment is a four-beat state machine: idle → setup (pending secret +
+  // QR) → done (recovery codes shown once) → idle with mfaEnabled true.
+  // The enabled card adds a separate regenerate → regenerated → idle loop.
+  let mfaStep = $state('idle') // idle | setup | done | regenerated
+  let mfaSecret = $state('')
+  let mfaCode = $state('')
+  let mfaError = $state('')
+  let mfaNotice = $state('')
+  let mfaBusy = $state(false)
+  let mfaRecoveryCodes = $state([])
+  let mfaDisablePassword = $state('')
+  let mfaDisableCode = $state('')
+  let mfaRegenCode = $state('')
+  let recoveryCopied = $state(false)
+
+  // /auth/me carries mfaEnabled; App/Login put that response in the shared
+  // store, so the card follows the account rather than local guesswork.
+  let mfaEnabled = $derived(store.user?.mfaEnabled === true)
+
+  async function beginMfaSetup() {
+    mfaError = ''
+    mfaNotice = ''
+    mfaBusy = true
+    try {
+      const res = await api.mfaSetup()
+      mfaSecret = res?.secret || ''
+      mfaCode = ''
+      mfaStep = 'setup'
+    } catch (e) {
+      mfaError = e.message || 'Could not start 2FA setup.'
+    } finally {
+      mfaBusy = false
+    }
+  }
+
+  async function confirmMfa() {
+    mfaError = ''
+    mfaNotice = ''
+    if (!mfaCode.trim()) {
+      mfaError = 'Enter the 6-digit code from your authenticator app.'
+      return
+    }
+    mfaBusy = true
+    try {
+      const res = await api.mfaConfirm(mfaSecret, mfaCode.trim())
+      mfaRecoveryCodes = res?.recoveryCodes || []
+      mfaSecret = ''
+      mfaCode = ''
+      setUser({ ...(store.user || {}), mfaEnabled: true })
+      mfaStep = 'done'
+    } catch (e) {
+      mfaError = e.message || 'Could not enable 2FA.'
+    } finally {
+      mfaBusy = false
+    }
+  }
+
+  async function disableMfa() {
+    mfaError = ''
+    mfaNotice = ''
+    if (!mfaDisablePassword || !mfaDisableCode.trim()) {
+      mfaError = 'Enter your current password and a 6-digit or recovery code.'
+      return
+    }
+    mfaBusy = true
+    try {
+      await api.mfaDisable(mfaDisablePassword, mfaDisableCode.trim())
+      mfaDisablePassword = ''
+      mfaDisableCode = ''
+      setUser({ ...(store.user || {}), mfaEnabled: false })
+      mfaStep = 'idle'
+      mfaNotice = 'Two-factor authentication is off.'
+    } catch (e) {
+      // Wrong password is a 401 whose server copy ("invalid credentials") is
+      // authoritative; surface it verbatim.
+      mfaError = e.message || 'Could not disable 2FA.'
+    } finally {
+      mfaBusy = false
+    }
+  }
+
+  async function regenerateMfa() {
+    mfaError = ''
+    mfaNotice = ''
+    if (!mfaRegenCode.trim()) {
+      mfaError = 'Enter a 6-digit or recovery code to replace your backup codes.'
+      return
+    }
+    mfaBusy = true
+    try {
+      const res = await api.mfaRegenerate(mfaRegenCode.trim())
+      mfaRecoveryCodes = res?.recoveryCodes || []
+      mfaRegenCode = ''
+      mfaStep = 'regenerated'
+    } catch (e) {
+      mfaError = e.message || 'Could not regenerate recovery codes.'
+    } finally {
+      mfaBusy = false
+    }
+  }
+
+  function finishRecovery() {
+    const wasRegenerate = mfaStep === 'regenerated'
+    mfaStep = 'idle'
+    mfaRecoveryCodes = []
+    recoveryCopied = false
+    mfaNotice = wasRegenerate
+      ? 'Recovery codes replaced — the old codes no longer work.'
+      : 'Two-factor authentication is now on.'
+  }
+
+  function cancelMfaSetup() {
+    mfaStep = 'idle'
+    mfaSecret = ''
+    mfaCode = ''
+    mfaError = ''
+  }
+
+  function recoveryText() {
+    return [
+      'DietTracker recovery codes',
+      '',
+      ...mfaRecoveryCodes,
+      '',
+      'Each code works once. Store them somewhere safe.',
+      '',
+    ].join('\n')
+  }
+
+  async function copyRecoveryCodes() {
+    const ok = await copyToClipboard(recoveryText())
+    recoveryCopied = ok
+    if (ok) {
+      setTimeout(() => { recoveryCopied = false }, 2000)
+    } else {
+      mfaError = 'Copy failed — select the codes and copy them manually.'
+    }
+  }
+
+  function downloadRecoveryCodes() {
+    const blob = new Blob([recoveryText()], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'diet-tracker-recovery-codes.txt'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
   }
 </script>
 
@@ -385,5 +537,150 @@
       📤 Export
     </button>
   </div>
+</div>
+
+<!-- ── Two-factor authentication ─────────────────────────── -->
+<div class="max-w-screen-xl mx-auto bg-gray-800 p-4 rounded border border-gray-700 space-y-3 mt-4">
+  <h3 class="text-emerald-400 font-semibold text-sm">Two-factor authentication</h3>
+  {#if mfaError}<Alert type="error" message={mfaError} />{/if}
+  {#if mfaNotice}<Alert type="success" message={mfaNotice} />{/if}
+
+  {#if mfaStep === 'done' || mfaStep === 'regenerated'}
+    <!-- Recovery codes are displayed exactly once. -->
+    <Alert
+      type="success"
+      message={mfaStep === 'regenerated'
+        ? 'New recovery codes generated. Save them now — they will not be shown again.'
+        : '2FA is on. Save these recovery codes now — they will not be shown again.'}
+    />
+    <p class="text-sm text-amber-300">
+      Each code works once — store them safely. If you lose your phone and these codes, ask the owner for a one-time reset.
+    </p>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+      {#each mfaRecoveryCodes as code}
+        <code class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-center font-mono text-sm text-gray-100 select-all">{code}</code>
+      {/each}
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <button class="btn-primary" onclick={copyRecoveryCodes} type="button">
+        {recoveryCopied ? 'Copied!' : 'Copy all codes'}
+      </button>
+      <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={downloadRecoveryCodes} type="button">
+        Download .txt
+      </button>
+      <button class="text-xs text-emerald-400 underline" onclick={finishRecovery} type="button">
+        Done
+      </button>
+    </div>
+  {:else if !mfaEnabled}
+    <p class="text-sm text-gray-400">
+      Add a second step at sign-in with any authenticator app. 2FA is off for this account.
+    </p>
+    {#if mfaStep === 'setup'}
+      <div class="flex flex-col md:flex-row gap-4">
+        <div class="space-y-2">
+          <img
+            src={api.mfaQRUrl(mfaSecret, store.user?.email)}
+            alt="Authenticator setup QR code"
+            width="200"
+            height="200"
+            class="bg-white p-2 rounded"
+          />
+          <p class="text-xs text-gray-500">Scan with your authenticator app.</p>
+        </div>
+        <div class="space-y-3 flex-1">
+          <div>
+            <div class="text-xs text-gray-400 mb-1">Can’t scan? Enter this secret manually:</div>
+            <div class="flex items-center gap-2">
+              <code class="bg-gray-900 border border-gray-700 rounded px-2 py-1 font-mono text-sm text-gray-100 select-all break-all">{mfaSecret}</code>
+              <button
+                class="text-xs text-emerald-400 underline"
+                onclick={() => copyToClipboard(mfaSecret)}
+                type="button"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1" for="mfa-confirm-code">6-digit code from the app</label>
+            <input
+              class="input font-mono"
+              id="mfa-confirm-code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              placeholder="123456"
+              bind:value={mfaCode}
+            />
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <button class="btn-primary" onclick={confirmMfa} disabled={mfaBusy} type="button">
+              {mfaBusy ? 'Confirming…' : 'Confirm'}
+            </button>
+            <button class="text-xs text-gray-400 underline" onclick={cancelMfaSetup} disabled={mfaBusy} type="button">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    {:else}
+      <button class="btn-primary" onclick={beginMfaSetup} disabled={mfaBusy} type="button">
+        {mfaBusy ? 'Starting…' : 'Enable 2FA'}
+      </button>
+    {/if}
+  {:else}
+    <p class="text-sm text-emerald-300">2FA is on for this account.</p>
+
+    <div class="pt-2 border-t border-gray-700 space-y-2">
+      <h4 class="text-sm text-gray-200 font-semibold">Regenerate recovery codes</h4>
+      <p class="text-xs text-gray-500">
+        Replaces every existing backup code with ten new single-use codes. A live authenticator or backup code is required.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-2 sm:items-end">
+        <div class="flex-1">
+          <label class="text-xs text-gray-400 block mb-1" for="mfa-regen-code">Current code</label>
+          <input
+            class="input font-mono"
+            id="mfa-regen-code"
+            autocomplete="one-time-code"
+            placeholder="6-digit or recovery code"
+            bind:value={mfaRegenCode}
+          />
+        </div>
+        <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={regenerateMfa} disabled={mfaBusy} type="button">
+          {mfaBusy ? 'Working…' : 'Regenerate'}
+        </button>
+      </div>
+    </div>
+
+    <div class="pt-2 border-t border-gray-700 space-y-2">
+      <h4 class="text-sm text-gray-200 font-semibold">Disable 2FA</h4>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" for="mfa-disable-password">Current password</label>
+          <input
+            class="input"
+            id="mfa-disable-password"
+            type="password"
+            autocomplete="current-password"
+            bind:value={mfaDisablePassword}
+          />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" for="mfa-disable-code">6-digit or recovery code</label>
+          <input
+            class="input font-mono"
+            id="mfa-disable-code"
+            autocomplete="one-time-code"
+            placeholder="123456"
+            bind:value={mfaDisableCode}
+          />
+        </div>
+      </div>
+      <button class="bg-red-700 px-3 py-2 rounded-lg text-sm hover:bg-red-600" onclick={disableMfa} disabled={mfaBusy} type="button">
+        {mfaBusy ? 'Disabling…' : 'Disable 2FA'}
+      </button>
+    </div>
+  {/if}
 </div>
 

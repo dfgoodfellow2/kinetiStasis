@@ -135,9 +135,21 @@ const BASE = '/v1'
  * @property {boolean} [pendingApproval]
  * @property {string} createdAt
  * @property {string} updatedAt
+ *
+ * @typedef {Object} MfaSetupResult
+ * @property {string} secret            Pending base32 secret; committed only by confirm
+ * @property {string} otpauthUrl        otpauth:// enrollment URL
+ *
+ * @typedef {Object} MfaRecoveryResult
+ * @property {boolean} ok
+ * @property {string[]} recoveryCodes   Ten single-use codes, returned exactly once
+ *
+ * @typedef {Object} MfaLoginChallenge
+ * @property {'mfa_required'} status
+ * @property {string} challenge         Single-use token; a wrong code leaves it valid until expiry
  */
 
-async function req(method, path, body, extraHeaders = {}) {
+async function req(method, path, body, extraHeaders = {}, retryOn401 = true) {
   const opts = {
     method,
     credentials: 'include',
@@ -148,7 +160,7 @@ async function req(method, path, body, extraHeaders = {}) {
     opts.body = JSON.stringify(body)
   }
   const res = await fetch(BASE + path, opts)
-  if (res.status === 401) {
+  if (res.status === 401 && retryOn401) {
     // Try refresh
     const ref = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' })
     if (!ref.ok) throw new Error('unauthorized')
@@ -204,6 +216,29 @@ export const api = {
   // refreshes this device's cookies, so no client-side re-login is needed.
   changePassword: (currentPassword, newPassword) =>
     req('POST', '/auth/password', { currentPassword, newPassword }),
+
+  // Opt-in TOTP management (RequireAuth). Setup returns a pending secret;
+  // nothing is committed until Confirm validates a live code.
+  mfaSetup: () => req('POST', '/auth/mfa/setup'),
+  mfaConfirm: (secret, code) => req('POST', '/auth/mfa/confirm', { secret, code }),
+  // <img src> builder for the enrollment QR. The route renders image/png and
+  // falls back to the signed-in account's email when account is omitted.
+  mfaQRUrl: (secret, account) => {
+    const params = new URLSearchParams({ secret })
+    if (account) params.set('account', account)
+    return `${BASE}/auth/mfa/qr?${params.toString()}`
+  },
+  // Both management calls accept a live TOTP or recovery code. They skip the
+  // generic 401 refresh path so server copy ("invalid credentials",
+  // "invalid code") reaches the caller unchanged.
+  mfaDisable: (password, code) =>
+    req('POST', '/auth/mfa/disable', { currentPassword: password, code }, {}, false),
+  mfaRegenerate: (code) =>
+    req('POST', '/auth/mfa/recovery-codes/regenerate', { code }, {}, false),
+  // Second login step: exchanges a mfa_required challenge for cookies. A wrong
+  // code leaves the same challenge valid, so retry without a new login.
+  mfaVerify: (challenge, code, rememberDevice) =>
+    req('POST', '/auth/mfa/verify', { challenge, code, rememberDevice: !!rememberDevice }, {}, false),
 
   // Admin (RequireAdmin). Every call 403s for non-admin accounts.
   // Registration gate: mode is one of the RegistrationMode values.

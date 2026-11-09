@@ -40,7 +40,7 @@ export const guideSections = [
       },
       'Accounts on this instance are invite-only by default: the household owner mints a single-use code, and you register with it. If the owner ever opens registration for a wider launch, new accounts can be set to wait for their approval — the admin manages the registration mode, invite codes, and that approval queue from the 🛠 Admin page.',
       {
-        tip: 'You can change your password any time on the Profile page. If you forget it, ask the household owner for a one-time reset — they’ll give you a temporary password you can replace after signing in. Two-factor authentication is opt-in on Profile: scan the setup code with any authenticator app, confirm a 6-digit code, and keep the recovery codes it prints somewhere safe — the household owner can perform a one-time reset if every device and code is lost.'
+        tip: 'You can change your password any time on the Profile page. If you forget it, ask the household owner for a one-time reset — they’ll give you a temporary password you can replace after signing in. Two-factor authentication is opt-in per account from the Profile page; recovery codes are stored hashed and single-use, and a one-time owner reset exists if everything is lost.'
       }
     ],
     underTheHood: [
