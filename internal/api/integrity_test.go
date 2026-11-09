@@ -336,3 +336,181 @@ func TestValidationRejectsInvalidPayloads(t *testing.T) {
 		})
 	}
 }
+
+// --- Admin data-integrity report -------------------------------------------
+//
+// These tests exercise GET /v1/admin/integrity end to end. Anomalies are seeded
+// through the public API where the handlers allow the value, and through raw
+// SQL where a past bug could write something the current validators reject
+// (NULL leftovers, a 300 cm circumference).
+
+type integrityFinding struct {
+	Check   string           `json:"check"`
+	Count   int              `json:"count"`
+	Samples []map[string]any `json:"samples"`
+}
+
+type integrityReport struct {
+	GeneratedAt string             `json:"generatedAt"`
+	Results     []integrityFinding `json:"results"`
+	Errors      []string           `json:"errors"`
+}
+
+func findIntegrityFinding(t *testing.T, report integrityReport, check string) integrityFinding {
+	t.Helper()
+	for _, finding := range report.Results {
+		if finding.Check == check {
+			return finding
+		}
+	}
+	t.Fatalf("integrity report is missing check %q (got %d results)", check, len(report.Results))
+	return integrityFinding{}
+}
+
+func adminUserID(t *testing.T, h *harness) string {
+	t.Helper()
+	var id string
+	if err := h.db.QueryRow(`SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&id); err != nil {
+		t.Fatalf("read admin user id: %v", err)
+	}
+	return id
+}
+
+func TestIntegrityReportFlagsAnomalies(t *testing.T) {
+	h := newHarness(t)
+	userID := adminUserID(t, h)
+
+	// A doubled day: 4600 kcal stored while the macros imply ~2210 kcal, and
+	// the same meal line twice in the notes.
+	h.do(t, http.MethodPost, "/v1/nutrition/logs", map[string]any{
+		"date":      testDate,
+		"calories":  4600,
+		"proteinG":  150,
+		"carbsG":    200,
+		"fatG":      90,
+		"mealNotes": "Chicken and rice bowl\nChicken and rice bowl",
+	}, http.StatusCreated)
+
+	// A NULL leftover that migrations 013/014 would have normalised. This row's
+	// macros match its calories so it does not add a second mismatch finding.
+	if _, err := h.db.Exec(`
+        INSERT INTO nutrition_logs
+          (id,user_id,date,calories,protein_g,carbs_g,fat_g,fiber_g,water_ml,meal_notes,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		"null-leftover", userID, "2026-10-10", 2000, 200, 150, 66.7, 30, 2000, nil,
+		"2026-10-10T00:00:00.000000000Z"); err != nil {
+		t.Fatalf("seed NULL leftover: %v", err)
+	}
+
+	// A unit-corrupted circumference the current validator (max 250 cm) would
+	// reject, so it must be seeded directly.
+	if _, err := h.db.Exec(`
+        INSERT INTO body_measurements
+          (id,user_id,date,neck_cm,chest_cm,waist_cm,hips_cm,thigh_cm,bicep_cm,notes,created_at,shoulders_cm,calves_cm)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		"bad-measurement", userID, "2026-10-18", 40, 100, 300, 100, 60, 35, "",
+		"2026-10-18T00:00:00.000000000Z", 120, 40); err != nil {
+		t.Fatalf("seed implausible measurement: %v", err)
+	}
+
+	report := decodeJSON[integrityReport](t, h.do(t, http.MethodGet, "/v1/admin/integrity", nil, http.StatusOK))
+
+	if len(report.Errors) != 0 {
+		t.Fatalf("integrity report errors = %v, want none", report.Errors)
+	}
+	if report.GeneratedAt == "" {
+		t.Fatal("generatedAt is empty")
+	}
+	if len(report.Results) != 10 {
+		t.Fatalf("integrity results = %d checks, want 10", len(report.Results))
+	}
+
+	cases := []struct {
+		check string
+		want  int
+	}{
+		{"nutrition_macro_mismatch", 1},
+		{"nutrition_doubled_notes", 1},
+		{"nutrition_implausible", 0},
+		{"null_leftovers", 1},
+		{"measurement_implausible", 1},
+		{"biometric_implausible", 0},
+	}
+	for _, tc := range cases {
+		finding := findIntegrityFinding(t, report, tc.check)
+		if finding.Count != tc.want {
+			t.Errorf("%s count = %d, want %d (samples=%v)", tc.check, finding.Count, tc.want, finding.Samples)
+		}
+		if len(finding.Samples) > 5 {
+			t.Errorf("%s returned %d samples, want <= 5", tc.check, len(finding.Samples))
+		}
+	}
+
+	// Evidence must identify the member and date without leaking credentials.
+	macro := findIntegrityFinding(t, report, "nutrition_macro_mismatch")
+	if len(macro.Samples) != 1 {
+		t.Fatalf("macro samples = %d, want 1", len(macro.Samples))
+	}
+	if macro.Samples[0]["username"] != "integrity" {
+		t.Errorf("macro sample username = %v, want integrity", macro.Samples[0]["username"])
+	}
+	if macro.Samples[0]["date"] != testDate {
+		t.Errorf("macro sample date = %v, want %s", macro.Samples[0]["date"], testDate)
+	}
+	for _, forbidden := range []string{"email", "password", "token", "hash"} {
+		if _, ok := macro.Samples[0][forbidden]; ok {
+			t.Errorf("macro sample leaked %q column", forbidden)
+		}
+	}
+}
+
+func TestIntegrityReportCleanData(t *testing.T) {
+	h := newHarness(t)
+
+	// A sane day: calories agree with macros within tolerance.
+	h.do(t, http.MethodPost, "/v1/nutrition/logs", map[string]any{
+		"date":     testDate,
+		"calories": 2000,
+		"proteinG": 150,
+		"carbsG":   200,
+		"fatG":     66.7,
+		"fiberG":   30,
+		"waterMl":  2000,
+	}, http.StatusCreated)
+
+	h.do(t, http.MethodPost, "/v1/measurements", map[string]any{
+		"date":    testDate,
+		"waistCm": 90,
+		"neckCm":  40,
+	}, http.StatusOK)
+
+	h.do(t, http.MethodPost, "/v1/biometrics", map[string]any{
+		"date":       testDate,
+		"weightKg":   80,
+		"gripKg":     50,
+		"boltScore":  30,
+		"sleepHours": 7.5,
+	}, http.StatusOK)
+
+	report := decodeJSON[integrityReport](t, h.do(t, http.MethodGet, "/v1/admin/integrity", nil, http.StatusOK))
+	if len(report.Errors) != 0 {
+		t.Fatalf("integrity report errors = %v, want none", report.Errors)
+	}
+
+	for _, check := range []string{
+		"nutrition_macro_mismatch",
+		"nutrition_doubled_notes",
+		"nutrition_implausible",
+		"measurement_implausible",
+		"biometric_implausible",
+		"null_leftovers",
+		"target_history_implausible",
+		"checkin_raise_era",
+		"duplicate_same_day_snapshots",
+	} {
+		finding := findIntegrityFinding(t, report, check)
+		if finding.Count != 0 {
+			t.Errorf("%s count = %d on clean data, want 0 (samples=%v)", check, finding.Count, finding.Samples)
+		}
+	}
+}

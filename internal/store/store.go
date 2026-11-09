@@ -42,6 +42,17 @@ type GroupMemberSummary struct {
 	AdherencePct   float64
 }
 
+// IntegrityFinding is one read-only anomaly check in an admin data-integrity
+// report. Count is the total number of offending rows (or duplicate groups,
+// where noted by the check), while Samples carries at most five evidence rows.
+// Samples deliberately contain only benign fields — dates, numeric values and
+// the household display name — never emails, password hashes or tokens.
+type IntegrityFinding struct {
+	Check   string           `json:"check"`
+	Count   int              `json:"count"`
+	Samples []map[string]any `json:"samples"`
+}
+
 // Store groups all data access sub-interfaces.
 type Store interface {
 	UserStore
@@ -53,6 +64,7 @@ type Store interface {
 	MeasurementStore
 	AuthStore
 	GroupStore
+	IntegrityStore
 	// For health check
 	PingContext(ctx context.Context) error
 }
@@ -200,6 +212,13 @@ type MealStore interface {
 	// owner; unsharing is allowed by the template owner or the group owner.
 	ShareTemplateToGroup(ctx context.Context, userID, templateID, groupID string) error
 	UnshareTemplate(ctx context.Context, actorID, templateID string) error
+}
+
+// IntegrityStore exposes the admin-only, read-only anomaly scan. It never
+// mutates data. A failing individual check is reported in the second return
+// value so one broken query cannot suppress the rest of the report.
+type IntegrityStore interface {
+	IntegrityReport(ctx context.Context) ([]IntegrityFinding, []string)
 }
 
 // GroupStore handles groups, memberships, invites and group summaries.

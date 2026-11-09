@@ -218,6 +218,10 @@ export const api = {
   approveUser: (userId) => req('POST', `/admin/users/${encodeURIComponent(userId)}/approve`),
   // Denying a pending account is a permanent delete (same endpoint as DeleteUser).
   denyUser: (userId) => req('DELETE', `/admin/users/${encodeURIComponent(userId)}`),
+  // Read-only anomaly scan over production rows. Returns
+  // { generatedAt, results: IntegrityFinding[], errors: string[] } where each
+  // finding is { check, count, samples: Array<Object> } (samples <= 5).
+  getIntegrityReport: () => req('GET', '/admin/integrity'),
 
   // Profile
   getProfile: () => req('GET', '/profile'),

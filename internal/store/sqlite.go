@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
@@ -1737,4 +1738,434 @@ func (s *SQLiteStore) UnshareTemplate(ctx context.Context, actorID, templateID s
 		return fmt.Errorf("unshare template: %w", err)
 	}
 	return nil
+}
+
+// --- Admin data-integrity report -------------------------------------------
+
+// integrityUsernameExpr resolves the household-facing identity for a row.
+// Profile names are preferred because that is what the admin sees elsewhere;
+// the login username is the fallback for accounts that never filled a profile.
+// Emails and password hashes are never selected.
+const integrityUsernameExpr = `COALESCE(NULLIF(TRIM(p.name),''), NULLIF(TRIM(u.username),''), '')`
+
+// IntegrityReport runs every anomaly check in a single read-only pass. It is
+// intentionally resilient: a query failure is appended to errors and the
+// remaining checks still run, so a partially migrated production DB always
+// produces a usable report.
+func (s *SQLiteStore) IntegrityReport(ctx context.Context) ([]IntegrityFinding, []string) {
+	findings := make([]IntegrityFinding, 0, 10)
+	errs := make([]string, 0)
+
+	add := func(check, countQuery, sampleQuery string) {
+		finding, err := s.integrityFinding(ctx, check, countQuery, sampleQuery)
+		if err != nil {
+			errs = append(errs, check+": "+err.Error())
+			return
+		}
+		findings = append(findings, finding)
+	}
+
+	// 1. Doubled or unparseable nutrition days: a stored calorie total that
+	// disagrees with the macro-implied energy by more than 25%.
+	add("nutrition_macro_mismatch", `
+        SELECT COUNT(*) FROM nutrition_logs n
+        WHERE n.calories > 300
+          AND ABS(n.calories - (COALESCE(n.protein_g,0)*4 + COALESCE(n.carbs_g,0)*4 + COALESCE(n.fat_g,0)*9)) > 0.25 * n.calories`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               n.date AS date,
+               n.calories AS calories,
+               (COALESCE(n.protein_g,0)*4 + COALESCE(n.carbs_g,0)*4 + COALESCE(n.fat_g,0)*9) AS macroKcal
+        FROM nutrition_logs n
+        LEFT JOIN users u ON u.id = n.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE n.calories > 300
+          AND ABS(n.calories - (COALESCE(n.protein_g,0)*4 + COALESCE(n.carbs_g,0)*4 + COALESCE(n.fat_g,0)*9)) > 0.25 * n.calories
+        ORDER BY n.date DESC
+        LIMIT 5`)
+
+	// 2. Meal notes that repeat the same line or long sentence fragment.
+	// SQLite has no regex/greatest-n helper, so this one check fetches the
+	// candidate rows and applies the duplicate-line test in Go.
+	if finding, err := s.integrityDoubledNotes(ctx); err != nil {
+		errs = append(errs, "nutrition_doubled_notes: "+err.Error())
+	} else {
+		findings = append(findings, finding)
+	}
+
+	// 3. Non-empty days outside a human calorie/water envelope.
+	add("nutrition_implausible", `
+        SELECT COUNT(*) FROM nutrition_logs n
+        WHERE n.calories > 6000
+           OR (n.calories > 0 AND n.calories < 500)
+           OR COALESCE(n.water_ml,0) > 8000`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               n.date AS date,
+               n.calories AS calories,
+               n.water_ml AS waterMl
+        FROM nutrition_logs n
+        LEFT JOIN users u ON u.id = n.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE n.calories > 6000
+           OR (n.calories > 0 AND n.calories < 500)
+           OR COALESCE(n.water_ml,0) > 8000
+        ORDER BY n.date DESC
+        LIMIT 5`)
+
+	// 4. Raise-era check-in signatures: a raise above any plausible target, or
+	// an unchanged calorie value recorded before the fix landed.
+	add("checkin_raise_era", `
+        SELECT COUNT(*) FROM check_in_logs c
+        WHERE COALESCE(c.calories_after,0) > 4500
+           OR (COALESCE(c.calories_after,0) = COALESCE(c.calories_before,0)
+               AND c.created_at < '2026-11-01')`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               c.check_in_date AS date,
+               c.calories_before AS caloriesBefore,
+               c.calories_after AS caloriesAfter,
+               c.created_at AS createdAt
+        FROM check_in_logs c
+        LEFT JOIN users u ON u.id = c.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE COALESCE(c.calories_after,0) > 4500
+           OR (COALESCE(c.calories_after,0) = COALESCE(c.calories_before,0)
+               AND c.created_at < '2026-11-01')
+        ORDER BY c.created_at DESC
+        LIMIT 5`)
+
+	// 5. Target-history snapshots outside a sane calorie range.
+	add("target_history_implausible", `
+        SELECT COUNT(*) FROM target_history t
+        WHERE t.calories > 6000 OR t.calories < 1000`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               t.effective_date AS effectiveDate,
+               t.calories AS calories
+        FROM target_history t
+        LEFT JOIN users u ON u.id = t.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE t.calories > 6000 OR t.calories < 1000
+        ORDER BY t.effective_date DESC
+        LIMIT 5`)
+
+	// 6. Unit-corrupted circumferences. Zero means "not logged" (migrations
+	// 013/001 backfill sentinel), so only positive values below 5 cm count.
+	add("measurement_implausible", `
+        SELECT COUNT(*) FROM body_measurements m
+        WHERE (COALESCE(m.neck_cm,0) > 250      OR (COALESCE(m.neck_cm,0)      > 0 AND COALESCE(m.neck_cm,0)      < 5))
+           OR (COALESCE(m.chest_cm,0) > 250     OR (COALESCE(m.chest_cm,0)     > 0 AND COALESCE(m.chest_cm,0)     < 5))
+           OR (COALESCE(m.waist_cm,0) > 250     OR (COALESCE(m.waist_cm,0)     > 0 AND COALESCE(m.waist_cm,0)     < 5))
+           OR (COALESCE(m.hips_cm,0) > 250      OR (COALESCE(m.hips_cm,0)      > 0 AND COALESCE(m.hips_cm,0)      < 5))
+           OR (COALESCE(m.thigh_cm,0) > 250     OR (COALESCE(m.thigh_cm,0)     > 0 AND COALESCE(m.thigh_cm,0)     < 5))
+           OR (COALESCE(m.bicep_cm,0) > 250     OR (COALESCE(m.bicep_cm,0)     > 0 AND COALESCE(m.bicep_cm,0)     < 5))
+           OR (COALESCE(m.shoulders_cm,0) > 250 OR (COALESCE(m.shoulders_cm,0) > 0 AND COALESCE(m.shoulders_cm,0) < 5))
+           OR (COALESCE(m.calves_cm,0) > 250    OR (COALESCE(m.calves_cm,0)    > 0 AND COALESCE(m.calves_cm,0)    < 5))`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               m.date AS date,
+               m.neck_cm AS neckCm,
+               m.chest_cm AS chestCm,
+               m.waist_cm AS waistCm,
+               m.hips_cm AS hipsCm,
+               m.thigh_cm AS thighCm,
+               m.bicep_cm AS bicepCm,
+               m.shoulders_cm AS shouldersCm,
+               m.calves_cm AS calvesCm
+        FROM body_measurements m
+        LEFT JOIN users u ON u.id = m.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE (COALESCE(m.neck_cm,0) > 250      OR (COALESCE(m.neck_cm,0)      > 0 AND COALESCE(m.neck_cm,0)      < 5))
+           OR (COALESCE(m.chest_cm,0) > 250     OR (COALESCE(m.chest_cm,0)     > 0 AND COALESCE(m.chest_cm,0)     < 5))
+           OR (COALESCE(m.waist_cm,0) > 250     OR (COALESCE(m.waist_cm,0)     > 0 AND COALESCE(m.waist_cm,0)     < 5))
+           OR (COALESCE(m.hips_cm,0) > 250      OR (COALESCE(m.hips_cm,0)      > 0 AND COALESCE(m.hips_cm,0)      < 5))
+           OR (COALESCE(m.thigh_cm,0) > 250     OR (COALESCE(m.thigh_cm,0)     > 0 AND COALESCE(m.thigh_cm,0)     < 5))
+           OR (COALESCE(m.bicep_cm,0) > 250     OR (COALESCE(m.bicep_cm,0)     > 0 AND COALESCE(m.bicep_cm,0)     < 5))
+           OR (COALESCE(m.shoulders_cm,0) > 250 OR (COALESCE(m.shoulders_cm,0) > 0 AND COALESCE(m.shoulders_cm,0) < 5))
+           OR (COALESCE(m.calves_cm,0) > 250    OR (COALESCE(m.calves_cm,0)    > 0 AND COALESCE(m.calves_cm,0)    < 5))
+        ORDER BY m.date DESC
+        LIMIT 5`)
+
+	// 7. Biometric values outside human boundaries. Weight 0 means "not logged".
+	add("biometric_implausible", `
+        SELECT COUNT(*) FROM biometric_logs b
+        WHERE (COALESCE(b.weight_kg,0) > 0 AND (COALESCE(b.weight_kg,0) < 20 OR COALESCE(b.weight_kg,0) > 300))
+           OR COALESCE(b.grip_kg,0) > 100
+           OR COALESCE(b.bolt_score,0) > 120
+           OR COALESCE(b.sleep_hours,0) > 16`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               b.date AS date,
+               b.weight_kg AS weightKg,
+               b.grip_kg AS gripKg,
+               b.bolt_score AS boltScore,
+               b.sleep_hours AS sleepHours
+        FROM biometric_logs b
+        LEFT JOIN users u ON u.id = b.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE (COALESCE(b.weight_kg,0) > 0 AND (COALESCE(b.weight_kg,0) < 20 OR COALESCE(b.weight_kg,0) > 300))
+           OR COALESCE(b.grip_kg,0) > 100
+           OR COALESCE(b.bolt_score,0) > 120
+           OR COALESCE(b.sleep_hours,0) > 16
+        ORDER BY b.date DESC
+        LIMIT 5`)
+
+	// 8. NULL leftovers in columns backfilled by migrations 013/014. The count
+	// is the number of NULL values; samples name the table and date.
+	nullCountQuery := `SELECT COALESCE(SUM(x.null_count),0) FROM (` + integrityNullUnion + `) x`
+	nullSampleQuery := `
+        SELECT ` + integrityUsernameExpr + ` AS username,
+               x.tbl AS "table",
+               x.row_date AS date,
+               x.null_count AS nullCount
+        FROM (` + integrityNullUnion + `) x
+        LEFT JOIN users u ON u.id = x.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        ORDER BY x.tbl ASC, x.row_date DESC
+        LIMIT 5`
+	add("null_leftovers", nullCountQuery, nullSampleQuery)
+
+	// 9. Same-day target-history duplicates. Informational: migration 011
+	// permits them (check-in + manual edit), but a household may want to know.
+	add("duplicate_same_day_snapshots", `
+        SELECT COUNT(*) FROM (
+          SELECT 1 FROM target_history
+          GROUP BY user_id, effective_date
+          HAVING COUNT(*) > 1
+        )`,
+		`
+        SELECT `+integrityUsernameExpr+` AS username,
+               g.effective_date AS effectiveDate,
+               g.snapshot_count AS snapshots
+        FROM (
+          SELECT user_id, effective_date, COUNT(*) AS snapshot_count
+          FROM target_history
+          GROUP BY user_id, effective_date
+          HAVING COUNT(*) > 1
+        ) g
+        LEFT JOIN users u ON u.id = g.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        ORDER BY g.snapshot_count DESC, g.effective_date DESC
+        LIMIT 5`)
+
+	// 10. Approved members with no nutrition log in the last 30 days.
+	add("stale_members", `
+        SELECT COUNT(*) FROM users u
+        WHERE COALESCE(u.pending_approval,0) = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM nutrition_logs n
+            WHERE n.user_id = u.id AND n.date >= DATE('now','-30 days')
+          )`,
+		`
+        SELECT COALESCE(NULLIF(TRIM(p.name),''), NULLIF(TRIM(u.username),''), '') AS username,
+               u.created_at AS createdAt,
+               COALESCE((SELECT MAX(n.date) FROM nutrition_logs n WHERE n.user_id = u.id), '') AS lastNutritionDate
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE COALESCE(u.pending_approval,0) = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM nutrition_logs n
+            WHERE n.user_id = u.id AND n.date >= DATE('now','-30 days')
+          )
+        ORDER BY u.created_at ASC
+        LIMIT 5`)
+
+	return findings, errs
+}
+
+// integrityNullUnion is shared by the count and sample queries for check 8. It
+// walks every column that migrations 013/014 promise is non-NULL after the
+// backfill and emits one row per affected record with a NULL-value tally.
+const integrityNullUnion = `
+    SELECT 'nutrition_logs' AS tbl, n.user_id AS user_id, n.date AS row_date,
+           (CASE WHEN n.meal_notes IS NULL THEN 1 ELSE 0 END) AS null_count
+    FROM nutrition_logs n
+    WHERE n.meal_notes IS NULL
+    UNION ALL
+    SELECT 'biometric_logs', b.user_id, b.date,
+           (CASE WHEN b.weight_kg IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.waist_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.grip_kg IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.bolt_score IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.sleep_hours IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.sleep_quality IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.subjective_feel IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.body_fat_pct IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN b.notes IS NULL THEN 1 ELSE 0 END)
+    FROM biometric_logs b
+    WHERE b.weight_kg IS NULL OR b.waist_cm IS NULL OR b.grip_kg IS NULL
+       OR b.bolt_score IS NULL OR b.sleep_hours IS NULL OR b.sleep_quality IS NULL
+       OR b.subjective_feel IS NULL OR b.body_fat_pct IS NULL OR b.notes IS NULL
+    UNION ALL
+    SELECT 'check_in_logs', c.user_id, c.check_in_date,
+           (CASE WHEN c.weight_before IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN c.weight_after IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN c.calories_before IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN c.calories_after IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN c.reason IS NULL THEN 1 ELSE 0 END)
+    FROM check_in_logs c
+    WHERE c.weight_before IS NULL OR c.weight_after IS NULL
+       OR c.calories_before IS NULL OR c.calories_after IS NULL OR c.reason IS NULL
+    UNION ALL
+    SELECT 'body_measurements', m.user_id, m.date,
+           (CASE WHEN m.neck_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.chest_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.waist_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.hips_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.thigh_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.bicep_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.shoulders_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.calves_cm IS NULL THEN 1 ELSE 0 END
+          + CASE WHEN m.notes IS NULL THEN 1 ELSE 0 END)
+    FROM body_measurements m
+    WHERE m.neck_cm IS NULL OR m.chest_cm IS NULL OR m.waist_cm IS NULL
+       OR m.hips_cm IS NULL OR m.thigh_cm IS NULL OR m.bicep_cm IS NULL
+       OR m.shoulders_cm IS NULL OR m.calves_cm IS NULL OR m.notes IS NULL`
+
+// integrityFinding runs a count query and its bounded sample query.
+func (s *SQLiteStore) integrityFinding(ctx context.Context, check, countQuery, sampleQuery string) (IntegrityFinding, error) {
+	finding := IntegrityFinding{Check: check, Samples: []map[string]any{}}
+	if err := s.db.QueryRowContext(ctx, countQuery).Scan(&finding.Count); err != nil {
+		return finding, fmt.Errorf("count: %w", err)
+	}
+	samples, err := queryIntegritySamples(ctx, s.db, sampleQuery)
+	if err != nil {
+		return finding, fmt.Errorf("samples: %w", err)
+	}
+	if samples == nil {
+		samples = []map[string]any{}
+	}
+	finding.Samples = samples
+	return finding, nil
+}
+
+// integrityDoubledNotes flags rows whose meal_notes repeat a line (>= 12
+// characters) or a sentence fragment (>= 20 characters) at least twice.
+func (s *SQLiteStore) integrityDoubledNotes(ctx context.Context) (IntegrityFinding, error) {
+	finding := IntegrityFinding{Check: "nutrition_doubled_notes", Samples: []map[string]any{}}
+
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT `+integrityUsernameExpr+` AS username,
+               n.date AS date,
+               COALESCE(n.meal_notes,'') AS meal_notes
+        FROM nutrition_logs n
+        LEFT JOIN users u ON u.id = n.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE n.meal_notes IS NOT NULL AND length(TRIM(n.meal_notes)) >= 12
+        ORDER BY n.date DESC`)
+	if err != nil {
+		return finding, fmt.Errorf("query notes: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var username, date, notes string
+		if err := rows.Scan(&username, &date, &notes); err != nil {
+			return finding, fmt.Errorf("scan notes: %w", err)
+		}
+		if !hasDoubledNotes(notes) {
+			continue
+		}
+		finding.Count++
+		if len(finding.Samples) < 5 {
+			finding.Samples = append(finding.Samples, map[string]any{
+				"username":  username,
+				"date":      date,
+				"mealNotes": truncateRunes(notes, 160),
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return finding, fmt.Errorf("iterate notes: %w", err)
+	}
+	return finding, nil
+}
+
+// hasDoubledNotes reports whether any normalised line (>= 12 runes) or
+// sentence fragment (>= 20 runes) appears twice.
+func hasDoubledNotes(notes string) bool {
+	seen := make(map[string]struct{})
+	for _, line := range strings.Split(notes, "\n") {
+		key := normaliseNoteFragment(line)
+		if len([]rune(key)) < 12 {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			return true
+		}
+		seen[key] = struct{}{}
+	}
+
+	seen = make(map[string]struct{})
+	for _, fragment := range strings.FieldsFunc(notes, func(r rune) bool {
+		return r == '.' || r == '!' || r == '?' || r == '\n'
+	}) {
+		key := normaliseNoteFragment(fragment)
+		if len([]rune(key)) < 20 {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			return true
+		}
+		seen[key] = struct{}{}
+	}
+	return false
+}
+
+// normaliseNoteFragment lowercases and collapses internal whitespace so
+// cosmetic spacing does not hide a duplicate.
+func normaliseNoteFragment(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// truncateRunes returns value clipped to at most n runes, keeping evidence
+// small enough for a report sample.
+func truncateRunes(value string, n int) string {
+	runes := []rune(value)
+	if len(runes) <= n {
+		return value
+	}
+	return string(runes[:n]) + "…"
+}
+
+// queryIntegritySamples scans an arbitrary read-only query into JSON-friendly
+// maps. Columns are exactly the aliases the check selected, so no schema detail
+// leaks beyond the benign evidence columns named in each sample query.
+func queryIntegritySamples(ctx context.Context, db *sql.DB, query string, args ...any) ([]map[string]any, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]map[string]any, 0, 5)
+	for rows.Next() {
+		values := make([]any, len(columns))
+		targets := make([]any, len(columns))
+		for i := range values {
+			targets[i] = &values[i]
+		}
+		if err := rows.Scan(targets...); err != nil {
+			return nil, err
+		}
+		sample := make(map[string]any, len(columns))
+		for i, column := range columns {
+			if raw, ok := values[i].([]byte); ok {
+				sample[column] = string(raw)
+				continue
+			}
+			sample[column] = values[i]
+		}
+		out = append(out, sample)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -172,6 +172,54 @@
     }
   }
 
+  // ── Integrity report ────────────────────────────────────
+  let integrity = $state(null)
+  let integrityLoading = $state(false)
+  let integrityError = $state('')
+  let integrityCopied = $state(false)
+
+  async function runIntegrity() {
+    integrityError = ''
+    integrityCopied = false
+    integrityLoading = true
+    try {
+      integrity = await api.getIntegrityReport()
+    } catch (e) {
+      integrityError = e.message || String(e)
+    } finally {
+      integrityLoading = false
+    }
+  }
+
+  async function copyIntegrity() {
+    if (!integrity) return
+    const ok = await copyToClipboard(JSON.stringify(integrity, null, 2))
+    integrityCopied = ok
+    if (ok) setTimeout(() => { integrityCopied = false }, 2500)
+  }
+
+  function findingTotal() {
+    return (integrity?.results || []).reduce((sum, f) => sum + (f.count || 0), 0)
+  }
+
+  function sampleColumns(samples) {
+    const columns = []
+    for (const sample of samples || []) {
+      for (const key of Object.keys(sample)) {
+        if (!columns.includes(key)) columns.push(key)
+      }
+    }
+    return columns
+  }
+
+  function sampleValue(v) {
+    if (v === null || v === undefined) return '—'
+    if (typeof v === 'number') {
+      return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10)
+    }
+    return String(v)
+  }
+
   onMount(async () => {
     if (store.user && !store.user.isAdmin) return
     try {
@@ -331,6 +379,86 @@
                 >Deny</button>
               </div>
             </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    <!-- Data integrity -->
+    <section class="bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 class="text-emerald-400 font-semibold text-sm">Integrity report</h3>
+          <p class="text-xs text-gray-500">
+            Read-only scan for corrupted-era rows: doubled nutrition days, inflated measurements,
+            raise-era check-ins and NULL leftovers. Copy the JSON and paste it to the assistant to plan a repair.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          {#if integrity}
+            <button class="bg-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-600" onclick={copyIntegrity} type="button">
+              {integrityCopied ? 'Copied ✓' : 'Copy JSON'}
+            </button>
+          {/if}
+          <button class="btn-primary text-sm" onclick={runIntegrity} disabled={integrityLoading} type="button">
+            {integrityLoading ? 'Scanning…' : 'Run integrity check'}
+          </button>
+        </div>
+      </div>
+
+      {#if integrityError}<Alert type="error" message={integrityError} />{/if}
+
+      {#if integrity}
+        <div class="text-xs text-gray-500">
+          Generated {fmtDate(integrity.generatedAt)} · {integrity.results?.length || 0} checks ·
+          <span class={findingTotal() > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+            {findingTotal()} finding{findingTotal() === 1 ? '' : 's'}
+          </span>
+        </div>
+
+        {#if integrity.errors?.length}
+          <Alert type="error" message={`Some checks failed: ${integrity.errors.join('; ')}`} />
+        {/if}
+
+        <div class="space-y-2">
+          {#each integrity.results || [] as finding (finding.check)}
+            {@const samples = finding.samples || []}
+            {@const columns = sampleColumns(samples)}
+            <details class="bg-gray-900 border border-gray-700 rounded-lg p-3" open={finding.count > 0}>
+              <summary class="flex flex-wrap items-center justify-between gap-2 cursor-pointer">
+                <span class="text-sm text-gray-200 font-mono">{finding.check}</span>
+                <span class={`text-xs px-2 py-0.5 rounded-full ${finding.count > 0 ? 'bg-amber-900 text-amber-300' : 'bg-emerald-900 text-emerald-300'}`}>
+                  {finding.count}
+                </span>
+              </summary>
+              {#if samples.length === 0}
+                <p class="text-xs text-gray-500 mt-2">No sample rows.</p>
+              {:else}
+                <div class="overflow-x-auto mt-2">
+                  <table class="w-full text-xs">
+                    <thead>
+                      <tr class="text-left text-gray-500 border-b border-gray-700">
+                        {#each columns as col}
+                          <th class="py-1 pr-3 font-medium">{col}</th>
+                        {/each}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each samples as sample}
+                        <tr class="border-b border-gray-800">
+                          {#each columns as col}
+                            <td class="py-1 pr-3 text-gray-300">{sampleValue(sample[col])}</td>
+                          {/each}
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+                {#if finding.count > samples.length}
+                  <p class="text-xs text-gray-500 mt-1">Showing {samples.length} of {finding.count}.</p>
+                {/if}
+              {/if}
+            </details>
           {/each}
         </div>
       {/if}

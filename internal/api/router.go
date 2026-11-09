@@ -61,6 +61,7 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 	measurementsH := handlers.NewMeasurementsHandler(s)
 	calcH := handlers.NewCalcHandler(s)
 	exportH := handlers.NewExportHandler(s)
+	integrityH := handlers.NewIntegrityHandler(s)
 
 	var geminiClient *geminiSvc.Client
 	if cfg.GeminiKey != "" {
@@ -115,6 +116,10 @@ func NewRouter(cfg *config.Config, s store.Store, webHandler http.Handler) http.
 				r.Post("/users/{userID}/approve", adminH.ApproveUser)
 				r.Get("/registration-mode", adminH.GetRegistrationMode)
 				r.Put("/registration-mode", adminH.SetRegistrationMode)
+
+				// Read-only data-integrity scan. Admin only, like every route
+				// in this group; the handler never writes.
+				r.Get("/integrity", integrityH.Report)
 			})
 
 			r.Get("/profile", profileH.Get)
