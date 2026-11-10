@@ -57,6 +57,13 @@ type checkinState struct {
 	daysSinceCheckIn int
 	canCheckIn       bool
 	warning          string
+
+	// Calibration shield overlay, derived from the earliest weight-bearing
+	// date. It is only ever true when the check-in and reliability gates are
+	// both open, so it never masks the frozen path.
+	firstWeighinDate string
+	calibrating      bool
+	calibrationDay   int
 }
 
 // loadCheckinState fetches everything the check-in decision needs and applies
@@ -127,6 +134,15 @@ func (h *CheckinHandler) loadCheckinState(ctx context.Context, userID string) (*
 		state.weightEnd = weightLogs[0].WeightKg
 	}
 
+	// The calibration shield is measured from the account's FIRST weigh-in,
+	// i.e. the earliest weight-bearing date in the fetched history. Date-only
+	// strings are YYYY-MM-DD, so lexical comparison is chronological.
+	for _, bio := range weightLogs {
+		if state.firstWeighinDate == "" || bio.Date < state.firstWeighinDate {
+			state.firstWeighinDate = bio.Date
+		}
+	}
+
 	// Date gate: at most one adjust-capable check-in per interval. This is a
 	// cooldown, not a data requirement, so it only blocks the check-in itself.
 	state.daysSinceCheckIn = int(math.MaxInt32)
@@ -160,7 +176,68 @@ func (h *CheckinHandler) loadCheckinState(ctx context.Context, userID string) (*
 		state.warning = checkinWarningNeedWeightHistory
 	}
 
+	// Calibration shield. The day count uses the same local-midnight convention
+	// as the check-in cooldown gate above, so the two never disagree about what
+	// "today" means. Calibrating additionally requires BOTH gates to be open:
+	// a gated or frozen check-in keeps its existing state and warning priority.
+	if state.firstWeighinDate != "" {
+		if days, ok := daysSinceLocalDate(state.firstWeighinDate); ok && days < constants.CalibrationShieldDays {
+			state.calibrationDay = days + 1
+			if state.calibrationDay < 1 {
+				state.calibrationDay = 1
+			}
+			state.calibrating = state.canCheckIn && state.tdee.WeightReliable
+		}
+	}
+	state.tdee.Calibrating = state.calibrating
+	state.tdee.CalibrationDay = state.calibrationDay
+
 	return state, nil
+}
+
+// recommendation computes the calorie recommendation shared by Preview and
+// Create. It mirrors calculator.ComputeCheckinRecommendation (goal-adjusted
+// observed TDEE as the ideal, ±MaxWeeklyCalorieSwing) but tightens the cap to
+// ±CalibrationMaxAdjustment while the calibration shield is active.
+//
+// The severe-undereating backstop is evaluated against the UNCLAMPED delta
+// before capping: if the ideal is more than CalibrationBackstopKcal above the
+// current target, the full weekly swing is restored for raises only. This lets
+// someone clearly eating far below expenditure escape the shield, while a
+// noisy high/low estimate can never widen a decrease. Keeping this in one
+// place is what guarantees Preview and Create cannot disagree.
+func (state *checkinState) recommendation(exerciseCalories float64) (int, float64) {
+	goalAdjusted := nutrition.ComputeTargetCalories(state.tdee.ObservedTDEE, state.profile.Goal)
+
+	ideal := goalAdjusted
+	if state.targets.EatBackExercise {
+		ideal += exerciseCalories
+	}
+
+	current := state.targets.Calories
+	delta := ideal - current
+
+	cap := calculator.MaxWeeklyCalorieSwing
+	if state.calibrating {
+		cap = constants.CalibrationMaxAdjustment
+		// Raise-only escape: a genuine severe deficit overrides the shield cap.
+		if delta > constants.CalibrationBackstopKcal {
+			cap = calculator.MaxWeeklyCalorieSwing
+		}
+	}
+
+	switch {
+	case delta > cap:
+		delta = cap
+	case delta < -cap:
+		delta = -cap
+	}
+
+	final := current + delta
+	if final < constants.MinCalorieFloor {
+		final = constants.MinCalorieFloor
+	}
+	return int(math.Round(final)), delta
 }
 
 // Preview returns check-in readiness and the recommendation that Create would
@@ -188,7 +265,7 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	if !targetUpdateBlocked {
 		exerciseCals := h.exerciseCaloriesForDate(r.Context(), claims.UserID,
 			time.Now().UTC().Format(constants.DateFormat), state.targets.EatBackExercise)
-		recCals, adjustment = calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCals, exerciseCals, state.targets.EatBackExercise)
+		recCals, adjustment = state.recommendation(exerciseCals)
 	}
 
 	// Weight context is display-only and must not imply usable history when the
@@ -228,6 +305,9 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 		CurrentCalories: currentCals,
 		EatBackExercise: state.targets.EatBackExercise,
+
+		Calibrating:    state.calibrating,
+		CalibrationDay: state.calibrationDay,
 
 		RecommendedCalories: recCals,
 		CalorieAdjustment:   adjustment,
@@ -313,7 +393,7 @@ func (h *CheckinHandler) Create(w http.ResponseWriter, r *http.Request) {
 		in.CaloriesAfter = int(math.Round(currentCalories))
 	} else {
 		exerciseCals := h.exerciseCaloriesForDate(r.Context(), claims.UserID, in.CheckInDate, state.targets.EatBackExercise)
-		recommended, _ := calculator.ComputeCheckinRecommendation(state.tdee, state.profile, currentCalories, exerciseCals, state.targets.EatBackExercise)
+		recommended, _ := state.recommendation(exerciseCals)
 		in.CaloriesAfter = recommended
 
 		// Capture the superseded targets BEFORE mutating the row. These are the

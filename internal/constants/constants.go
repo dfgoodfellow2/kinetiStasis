@@ -47,6 +47,30 @@ const (
 	// TDEE algorithm will ever recommend, regardless of goal or adjustment.
 	MinCalorieFloor = 1200.0
 
+	// CalibrationShieldDays is the length of the post-first-weigh-in calibration
+	// window, measured in calendar days from the account's earliest
+	// weight-bearing date. The SBS/MacroFactor calibration period is typically
+	// 14-30 days of consistent logging before the energy-balance model is
+	// trusted to make large changes. We deliberately pick the SHORT end (14):
+	// it still covers the water-weight and glycogen noise that makes early trend
+	// estimates unreliable, while a longer shield feels like the app is ignoring
+	// the user's data — the family-friction failure mode where people abandon
+	// logging because targets never move.
+	CalibrationShieldDays = 14
+
+	// CalibrationMaxAdjustment caps a target change to ±150 kcal while the
+	// account is inside the calibration shield. This is the small, reversible
+	// step phase: early progress can still move the target, but a noisy
+	// two-week trend cannot swing calories by the full weekly maximum.
+	CalibrationMaxAdjustment = 150.0
+
+	// CalibrationBackstopKcal is the severe-undereating escape hatch. When the
+	// unclamped ideal target is more than 1200 kcal ABOVE the current target,
+	// the shield's ±150 cap is ignored and the normal weekly swing applies to
+	// raises. It never loosens a decrease: the backstop is raise-only so a
+	// bad high estimate cannot crash someone's calories during calibration.
+	CalibrationBackstopKcal = 1200.0
+
 	// ReadinessEMAAlpha is the exponential moving average smoothing factor used
 	// when computing grip and BOLT score trends for the readiness score.
 	// Lower values = more smoothing, higher values = more reactive.

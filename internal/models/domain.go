@@ -257,6 +257,15 @@ type CheckinPreview struct {
 	RecommendedCalories int     `json:"recommendedCalories"`
 	CalorieAdjustment   float64 `json:"calorieAdjustment"`
 
+	// Calibration shield. Calibrating is true only while the account is inside
+	// the post-first-weigh-in window AND the check-in is actually usable (both
+	// gates open). The UI renders the calibration badge in place of the plain
+	// ready state, but the badge never overrides the frozen
+	// (targetUpdateBlocked / warning) path. CalibrationDay is the 1-based day
+	// within CalibrationShieldDays (0 outside the window).
+	Calibrating    bool `json:"calibrating"`
+	CalibrationDay int  `json:"calibrationDay"`
+
 	// WeighInCount is the number of weight-bearing logs (WeightKg > 0) inside
 	// the lookback window. It backs the canCheckIn>=3 gate and lets the UI show
 	// progress toward the 7 needed for a reliable target update.
@@ -434,6 +443,12 @@ type TDEEResult struct {
 	// Warning carries a human-readable reason when the estimate is guarded or
 	// target updates are suppressed.
 	Warning string `json:"warning,omitempty"`
+
+	// Calibrating reports whether this result fell inside the 14-day
+	// post-first-weigh-in calibration shield, where target changes are capped
+	// at ±150 kcal. CalibrationDay is the 1-based day within that window.
+	Calibrating    bool `json:"calibrating"`
+	CalibrationDay int  `json:"calibrationDay"`
 }
 
 type MacroResult struct {
