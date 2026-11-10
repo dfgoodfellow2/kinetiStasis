@@ -38,6 +38,43 @@ func requestDate(r *http.Request) string {
 	return time.Now().Format(constants.DateFormat)
 }
 
+// weightPoint mirrors the element type of models.DashboardData.WeightTrend.
+// Declaring it as an alias keeps the helper's return type assignable to the
+// anonymous struct slice the model uses.
+type weightPoint = struct {
+	Date     string  `json:"date"`
+	WeightKg float64 `json:"weightKg"`
+}
+
+// buildWeightTrendSeries emits the dashboard's raw display points and the
+// engine trend levels in a single pass over one source: the deduplicated
+// observation list the headline regression already uses (WeightSeriesForWindow).
+//
+// Both slices are appended together inside the same loop, so they are the same
+// length and index-aligned by construction. The previous two-path projection
+// (raw bio30 rows keyed by date onto a separately built trend map) could
+// silently leave nils wherever a raw date had been collapsed or fell outside
+// the trend window. Dates older than the display window (since30) are skipped;
+// the trend levels themselves are still fitted over the full sinceTrend window,
+// preserving the headline contract. Levels before MinWeightTrendDays distinct
+// observations remain nil (burn-in), and the final non-nil level equals the
+// headline trend by construction.
+func buildWeightTrendSeries(bioAll []models.BiometricLog, since30, sinceTrend string) ([]weightPoint, []*float64) {
+	weights, dates := calculator.WeightSeriesForWindow(bioAll, sinceTrend)
+	levels := calculator.RollingWeightTrendLevels(weights, dates)
+
+	points := make([]weightPoint, 0, len(dates))
+	series := make([]*float64, 0, len(dates))
+	for i, date := range dates {
+		if date < since30 {
+			continue
+		}
+		points = append(points, weightPoint{Date: date, WeightKg: weights[i]})
+		series = append(series, levels[i])
+	}
+	return points, series
+}
+
 // daysSinceLocalDate returns the whole calendar-day distance from a
 // date-only string to today's local date. Both sides are projected onto local
 // midnights and then compared in UTC, so a UTC-midnight parse can no longer
@@ -407,36 +444,12 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	weightTrendKg, weightRateKgPerWeek, trendDays := calculator.ComputeWeightTrend(bioAll, sinceTrend)
 	loggedDays, loggingStreak, longestStreak := metrics.LoggingStreaks(nut90, today, 60)
 
-	// weight trend from bio30
-	var weightTrend []struct {
-		Date     string  `json:"date"`
-		WeightKg float64 `json:"weightKg"`
-	}
-	for _, b := range bio30 {
-		// Filter out weights outside reasonable human range (20-300 kg)
-		if b.WeightKg > 20 && b.WeightKg < 300 {
-			weightTrend = append(weightTrend, struct {
-				Date     string  `json:"date"`
-				WeightKg float64 `json:"weightKg"`
-			}{Date: b.Date, WeightKg: b.WeightKg})
-		}
-	}
-
-	// Engine trend series: fit the same regression the headline uses over the
-	// full lookback window, then project its fitted level onto each raw point
-	// so the sparkline draws the engine's curve rather than a client-side
-	// smoothing. The expanding-window fit's final value is weightTrendKg by
-	// construction (identical weights, dates and regression).
-	trendWeights, trendDates := calculator.WeightSeriesForWindow(bioAll, sinceTrend)
-	trendLevels := calculator.RollingWeightTrendLevels(trendWeights, trendDates)
-	trendLevelByDate := make(map[string]*float64, len(trendDates))
-	for i, date := range trendDates {
-		trendLevelByDate[date] = trendLevels[i]
-	}
-	weightTrendSeries := make([]*float64, len(weightTrend))
-	for i, p := range weightTrend {
-		weightTrendSeries[i] = trendLevelByDate[p.Date]
-	}
+	// Weight trend display points and the engine trend series are built from a
+	// single source (the same deduplicated observations the headline fit uses),
+	// so the two arrays are index-aligned and date-key drift is impossible.
+	// The fit still spans the full trend window; only the emitted display points
+	// are limited to the 30-day window.
+	weightTrend, weightTrendSeries := buildWeightTrendSeries(bioAll, since30, sinceTrend)
 
 	// Find today's biometric entry (if logged)
 	var todayBio *models.BiometricLog

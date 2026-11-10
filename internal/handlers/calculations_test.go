@@ -8,6 +8,9 @@ package handlers
 import (
 	"testing"
 	"time"
+
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/calculator"
 )
 
 func TestDaysSinceLocalDateAtUsesCalendarDays(t *testing.T) {
@@ -42,5 +45,79 @@ func TestDaysSinceLocalDateAtUsesCalendarDays(t *testing.T) {
 
 	if _, ok := daysSinceLocalDateAt(now, "not-a-date"); ok {
 		t.Fatal("malformed date accepted")
+	}
+}
+
+// TestBuildWeightTrendSeriesUnifiesRawAndTrend pins the single-source
+// contract: raw display points and engine trend levels come out of the same
+// pass, so they are index-aligned and the last fitted level equals the
+// headline regression. It also covers duplicate-date collapsing and the
+// display-window cutoff while the fit keeps its full-window span.
+func TestBuildWeightTrendSeriesUnifiesRawAndTrend(t *testing.T) {
+	const (
+		since30    = "2026-10-11"
+		sinceTrend = "2026-08-12"
+	)
+
+	bioAll := []models.BiometricLog{
+		// Inside the trend window but outside the display window: contributes
+		// to the fit (and burn-in index) but must not be emitted.
+		{Date: "2026-10-01", WeightKg: 82.0},
+		// Flat -> dip -> rise, nine distinct display days.
+		{Date: "2026-11-01", WeightKg: 80.0},
+		{Date: "2026-11-02", WeightKg: 80.0},
+		{Date: "2026-11-03", WeightKg: 80.0},
+		{Date: "2026-11-03", WeightKg: 79.8}, // duplicate date: latest wins
+		{Date: "2026-11-04", WeightKg: 79.5},
+		{Date: "2026-11-05", WeightKg: 79.0},
+		{Date: "2026-11-06", WeightKg: 79.5},
+		{Date: "2026-11-07", WeightKg: 80.0},
+		{Date: "2026-11-07", WeightKg: 80.1}, // duplicate date: latest wins
+		{Date: "2026-11-08", WeightKg: 80.5},
+		{Date: "2026-11-09", WeightKg: 81.0},
+	}
+
+	points, series := buildWeightTrendSeries(bioAll, since30, sinceTrend)
+
+	// Ten distinct trend-window dates collapse to nine display points; the two
+	// duplicate rows must not inflate the raw array.
+	if len(points) != 9 {
+		t.Fatalf("points len = %d, want 9 distinct display dates", len(points))
+	}
+	if len(series) != len(points) {
+		t.Fatalf("series len = %d, want %d (index-aligned with points)", len(series), len(points))
+	}
+
+	wantWeights := []float64{80.0, 80.0, 79.8, 79.5, 79.0, 79.5, 80.1, 80.5, 81.0}
+	for i, want := range wantWeights {
+		if points[i].WeightKg != want {
+			t.Fatalf("points[%d].WeightKg = %v, want %v (latest value per date)", i, points[i].WeightKg, want)
+		}
+	}
+	if points[0].Date != "2026-11-01" || points[len(points)-1].Date != "2026-11-09" {
+		t.Fatalf("unexpected display span %s..%s", points[0].Date, points[len(points)-1].Date)
+	}
+
+	// Burn-in is the first MinWeightTrendDays-1 distinct points of the full
+	// window. With the pre-window date consuming the first slot, display
+	// indices 0..4 stay nil and indices 5..8 are fitted.
+	for i := 0; i < calculator.MinWeightTrendDays-2; i++ {
+		if series[i] != nil {
+			t.Fatalf("series[%d] = %v, want nil burn-in", i, *series[i])
+		}
+	}
+	for i := calculator.MinWeightTrendDays - 2; i < len(series); i++ {
+		if series[i] == nil {
+			t.Fatalf("series[%d] is nil, want fitted level", i)
+		}
+	}
+
+	headline, _, days := calculator.ComputeWeightTrend(bioAll, sinceTrend)
+	if days != 10 {
+		t.Fatalf("trend days = %d, want 10 distinct trend-window days", days)
+	}
+	last := series[len(series)-1]
+	if last == nil || *last != headline {
+		t.Fatalf("last series level = %v, want headline %v", last, headline)
 	}
 }

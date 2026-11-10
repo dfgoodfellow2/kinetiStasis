@@ -79,7 +79,9 @@
 
   // Active series drives both the path and the min/max labels.
   $: active = mode === 'trend' ? (hasEngineTrend ? engineTrend : fallbackTrend) : rawSeriesPoints
-  $: hasSeries = active.length >= 2
+  // A single point is still drawable (dot only, no segments); the empty state
+  // below is reserved for a genuinely empty series.
+  $: hasSeries = active.length >= 1
 
   // Calculate min/max for scaling (use raw kg values then convert for display labels)
   $: minWeight = active.length ? Math.min(...active.map(p => p.raw)) : 0
@@ -113,8 +115,12 @@
     ? height - padding - ((active[lastIdx].raw - minWeight) / range) * (height - 2 * padding)
     : 0
 
-  // Last raw reading — kept unsmoothed so the big number matches the scale.
-  $: current = displayPoints.length ? displayPoints[displayPoints.length - 1].weight : 0
+  // Big number follows the active tab: raw mode shows the latest raw reading;
+  // trend mode shows the latest non-null level from the drawn trend curve.
+  $: current = (() => {
+    if (mode === 'trend' && active.length) return active[active.length - 1].weight
+    return displayPoints.length ? displayPoints[displayPoints.length - 1].weight : 0
+  })()
 
   // Simple trend detection
   $: trend = (() => {
@@ -139,7 +145,7 @@
     <div class="text-2xl font-bold text-gray-100">
       {current} <span class="text-sm font-normal text-gray-400">{weightUnit(units)}</span>
     </div>
-    {#if displayPoints.length >= 2}
+    {#if displayPoints.length >= 1}
       <div class="inline-flex items-center rounded-full bg-gray-700 p-0.5 text-[11px]" role="group" aria-label="Sparkline series">
         <button
           type="button"
@@ -160,22 +166,29 @@
   <!-- Sparkline SVG -->
   {#if hasSeries}
     <svg {width} {height} class="w-full max-w-[280px] mt-2" role="img" aria-label="Weight {mode} sparkline">
-      <!-- Line -->
-      <path
-        d={pathData}
-        fill="none"
-        stroke={mode === 'trend' ? '#38bdf8' : '#10b981'}
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-dasharray={mode === 'trend' ? '5 3' : undefined}
-      />
+      <!-- Line (a single point has no segment) -->
+      {#if active.length >= 2}
+        <path
+          d={pathData}
+          fill="none"
+          stroke={mode === 'trend' ? '#38bdf8' : '#10b981'}
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-dasharray={mode === 'trend' ? '5 3' : undefined}
+        />
+      {/if}
       <!-- End dot -->
       <circle cx={lastX} cy={lastY} r="4" fill={mode === 'trend' ? '#38bdf8' : '#10b981'} />
     </svg>
+    {#if active.length === 1}
+      <div class="text-xs text-gray-500 text-center mt-1 max-w-[280px]">
+        Weight trend curve needs 2+ weigh-ins — keep logging daily
+      </div>
+    {/if}
   {:else}
-    <div class="h-20 flex items-center justify-center text-gray-500 text-sm">
-      No weight data
+    <div class="h-20 flex items-center justify-center text-gray-500 text-sm text-center max-w-[280px]">
+      No weigh-ins yet — log today's weight to start your trend.
     </div>
   {/if}
 
@@ -187,9 +200,13 @@
 
   {#if mode === 'trend'}
     <div class="text-[10px] text-gray-600 mt-0.5">
-      {hasEngineTrend
-        ? 'Engine trend · same fit the check-in uses'
-        : 'Display-only EMA · headline trend comes from the server'}
+      {#if active.length === 1}
+        Engine trend · curve available at 2+ weigh-ins.
+      {:else if hasEngineTrend}
+        Engine trend · same fit the check-in uses
+      {:else}
+        Display-only EMA · headline trend comes from the server
+      {/if}
     </div>
   {/if}
   {/if}

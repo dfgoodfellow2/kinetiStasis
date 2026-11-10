@@ -367,7 +367,7 @@ let checklist = $derived(data ? [
          md: Weight/Weekly share a row, Readiness spans both columns beneath) -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <!-- Weight Trend: whole block vertically centered -->
-      <Card title="Weight Trend (30 days)">
+      <Card title="Weight Trend">
         <div class="card-body flex flex-col justify-center">
           <div class="flex flex-col items-center text-center mb-2">
             <div class="flex items-center justify-center gap-1.5">
