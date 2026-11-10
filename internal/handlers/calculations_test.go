@@ -98,15 +98,16 @@ func TestBuildWeightTrendSeriesUnifiesRawAndTrend(t *testing.T) {
 		t.Fatalf("unexpected display span %s..%s", points[0].Date, points[len(points)-1].Date)
 	}
 
-	// Burn-in is the first MinWeightTrendDays-1 distinct points of the full
+	// Burn-in is the first MinTrendCurveDays-1 distinct points of the full
 	// window. With the pre-window date consuming the first slot, display
-	// indices 0..4 stay nil and indices 5..8 are fitted.
-	for i := 0; i < calculator.MinWeightTrendDays-2; i++ {
+	// indices 0..3 stay nil and indices 4..8 are fitted (the curve starts at
+	// the 6th weigh-in so a two-point line exists by the 7th).
+	for i := 0; i < calculator.MinTrendCurveDays-2; i++ {
 		if series[i] != nil {
 			t.Fatalf("series[%d] = %v, want nil burn-in", i, *series[i])
 		}
 	}
-	for i := calculator.MinWeightTrendDays - 2; i < len(series); i++ {
+	for i := calculator.MinTrendCurveDays - 2; i < len(series); i++ {
 		if series[i] == nil {
 			t.Fatalf("series[%d] is nil, want fitted level", i)
 		}

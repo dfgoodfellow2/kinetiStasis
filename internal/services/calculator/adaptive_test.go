@@ -310,19 +310,21 @@ func TestRollingWeightTrendLevelsMatchesHeadline(t *testing.T) {
 		t.Fatalf("len(levels) = %d, want %d (same length as the raw series)", len(levels), len(weights))
 	}
 
-	// Burn-in: fewer than MinWeightTrendDays observations means no level.
-	for i := 0; i < MinWeightTrendDays-1; i++ {
+	// Burn-in: fewer than MinTrendCurveDays observations means no level. The
+	// display curve starts one weigh-in before the headline gate so a drawn
+	// line exists by the seventh weigh-in.
+	for i := 0; i < MinTrendCurveDays-1; i++ {
 		if levels[i] != nil {
 			t.Fatalf("levels[%d] = %v, want nil during burn-in", i, *levels[i])
 		}
 	}
-	if levels[MinWeightTrendDays-1] == nil {
-		t.Fatalf("levels[%d] is nil, want the first fitted level", MinWeightTrendDays-1)
+	if levels[MinTrendCurveDays-1] == nil {
+		t.Fatalf("levels[%d] is nil, want the first fitted level", MinTrendCurveDays-1)
 	}
 
 	// Smoothness: the fitted level must move gradually, unlike the raw dip.
-	prev := *levels[MinWeightTrendDays-1]
-	for i := MinWeightTrendDays; i < len(levels); i++ {
+	prev := *levels[MinTrendCurveDays-1]
+	for i := MinTrendCurveDays; i < len(levels); i++ {
 		if levels[i] == nil {
 			t.Fatalf("levels[%d] is nil after burn-in", i)
 		}
@@ -347,6 +349,84 @@ func TestRollingWeightTrendLevelsMatchesHeadline(t *testing.T) {
 	}
 	if math.Abs(*last-trendKg) > 1e-9 {
 		t.Fatalf("last rolling level = %.12f, headline trendKg = %.12f; want identical by construction", *last, trendKg)
+	}
+}
+
+// TestRollingWeightTrendLevelsCurveStartsAtSix pins the micro-wave contract:
+// the DRAWN curve starts at the 6th distinct weigh-in so a two-point line
+// exists by the 7th, while the headline trend (and therefore the target-update
+// gate) keeps its 7-day burn-in.
+func TestRollingWeightTrendLevelsCurveStartsAtSix(t *testing.T) {
+	if MinTrendCurveDays != 6 {
+		t.Fatalf("MinTrendCurveDays = %d, want 6", MinTrendCurveDays)
+	}
+	if MinWeightTrendDays != 7 {
+		t.Fatalf("MinWeightTrendDays = %d, want 7 (headline gate unchanged)", MinWeightTrendDays)
+	}
+
+	weights := []float64{82.0, 82.2, 81.8, 82.1, 82.4, 82.6, 82.9}
+	dates := windowDates(len(weights))
+
+	bios := make([]models.BiometricLog, len(dates))
+	for i := range dates {
+		bios[i] = models.BiometricLog{Date: dates[i], WeightKg: weights[i]}
+	}
+
+	// At six distinct weigh-ins the series has exactly one non-null point: a
+	// dot, not yet a line.
+	sixLevels := RollingWeightTrendLevels(weights[:6], dates[:6])
+	if len(sixLevels) != 6 {
+		t.Fatalf("len(sixLevels) = %d, want 6", len(sixLevels))
+	}
+	nonNil := 0
+	for i, level := range sixLevels {
+		if level != nil {
+			nonNil++
+			if i < MinTrendCurveDays-1 {
+				t.Fatalf("sixLevels[%d] non-null before burn-in", i)
+			}
+		}
+	}
+	if nonNil != 1 {
+		t.Fatalf("six-level non-null count = %d, want 1 (single dot at the 6th weigh-in)", nonNil)
+	}
+	if sixLevels[5] == nil {
+		t.Fatal("sixLevels[5] is nil, want the first curve point")
+	}
+
+	// The headline must still refuse to report a trend at six days.
+	if trend, rate, days := ComputeWeightTrend(bios[:6], dates[0]); trend != 0 || rate != 0 || days != 6 {
+		t.Fatalf("ComputeWeightTrend(six) = (%v, %v, %d), want (0, 0, 6) during headline burn-in", trend, rate, days)
+	}
+
+	// At seven distinct weigh-ins the first five entries are nil and points
+	// 6-7 are non-null: a genuine two-point line.
+	sevenLevels := RollingWeightTrendLevels(weights, dates)
+	if len(sevenLevels) != 7 {
+		t.Fatalf("len(sevenLevels) = %d, want 7", len(sevenLevels))
+	}
+	for i := 0; i < MinTrendCurveDays-1; i++ {
+		if sevenLevels[i] != nil {
+			t.Fatalf("sevenLevels[%d] = %v, want nil burn-in", i, *sevenLevels[i])
+		}
+	}
+	for i := MinTrendCurveDays - 1; i < 7; i++ {
+		if sevenLevels[i] == nil {
+			t.Fatalf("sevenLevels[%d] is nil, want a drawn curve point", i)
+		}
+	}
+
+	// The headline now engages at seven days and matches the last curve point.
+	headline, _, days := ComputeWeightTrend(bios, dates[0])
+	if days != 7 {
+		t.Fatalf("ComputeWeightTrend days = %d, want 7", days)
+	}
+	last := sevenLevels[6]
+	if last == nil {
+		t.Fatal("sevenLevels[6] is nil, want the headline level")
+	}
+	if math.Abs(*last-headline) > 1e-9 {
+		t.Fatalf("last curve point = %.12f, headline trendKg = %.12f; want identical", *last, headline)
 	}
 }
 

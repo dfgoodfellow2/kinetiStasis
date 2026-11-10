@@ -19,6 +19,12 @@ const (
 	// weight trend. Below this, weightTrendKg stays 0 (insufficient data).
 	MinWeightTrendDays = 7
 
+	// MinTrendCurveDays is the display-curve burn-in. The drawn dashboard
+	// series may start at six distinct weigh-ins so a two-point line exists by
+	// the seventh, while the headline trend (and the target-update gate that
+	// depends on it) still requires MinWeightTrendDays.
+	MinTrendCurveDays = constants.MinTrendCurveDays
+
 	// BodyEnergyDensityKcalPerKg is the energy content of one kilogram of body
 	// mass. Energy balance treats changes in stored chemical energy and weight
 	// change as proportional at roughly 7700 kcal/kg, the conventional value:
@@ -193,13 +199,17 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 // ComputeWeightTrend at every observation. Each entry is the fitted level at
 // that observation using only the observations up to and including it (an
 // expanding-window, causal fit), so the curve never looks ahead. Entries before
-// MinWeightTrendDays observations are nil: that is the burn-in segment the
-// client skips because there is not yet enough data to fit a trend.
+// MinTrendCurveDays observations are nil: that is the display burn-in segment
+// the client skips because there is not yet enough data to fit a trend. The
+// curve intentionally starts one weigh-in before the headline gate so a
+// two-point line exists by the seventh weigh-in; the headline itself still
+// requires MinWeightTrendDays.
 //
 // The final entry fits the whole series and is evaluated at the newest
-// observation, which is exactly what ComputeWeightTrend reports as trendKg.
-// Passing the same weights/dates as the headline therefore makes the dashboard
-// curve and the headline number agree by construction.
+// observation, which is exactly what ComputeWeightTrend reports as trendKg once
+// the headline gate is met. Passing the same weights/dates as the headline
+// therefore makes the dashboard curve and the headline number agree by
+// construction.
 func RollingWeightTrendLevels(weights []float64, dates []string) []*float64 {
 	n := len(weights)
 	levels := make([]*float64, n)
@@ -217,7 +227,7 @@ func RollingWeightTrendLevels(weights []float64, dates []string) []*float64 {
 	}
 
 	for i := 0; i < n; i++ {
-		if i+1 < MinWeightTrendDays {
+		if i+1 < MinTrendCurveDays {
 			continue
 		}
 		slope, intercept := regressionFit(weights[:i+1], offsets[:i+1])

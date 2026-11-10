@@ -16,7 +16,7 @@ const BASE = '/v1'
  * @property {Object} readiness          ReadinessResult
  * @property {Object} weeklyStats        WeeklyStats (legacy dailyLogged/currentStreak)
  * @property {Array<{date: string, weightKg: number}>} weightTrend Raw weigh-ins, oldest→newest
- * @property {Array<number|null>} weightTrendSeries Engine trend level at each weightTrend point, same order; null = fewer than 7 distinct weigh-ins at that date (burn-in), not a missing raw row
+ * @property {Array<number|null>} weightTrendSeries Engine trend level at each weightTrend point, same order; null until the 6th distinct weigh-in (display-curve burn-in), not a missing raw row
  * @property {number} weightTrendKg        Engine fitted trend weight in kg (0 = insufficient data)
  * @property {number} weightRateKgPerWeek  Weekly rate of change in kg (negative = losing)
  * @property {number} trendDays            Days of data backing the trend

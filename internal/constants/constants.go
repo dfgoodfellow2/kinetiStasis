@@ -43,6 +43,12 @@ const (
 	// old name. It means the same thing as MinWeighInsForCheckin.
 	MinBiometricLogsForCheckin = MinWeighInsForCheckin
 
+	// MinTrendCurveDays is the display-curve burn-in: the drawn weight-trend
+	// series starts one weigh-in earlier than the headline gate (6 distinct
+	// days) so a two-point line exists by the 7th weigh-in. The headline's
+	// 7-day reliability gate is unchanged.
+	MinTrendCurveDays = 6
+
 	// MinCalorieFloor is the absolute minimum daily calorie target that the adaptive
 	// TDEE algorithm will ever recommend, regardless of goal or adjustment.
 	MinCalorieFloor = 1200.0
