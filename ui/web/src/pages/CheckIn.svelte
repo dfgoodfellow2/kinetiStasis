@@ -291,6 +291,39 @@
     }
   }
 
+  // --- Calibration shield ---
+  // Inside the 14-day window the backend caps target moves at ±150 kcal, so the
+  // recommendation already carries the clamped adjustment. This line translates
+  // that gap into the weekly rate the plan implies.
+  //
+  // CheckinPreview has no goal field today (verified against
+  // internal/models/domain.go), so direction wording falls back to the profile
+  // this page already loads. A server that adds goalLabel to the preview wins.
+  function impliedRateLine(p) {
+    if (!p) return ''
+    const current = Number(p.currentCalories)
+    const recommended = Number(p.recommendedCalories)
+    if (!Number.isFinite(current) || !Number.isFinite(recommended)) return ''
+    if (current <= 0 || recommended <= 0) return ''
+    // Preview calories are ints; match the same rounding before comparing.
+    if (Math.round(current) === recommended) return ''
+    const goal = String(p.goalLabel ?? p.goal ?? profile?.goal ?? '').toLowerCase()
+    if (!goal) return ''
+    // 7,700 kcal per kg — the same energy density the TDEE engine uses.
+    const rateKg = (Math.abs(current - recommended) * 7) / 7700
+    if (!(rateKg >= 0.05)) return ''
+    // Weight tiles on this page render through store.units, so mirror it here.
+    // 2.20462 lb/kg matches utils.kgToLbs; kept inline because a weekly rate is
+    // often a few hundredths of a pound and kgToLbs rounds to one decimal.
+    const rate = store.units === 'imperial' ? rateKg * 2.20462 : rateKg
+    const amount = rate.toFixed(2)
+    const neutral = goal.includes('maint')
+    const wording = neutral ? '' : (recommended < current ? ' loss' : ' gain')
+    return `At ${recommended} kcal your planned rate ≈ ${amount} ${weightUnit(store.units)}/wk${wording}`
+  }
+
+  let impliedRate = $derived(impliedRateLine(checkinPreview))
+
   async function loadBodyFat() {
     bfLoading = true
     try {
@@ -693,9 +726,29 @@
         <Card title="Weekly Check-in Preview">
           <div class="space-y-3">
 
-            <!-- Readiness status -->
+            <!-- Readiness status. Strict priority: frozen targets (unreliable
+                 weights) win, then the calibration shield, then ready, then the
+                 locked warning. -->
             <div>
-              {#if checkinPreview.canCheckIn}
+              {#if checkinPreview.canCheckIn && checkinPreview.targetUpdateBlocked}
+                <!-- Targets pinned by the weight-reliability gate: check-in is
+                     allowed (3 weigh-ins), but the model still needs 7 to move
+                     calories without guessing. -->
+                <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3">
+                  <div class="text-amber-300 font-bold">Targets on hold</div>
+                  <div class="text-sm text-amber-200">
+                    Not enough weigh-in history to update targets —
+                    <b>{Math.min(checkinPreview.weighInCount ?? 0, 7)} of 7</b> weigh-ins logged. Keep logging daily.
+                  </div>
+                </div>
+              {:else if checkinPreview.calibrating}
+                <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3">
+                  <div class="text-amber-300 font-bold">Calibrating · day {checkinPreview.calibrationDay} of 14</div>
+                  <div class="text-sm text-amber-200">
+                    Targets move in small steps (±150 kcal) while the engine verifies your trend.
+                  </div>
+                </div>
+              {:else if checkinPreview.canCheckIn}
                 <div class="text-emerald-400 font-semibold">✅ Ready for check-in</div>
               {:else}
                 <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3 text-amber-300 font-semibold">
@@ -703,19 +756,6 @@
                 </div>
               {/if}
             </div>
-
-            <!-- Targets pinned by the weight-reliability gate: check-in is
-                 allowed (3 weigh-ins), but the model still needs 7 to move
-                 calories without guessing. -->
-            {#if checkinPreview.canCheckIn && checkinPreview.targetUpdateBlocked}
-              <div class="bg-amber-900/50 border border-amber-500 rounded-lg p-3">
-                <div class="text-amber-300 font-bold">Targets on hold</div>
-                <div class="text-sm text-amber-200">
-                  Not enough weigh-in history to update targets —
-                  <b>{Math.min(checkinPreview.weighInCount ?? 0, 7)} of 7</b> weigh-ins logged. Keep logging daily.
-                </div>
-              </div>
-            {/if}
 
             <!-- Low-confidence clamp warning -->
             {#if checkinPreview.lowConfidenceWarning}
@@ -735,6 +775,9 @@
                   <span class="text-[10px] uppercase tracking-wide bg-emerald-900/60 text-emerald-300 border border-emerald-600 rounded px-2 py-0.5">Scale-verified</span>
                 {:else if checkinPreview.observedTdee > 0}
                   <span class="text-[10px] uppercase tracking-wide bg-gray-600 text-gray-300 border border-gray-500 rounded px-2 py-0.5">Intake-only</span>
+                {/if}
+                {#if checkinPreview.calibrating}
+                  <span class="text-[10px] uppercase tracking-wide bg-gray-800 text-gray-400 border border-gray-600 rounded px-2 py-0.5">calibrating</span>
                 {/if}
                 <InfoTip label="adaptive TDEE" text="Your estimated burn = what you ate − what your weight trend says your body gained or lost (about 7,700 kcal per kg). Needs 7 days of weigh-ins before the weight term is trusted. Until then the estimate is intake-only and targets won't move." />
               </div>
@@ -794,6 +837,9 @@
                   {checkinPreview.calorieAdjustment != null ? (checkinPreview.calorieAdjustment > 0 ? '+' : '') + Math.round(checkinPreview.calorieAdjustment) : '—'} kcal
                 {/if}
               </div>
+              {#if impliedRate}
+                <div class="text-xs text-gray-400 mt-1">{impliedRate}</div>
+              {/if}
             </div>
 
             <!-- Action buttons. Accept is hidden until the weigh-in gate opens,

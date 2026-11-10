@@ -46,6 +46,8 @@ const BASE = '/v1'
  * @property {number} weighInCount         Weight-bearing logs in the lookback window (0 of 7 unlocks nothing)
  * @property {boolean} weightReliable      True once the weight term has 7 weigh-in days
  * @property {boolean} targetUpdateBlocked Suppresses calorie/macro changes at check-in
+ * @property {boolean} calibrating          True inside the 14-day post-first-weigh-in shield while a real update is allowed
+ * @property {number} calibrationDay       1-based day inside that window (0 outside it); targets move at most ±150 kcal
  * @property {string} warning              Human-readable reason when a gate is closed
  *
  * @typedef {Object} CheckinHistoryEntry

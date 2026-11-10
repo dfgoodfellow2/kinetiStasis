@@ -1,17 +1,25 @@
 <script>
+  import InfoTip from './InfoTip.svelte'
+
   // Hand-rolled SVG line chart — intentionally no chart library, matching
   // the lightweight style of WeightSparkline.
   //
   // History rows (GET /v1/checkin/history):
   //   { checkInDate, observedTdee, tdeeConfidence, lookbackDays, resultingCalories }
   // The endpoint does not guarantee ordering, so sort oldest → newest here.
+  //
+  // Legacy rows were recorded before the engine stored a scale-verified TDEE
+  // and arrive with observedTdee = 0. They are not plotted (a line through
+  // zeros would invent a trend); mixed histories get a footnote instead.
   let { history = [], height = 170 } = $props()
 
   const width = 320
   const pad = { top: 12, right: 14, bottom: 24, left: 46 }
 
+  let allRows = $derived(Array.isArray(history) ? history : [])
+
   let rows = $derived(
-    (Array.isArray(history) ? history : [])
+    allRows
       .filter(r => r && Number.isFinite(Number(r.observedTdee)) && Number(r.observedTdee) > 0)
       .map(r => ({
         date: String(r.checkInDate ?? ''),
@@ -25,6 +33,10 @@
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
   )
+
+  // Rows the trajectory cannot draw: legacy check-ins with no observed TDEE.
+  let legacySkipped = $derived(allRows.length - rows.length)
+  let hasHistory = $derived(allRows.length > 0)
 
   // ── Confidence → visual weight ─────────────────────────────────────────────
   // high → solid dot + full-opacity line, medium → smaller faded dot,
@@ -109,7 +121,11 @@
 
 {#if rows.length === 0}
   <div class="h-24 flex items-center justify-center text-center text-sm text-gray-500 px-4">
-    No check-in history yet. Accept a weekly check-in to start the trajectory.
+    {#if hasHistory}
+      No scale-verified check-ins yet — accept a check-in after 7 weigh-ins to start the trajectory.
+    {:else}
+      No check-in history yet. Accept a weekly check-in to start the trajectory.
+    {/if}
   </div>
 {:else}
   <div class="w-full">
@@ -187,5 +203,12 @@
         <span class="inline-block w-2.5 h-2.5 rounded-full border border-amber-500 bg-gray-900"></span>Low confidence
       </span>
     </div>
+
+    {#if legacySkipped > 0}
+      <div class="flex items-center gap-1 text-[11px] text-gray-500 mt-1 px-1">
+        <span>{legacySkipped} legacy check-in{legacySkipped === 1 ? '' : 's'} skipped — no scale-verified TDEE recorded.</span>
+        <InfoTip label="skipped legacy check-ins" text="Older check-ins were saved before the engine stored an observed TDEE, so they have no scale-verified value to plot. Only engine-calculated rows are drawn here." />
+      </div>
+    {/if}
   </div>
 {/if}

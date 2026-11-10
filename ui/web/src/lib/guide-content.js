@@ -98,6 +98,9 @@ export const guideSections = [
         ]
       },
       'When a target update is allowed, recommendation = current calories + clamp(goal-adjusted observed TDEE − current calories, −500, +500), then floored at 1,200 kcal. The full macro set is recomputed server-side from the final calorie figure, so protein, carbs, fat, fiber, and water always match the stored calories.',
+      'The first 14 days after your first weigh-in are a calibration shield. Targets still move, but by no more than ±150 kcal per check-in while the engine verifies that the trend it measured is real rather than water-weight noise. The badge counts the window for you: “Calibrating · day 3 of 14”.',
+      'That follows the calibration window used in the MacroFactor / Stronger by Science tradition of adaptive TDEE work, which runs 14–30 days of consistent logging before the energy-balance model is trusted with large changes. We deliberately take the short end: two weeks settles the early noise without the opposite failure, where targets never move and people stop logging.',
+      'The shield is not a cage. If the unclamped ideal target is more than 1,200 kcal above your current target — a genuine severe-undereating case — the normal weekly swing is restored for that raise only. A noisy high estimate can never widen a decrease; the backstop only ever lets a real deficit escape the small-step cap.',
       'Skip sends a zero adjustment: the check-in is recorded and targets are left untouched. Either way, a target snapshot is written for the timeline.'
     ]
   },
