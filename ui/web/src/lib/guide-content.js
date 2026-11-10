@@ -205,6 +205,7 @@ export const guideSections = [
       'Prioritize carbs (for runners): if you run 24 km per week or more, protein is set a little lower (1.6 g/kg, or 1.8 g/kg in a deficit) and carbs get a floor of 5 g/kg.',
       'Eat-back exercise: when enabled, calories burned in workouts are added back to that day’s target, so a hard session doesn’t quietly eat into your deficit.',
       'Saved meals and templates remember the description too — applying one stacks its description into the notes field with newlines, so nothing you typed is lost.',
+      'Describe a meal in plain language or attach a photo and let the AI parse it — then move the result into Manual to tweak anything before saving.',
       'Share meal templates with your group so everyone can apply them.',
       {
         tip: 'The priority order is protein first, then fat to its floor, then carbs fill the rest. That’s exactly how the app handles low calories.'

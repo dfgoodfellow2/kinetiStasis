@@ -615,6 +615,31 @@
     }
   }
 
+  // Move a successful AI parse into the manual form so the user can review and
+  // tweak before saving. Date and water are deliberately left untouched: the
+  // parse carries neither, and the manual date is whichever day is selected.
+  // Notes merge (never overwrite) so parser flags stack on anything typed.
+  function transferToManual() {
+    const r = aiResult
+    if (!r) return
+    form = {
+      ...form,
+      calories: String(r.calories ?? ''),
+      proteinG: String(r.proteinG ?? ''),
+      carbsG: String(r.carbsG ?? ''),
+      fatG: String(r.fatG ?? ''),
+      fiberG: String(r.fiberG ?? 0),
+      mealNotes: appendNote(form.mealNotes, r.mealNotes),
+    }
+    // Reset the AI tab so returning to it starts clean.
+    aiText = ''
+    aiImage = null
+    aiResult = null
+    error = ''
+    success = 'Moved to Manual — review and save'
+    mode = 'manual'
+  }
+
   async function saveParsed() {
     if (!aiResult) return
     try {
@@ -1040,8 +1065,15 @@
       {#if aiResult}
         <Card title="Parsed Result">
           <pre class="whitespace-pre-wrap">{JSON.stringify(aiResult, null, 2)}</pre>
-            <div class="flex space-x-2 mt-2">
+          <div class="flex space-x-2 mt-2">
             <button class="btn-primary" onclick={saveParsed}>Save</button>
+            <button
+              class="border border-cyan-500 text-cyan-300 hover:bg-cyan-500/10 px-3 py-2 rounded-lg"
+              onclick={transferToManual}
+              disabled={!aiResult}
+            >
+              → Edit in Manual
+            </button>
             <button class="bg-gray-700 px-3 py-2 rounded-lg" onclick={() => aiResult = null}>Discard</button>
           </div>
         </Card>
