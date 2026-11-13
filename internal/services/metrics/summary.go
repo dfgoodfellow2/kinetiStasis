@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 )
 
@@ -75,58 +76,102 @@ func TodaySummary(date string, logs []models.NutritionLog, targets models.Target
 	}
 }
 
+// weeklyWindowDays is the inclusive length of the weekly stats window: today
+// plus the six preceding calendar days. Callers must not shrink their query
+// window to match it, because the same inputs also feed the 30-day streak
+// block below. It aliases the shared constant so the dashboard handler cannot
+// drift from this package.
+const weeklyWindowDays = constants.WeeklyStatsWindowDays
+
+// inWeeklyWindow reports whether a YYYY-MM-DD date belongs to the inclusive
+// window [weekStart, today]. Dates in that format sort lexicographically, so a
+// plain string comparison is exact. An empty weekStart (unparseable today)
+// deliberately accepts every date, preserving the old unfiltered behaviour
+// instead of silently returning zeroes.
+func inWeeklyWindow(date, weekStart, today string) bool {
+	if weekStart == "" {
+		return true
+	}
+	return date >= weekStart && date <= today
+}
+
 // WeeklyStats summarizes last 7 days with 30-day logging streak data
 // today is the client's local date in YYYY-MM-DD format (used to avoid UTC mismatch)
+//
+// Window ownership: the 7-day metrics (nutrition averages, biometric averages,
+// workout count, and MWV total) are filtered here to [today-6, today], so the
+// caller is expected to pass the full 30-day slices. Passing 30-day data keeps
+// the streak block able to see a 30-day history; the weekly figures are
+// narrowed internally so the numbers always match the "Weekly Stats" card
+// regardless of how wide a slice the caller supplies. Previously the caller
+// passed a 30-day workout slice straight into TotalWorkouts, while the card
+// claimed a week.
 func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.BiometricLog, workouts []models.WorkoutEntry, today string) models.WeeklyStats {
 	ws := models.WeeklyStats{}
 
+	// Parse the caller-supplied today (YYYY-MM-DD) once: both the 7-day metric
+	// window and the 30-day streak window key off it, and parsing here (rather
+	// than depending on the handler) keeps the two windows consistent.
+	todayTime, parseErr := time.Parse(constants.DateFormat, today)
+
+	weekStart := ""
+	if parseErr == nil {
+		weekStart = todayTime.AddDate(0, 0, -(weeklyWindowDays - 1)).Format(constants.DateFormat)
+	}
+
 	// 7-day averages from nutrition
-	if len(nutritionLogs) > 0 {
-		sumC, sumP := 0.0, 0.0
-		for _, l := range nutritionLogs {
-			sumC += l.Calories
-			sumP += l.ProteinG
+	sumC, sumP, countNutrition := 0.0, 0.0, 0
+	for _, l := range nutritionLogs {
+		if !inWeeklyWindow(l.Date, weekStart, today) {
+			continue
 		}
-		ws.AvgCalories = sumC / float64(len(nutritionLogs))
-		ws.AvgProteinG = sumP / float64(len(nutritionLogs))
+		sumC += l.Calories
+		sumP += l.ProteinG
+		countNutrition++
+	}
+	if countNutrition > 0 {
+		ws.AvgCalories = sumC / float64(countNutrition)
+		ws.AvgProteinG = sumP / float64(countNutrition)
 	}
 
-	// 7-day workouts
-	ws.TotalWorkouts = len(workouts)
-	totalMWV := 0.0
+	// 7-day workouts: count and MWV must both reflect the same window the
+	// card advertises, so out-of-window entries contribute to neither.
 	for _, w := range workouts {
-		totalMWV += w.MWV
+		if !inWeeklyWindow(w.Date, weekStart, today) {
+			continue
+		}
+		ws.TotalWorkouts++
+		ws.TotalMWV += w.MWV
 	}
-	ws.TotalMWV = totalMWV
 
-	// biometrics: avg sleep and weight
-	if len(biometrics) > 0 {
-		sumSleep, sumWeight := 0.0, 0.0
-		countSleep, countWeight := 0, 0
-		for _, b := range biometrics {
-			if b.SleepHours > 0 {
-				sumSleep += b.SleepHours
-				countSleep++
-			}
-			if b.WeightKg > 0 {
-				sumWeight += b.WeightKg
-				countWeight++
-			}
+	// biometrics: avg sleep and weight over the same 7-day window
+	sumSleep, sumWeight := 0.0, 0.0
+	countSleep, countWeight := 0, 0
+	for _, b := range biometrics {
+		if !inWeeklyWindow(b.Date, weekStart, today) {
+			continue
 		}
-		if countSleep > 0 {
-			ws.AvgSleepHours = sumSleep / float64(countSleep)
+		if b.SleepHours > 0 {
+			sumSleep += b.SleepHours
+			countSleep++
 		}
-		if countWeight > 0 {
-			ws.AvgWeightKg = sumWeight / float64(countWeight)
+		if b.WeightKg > 0 {
+			sumWeight += b.WeightKg
+			countWeight++
 		}
+	}
+	if countSleep > 0 {
+		ws.AvgSleepHours = sumSleep / float64(countSleep)
+	}
+	if countWeight > 0 {
+		ws.AvgWeightKg = sumWeight / float64(countWeight)
 	}
 
 	// 30-day logging streak calculation
-	// Check all data sources (biometrics, nutrition, workouts) for the last 30 days
-	// Parse the caller-supplied today (YYYY-MM-DD) so streaks are computed relative to the
-	// same local date the front-end / handler is using.
-	todayTime, _ := time.Parse("2006-01-02", today)
-	thirtyDaysAgo := todayTime.AddDate(0, 0, -30).Format("2006-01-02")
+	// Check all data sources (biometrics, nutrition, workouts) for the last 30 days.
+	// These blocks intentionally use the full input slices, not the 7-day
+	// filtered view, so streaks can span the whole 30-day history.
+	thirtyDaysAgo := todayTime.AddDate(0, 0, -30).Format(constants.DateFormat)
 
 	// Build maps of dates that have data
 	bioDates := make(map[string]bool)
@@ -156,7 +201,7 @@ func WeeklyStats(nutritionLogs []models.NutritionLog, biometrics []models.Biomet
 
 	for i := 0; i < 30; i++ {
 		day := todayTime.AddDate(0, 0, -29+i) // -29 to get 30 days ending today
-		dateStr := day.Format("2006-01-02")
+		dateStr := day.Format(constants.DateFormat)
 
 		// Check if ANY data was logged that day
 		hasData := bioDates[dateStr] || nutDates[dateStr] || workoutDates[dateStr]

@@ -25,6 +25,12 @@ const (
 	// when computing the readiness score.
 	DefaultReadinessLookbackDays = 30
 
+	// WeeklyStatsWindowDays is the inclusive length of the dashboard's weekly
+	// stats window: today plus the six preceding calendar days. Because the
+	// window is inclusive, the first day is today-(WeeklyStatsWindowDays-1);
+	// subtracting the full length would span one extra day.
+	WeeklyStatsWindowDays = 7
+
 	// DefaultExportLookbackDays is the default date range (in days back from today)
 	// applied when no "from" query param is provided on export endpoints.
 	DefaultExportLookbackDays = 30

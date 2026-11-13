@@ -328,9 +328,11 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// Frontend passes ?date=YYYY-MM-DD reflecting the user's local calendar day.
 	today := requestDate(r)
 
-	// Derive lookback windows relative to the resolved today
+	// Derive lookback windows relative to the resolved today.
+	// since7 is the first day of an inclusive 7-calendar-day window ending on
+	// today: [today-6, today]. Subtracting 7 here would span 8 days.
 	todayTime, _ := time.Parse(constants.DateFormat, today)
-	since7 := todayTime.AddDate(0, 0, -7).Format(constants.DateFormat)
+	since7 := todayTime.AddDate(0, 0, -(constants.WeeklyStatsWindowDays - 1)).Format(constants.DateFormat)
 	since30 := todayTime.AddDate(0, 0, -constants.DefaultReadinessLookbackDays).Format(constants.DateFormat)
 	since90 := todayTime.AddDate(0, 0, -constants.DefaultTDEELookbackDays).Format(constants.DateFormat)
 
@@ -409,32 +411,17 @@ func (h *CalcHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	readinessRes.VelocityTrend = velTrend
 	readinessRes.VelocityDelta = velDelta
 
-	// weekly stats: filter to last 7 days
-	var nut7 []models.NutritionLog
-	for _, n := range nut90 {
-		if n.Date >= since7 {
-			nut7 = append(nut7, n)
-		}
-	}
-	// Filter to last 30 days for streak calculation
+	// Filter nutrition to the 30-day window for the weekly stats' streak map.
 	var nut30 []models.NutritionLog
 	for _, n := range nut90 {
 		if n.Date >= since30 {
 			nut30 = append(nut30, n)
 		}
 	}
-	var bio7 []models.BiometricLog
-	for _, b := range bio30 {
-		if b.Date >= since7 {
-			bio7 = append(bio7, b)
-		}
-	}
-	var workouts7filtered []models.WorkoutEntry
-	for _, w := range workouts7 {
-		if w.Date >= since7 {
-			workouts7filtered = append(workouts7filtered, w)
-		}
-	}
+	// weekly stats: the 7-day metrics are narrowed inside metrics.WeeklyStats
+	// from the 30-day slices below, which it also needs for the 30-day streak
+	// map. Passing workouts30 used to inflate TotalWorkouts/TotalMWV beyond the
+	// week the card advertises, so the window is now owned in one place.
 	weekly := metrics.WeeklyStats(nut30, bio30, workouts30, today)
 	todaySummary := metrics.TodaySummary(today, nut90, targets)
 
