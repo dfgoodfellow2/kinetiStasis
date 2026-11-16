@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { api } from '../lib/api.js'
   import { store, setCurrentPage, setEditData, clearEditData } from '../lib/stores.svelte.js'
-  import { daysAgo, today, fmt0, fmt1, dispWeight, weightUnit, dispLength, lengthUnit, dispLoad, loadUnit, dispDist, distUnit } from '../lib/utils.js'
+  import { daysAgo, today, fmt0, fmt1, dispWeight, weightUnit, dispLength, lengthUnit, dispLoad, loadUnit, lbsToKg, dispDist, distUnit } from '../lib/utils.js'
   import Spinner from '../components/Spinner.svelte'
 
   let tab = $state('nutrition')
@@ -321,28 +321,62 @@
                   <td class="pr-4 text-gray-400">
                     {#if w.exercises && w.exercises.length > 0}
                       {w.exercises.map(e => {
-                        const sets = e.sets?.length || 0
-                        const reps = e.sets?.[0]?.reps || 0
+                        const sets = Array.isArray(e.sets) ? e.sets : []
+                        if (sets.length === 0) return e.name
+
+                        const repsList = sets.map(s => Number(s.reps) || 0)
+                        const loadKgList = sets.map(s => {
+                          const kg = Number(s.loadKg) || 0
+                          if (kg > 0) return kg
+                          const lbs = Number(s.loadLbs) || 0
+                          return lbs > 0 ? lbsToKg(lbs) : 0
+                        })
+                        const uniformReps = repsList.every(r => r === repsList[0])
+                        const uniformLoads = loadKgList.every(kg => kg === loadKgList[0])
+                        const positiveLoads = loadKgList.filter(kg => kg > 0)
 
                         // Build duration fallback chain:
-                        // 1. Check exercise-level duration first (e.durationRaw or e.duration)
-                        // 2. If reps <= 0 (duration-based exercise) and workout has only 1 exercise,
-                        //    fall back to workout duration (since it's the same as exercise duration)
-                        // Prefer camelCase fields returned by the API
+                        // 1. Exercise-level duration (e.durationRaw or e.duration)
+                        // 2. When the exercise is timed (no reps) and the session
+                        //    holds only this exercise, the session duration
+                        // Prefer camelCase fields returned by the API.
                         const exerciseDuration = e.durationRaw || e.duration
-                        const workoutHasOneExercise = w.exercises && w.exercises.length === 1
-                        const shouldUseWorkoutDuration = reps <= 0 && !exerciseDuration && workoutHasOneExercise && w.durationMin
-                        const hasDuration = exerciseDuration || (shouldUseWorkoutDuration ? `${w.durationMin} min` : '')
+                        const soloSession = w.exercises.length === 1
+                        const hasDuration = exerciseDuration ||
+                          (soloSession && w.durationMin ? `${w.durationMin} min` : '')
 
-                        if (sets > 0) {
-                          if (reps <= 0 && hasDuration) {
-                            return `${sets}×${hasDuration} ${e.name}`
+                        // One load when every set matches; a range when they
+                        // differ. Bodyweight / unloaded sets get no suffix.
+                        let loadText = ''
+                        if (positiveLoads.length > 0) {
+                          const unit = loadUnit(store.units)
+                          if (uniformLoads) {
+                            loadText = ` @ ${dispLoad(positiveLoads[0], store.units)} ${unit}`
                           } else {
-                            return `${sets}×${reps} ${e.name}`
+                            const min = Math.min(...positiveLoads)
+                            const max = Math.max(...positiveLoads)
+                            loadText = ` @ ${dispLoad(min, store.units)}–${dispLoad(max, store.units)} ${unit}`
                           }
-                        } else {
-                          return e.name
                         }
+
+                        // Identical sets keep the compact "N×reps"; a varied
+                        // scheme is shown in full ("N sets · 10/8/6") so a
+                        // pyramid is never flattened to its first rep count.
+                        let volumeText
+                        if (uniformReps) {
+                          if (repsList[0] > 0) volumeText = `${sets.length}×${repsList[0]}`
+                          else if (hasDuration) volumeText = `${sets.length}×${hasDuration}`
+                          else volumeText = `${sets.length} sets`
+                        } else {
+                          // A zero-rep (timed) set shows its duration in place
+                          // of a rep count, falling back to an em dash.
+                          const shown = repsList
+                            .map(r => r > 0 ? String(r) : (hasDuration || '—'))
+                            .join('/')
+                          volumeText = `${sets.length} sets · ${shown}`
+                        }
+
+                        return `${volumeText} ${e.name}${loadText}`
                       }).join(', ')}
                     {:else}
                       —

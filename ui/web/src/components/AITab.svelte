@@ -102,6 +102,15 @@
       groupStyle:  e.groupStyle   || '',
       targetHrZone: e.targetHrZone ?? '',
       hrZoneTime:  e.hrZoneTime   || null,
+      // Carry the full parsed sets array through to save; WorkoutLog renders
+      // one editable row per set, so a 10/8/6 pyramid survives.
+      _sets: setsArr.map(s => ({
+        reps: s.reps ?? 0,
+        loadKg: s.loadKg ?? 0,
+        loadLbs: s.loadLbs ?? 0,
+        tutSeconds: s.tutSeconds ?? 0,
+        restSeconds: s.restSeconds ?? 0,
+      })),
     }
   }
 </script>

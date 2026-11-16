@@ -247,6 +247,7 @@ export const guideSections = [
       'RPE is your rate of perceived exertion, from 1 to 10. Think of 1 as barely moving, 5 as working but comfortable, 7 as hard but sustainable, 9 as one rep left, and 10 as everything you have. Be honest; it’s a better input than a guess.',
       'Leave calories at 0 and the app estimates the burn from METs and your recent bodyweight. If you know the number from a watch, enter it and the app will use yours.',
       'You can type a session, paste YAML for a preplanned workout, or describe it in plain language and let the AI parse it.',
+      'Each exercise keeps its full set scheme: the YAML parser accepts per-set reps and loads (`set_reps` and `set_loads`), and the editor shows one editable row per set — so a 10/8/6 pyramid or a ramp from 100 to 110 kg survives a save instead of being flattened to one rep count.',
       'Implausible numbers from the model are auto-clamped, and anything uncertain is flagged in the meal notes for your review.',
       {
         tip: 'Always review a parsed session before saving. AI is a fast typist, not a coach. And log the session you actually did, not the one you planned.'
@@ -255,7 +256,8 @@ export const guideSections = [
     underTheHood: [
       'Session identity is date + slot. Saving is an upsert, so re-saving the same date/slot updates that session.',
       'Calories: MET × bodyweight (kg) × duration (hours), using the average of the session’s per-exercise MET values (fallback 4.0 METs if none are supplied). On save with calories = 0, the server estimates from your most recent weight. METs can come from an explicit value, RPE (9–10 → 8, 7–8 → 6, 5–6 → 5, below 5 → 4), or an exercise-name lookup.',
-      'Each saved session keeps its date, slot, title, duration, exercises, RPE, and calorie estimate, so your workout history is a plain record you can browse and export.'
+      'Each saved session keeps its date, slot, title, duration, exercises, RPE, and calorie estimate, so your workout history is a plain record you can browse and export.',
+      'Per-set YAML overrides live on an exercise as inline arrays: `set_reps: [10, 8, 6]` and `set_loads: [100kg, 105kg, 110kg]`. Bare numbers use your display unit (kg metric, lbs imperial); kg/lb/lbs suffixes are honoured per value. The lists merge over the exercise’s flat `sets`/`reps`/`load` defaults — and a list longer than `sets` grows the set count — so the session stores one ExerciseSet per entry. Inline arrays are required: the line parser would read a block sequence ("- 10") as the start of a new exercise.'
     ]
   },
   {

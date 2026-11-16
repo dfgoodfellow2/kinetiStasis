@@ -3,7 +3,7 @@
   import { store, clearEditData } from '../lib/stores.svelte.js'
   import { onMount } from 'svelte'
   import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
-  import { today, dispLoad, loadUnit, inputLoad, distUnit, inputDist, elevUnit, inputElev } from '../lib/utils.js'
+  import { today, dispLoad, loadUnit, inputLoad, kgToLbs, lbsToKg, distUnit, inputDist, elevUnit, inputElev } from '../lib/utils.js'
   import Alert from '../components/Alert.svelte'
   import AITab from '../components/AITab.svelte'
   import YAMLTab from '../components/YAMLTab.svelte'
@@ -59,6 +59,9 @@
   let parseReady = $state(false)
 
   function onParsed() {
+    // AITab/YAMLTab emit canonical sets (loadKg/loadLbs); convert them into
+    // editable rows so the per-set editor shows the parsed detail.
+    workout.exercises = workout.exercises.map(normalizeExerciseSets)
     parseReady = true
   }
 
@@ -79,6 +82,106 @@
 
   function removeExercise(idx) {
     workout = { ...workout, exercises: workout.exercises.filter((_, i) => i !== idx) }
+  }
+
+  // ── Per-set editor helpers ────────────────────────────────
+  // A row stores the display string the user typed plus the canonical
+  // storage values, so editing one row never touches the others.
+  function storedSetRow(s) {
+    const loadKg = Number(s?.loadKg) || 0
+    const loadLbs = Number(s?.loadLbs) || (loadKg > 0 ? kgToLbs(loadKg) : 0)
+    const load = typeof s?.load === 'string' && s.load !== ''
+      ? s.load
+      : (loadKg > 0 ? String(dispLoad(loadKg, store.units)) : '')
+    return {
+      reps: s?.reps ? String(s.reps) : '',
+      load,
+      loadKg,
+      loadLbs,
+      tutSeconds: Number(s?.tutSeconds) || 0,
+      restSeconds: Number(s?.restSeconds) || 0,
+    }
+  }
+
+  // Seed a new row from the flat (quick) fields when no rows exist yet.
+  function flatSetRow(ex) {
+    const raw = String(ex?.weightLbs ?? '').trim()
+    const loadKg = raw ? (inputLoad(parseLoad(raw), store.units) || 0) : 0
+    return {
+      reps: ex?.reps !== '' && ex?.reps !== null && ex?.reps !== undefined ? String(ex.reps) : '',
+      load: raw,
+      loadKg,
+      loadLbs: loadKg > 0 ? kgToLbs(loadKg) : 0,
+      tutSeconds: 0,
+      restSeconds: 0,
+    }
+  }
+
+  function normalizeExerciseSets(ex) {
+    const sets = Array.isArray(ex?._sets) ? ex._sets : []
+    return { ...blankExercise(), ...ex, _sets: sets.map(storedSetRow) }
+  }
+
+  // Only a change to the SET COUNT restructures rows (add/remove trailing
+  // sets, preserving values already entered). Editing reps or load never
+  // flattens the array.
+  function syncSetCount(ex, rawCount) {
+    const n = Math.max(0, Math.floor(Number(rawCount) || 0))
+    const rows = Array.isArray(ex._sets) ? ex._sets.slice() : []
+    if (n === rows.length) return
+    if (n < rows.length) {
+      ex._sets = rows.slice(0, n)
+      return
+    }
+    const seed = rows.length > 0 ? rows[rows.length - 1] : flatSetRow(ex)
+    while (rows.length < n) rows.push({ ...seed })
+    ex._sets = rows
+  }
+
+  function addSet(ex) {
+    const rows = Array.isArray(ex._sets) ? ex._sets.slice() : []
+    const seed = rows.length > 0 ? rows[rows.length - 1] : flatSetRow(ex)
+    rows.push({ ...seed })
+    ex._sets = rows
+    ex.sets = String(rows.length)
+  }
+
+  function removeSet(ex, i) {
+    const rows = Array.isArray(ex._sets) ? ex._sets.slice() : []
+    rows.splice(i, 1)
+    ex._sets = rows
+    ex.sets = rows.length > 0 ? String(rows.length) : ''
+  }
+
+  // The flat reps/load fields act as "apply to every set" shortcuts; they
+  // never discard per-set rows.
+  function applyRepsToAll(ex, value) {
+    ex.reps = value
+    if (Array.isArray(ex._sets) && ex._sets.length > 0) {
+      ex._sets = ex._sets.map((s) => ({ ...s, reps: value }))
+    }
+  }
+
+  function applyLoadToAll(ex, value) {
+    ex.weightLbs = value
+    const loadKg = String(value ?? '').trim() ? (inputLoad(parseLoad(value), store.units) || 0) : 0
+    if (Array.isArray(ex._sets) && ex._sets.length > 0) {
+      ex._sets = ex._sets.map((s) => ({
+        ...s,
+        load: value,
+        loadKg,
+        loadLbs: loadKg > 0 ? kgToLbs(loadKg) : 0,
+      }))
+    }
+  }
+
+  function updateSetLoad(ex, i, value) {
+    const row = ex._sets?.[i]
+    if (!row) return
+    const loadKg = String(value ?? '').trim() ? (inputLoad(parseLoad(value), store.units) || 0) : 0
+    row.load = value
+    row.loadKg = loadKg
+    row.loadLbs = loadKg > 0 ? kgToLbs(loadKg) : 0
   }
 
   // Draft the manual workout form fields (never image/base64 payloads).
@@ -141,19 +244,28 @@
           coachNotes:    workout.coachNotes   || '',
         },
         exercises: workout.exercises.map(ex => {
-          // If we have preserved _sets from a parse result, use them directly
-          // Otherwise build sets array from flat form fields
+          // Editing rows are the source of truth: emit one real set per row,
+          // so a 10/8/6 pyramid is stored as three different sets.
           let sets
-           if (Array.isArray(ex._sets) && ex._sets.length > 0) {
-            // sanitize preserved _sets to match ExerciseSet model (camelCase)
-            sets = ex._sets.map(s => ({
-              reps: s.reps || 0,
-              loadKg: s.loadKg || 0,
-              loadLbs: s.loadLbs || 0,
-              tutSeconds: s.tutSeconds || 0,
-              restSeconds: s.restSeconds || 0,
-            }))
-            } else {
+          if (Array.isArray(ex._sets) && ex._sets.length > 0) {
+            sets = ex._sets.map(s => {
+              const reps = Number(s.reps) || 0
+              const loadKg = Number(s.loadKg) || 0
+              // Recompute TUT from tempo only when the row carries none.
+              let tutSeconds = Number(s.tutSeconds) || 0
+              if (tutSeconds <= 0 && ex.tempo && reps > 0) {
+                tutSeconds = ex.tempo.split('-').map(Number).filter(n => !isNaN(n)).reduce((a, b) => a + b, 0) * reps
+              }
+              return {
+                reps,
+                loadKg,
+                loadLbs: loadKg > 0 ? kgToLbs(loadKg) : (Number(s.loadLbs) || 0),
+                tutSeconds,
+                restSeconds: Number(s.restSeconds) || 0,
+              }
+            })
+          } else {
+            // No rows: fall back to the quick fields, one set each.
             const n = Number(ex.sets) || 1
             const reps = Number(ex.reps) || 0
             const loadNum = parseLoad(ex.weightLbs)
@@ -169,29 +281,29 @@
               restSeconds: 0,
             }))
           }
-            return {
-               name:         ex.name     || '',
-               category:     ex.pattern  || '',
-               bias:         ex.bias     || '',
-               tempo:        ex.tempo    || '',
-               sets,
-               rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
-               loadRaw:      ex.weightLbs || '',
-               durationRaw:  ex.duration || '',
-               distanceKm:   ex.distanceKm !== '' ? inputDist(ex.distanceKm, store.units) : 0,
-               elevationM:   ex.elevationM !== '' ? inputElev(ex.elevationM, store.units) : 0,
-               pace:         ex.pace || '',
-               phase:        ex.phase || '',
-               groupId:      ex.groupId || '',
-               groupOrder:   Number(ex.groupOrder) || 0,
-               groupStyle:   ex.groupStyle || '',
-               targetHrZone: Number(ex.targetHrZone) || 0,
-               hrZoneTime:   ex.hrZoneTime || null,
-               metValue:     Number(ex.met) || 0,
-               notes:        ex.notes || '',
-               surface:      ex.surface || '',
-             }
-         }),
+          return {
+            name:         ex.name     || '',
+            category:     ex.pattern  || '',
+            bias:         ex.bias     || '',
+            tempo:        ex.tempo    || '',
+            sets,
+            rpe:          ex.rpe !== '' ? Number(ex.rpe) : 0,
+            loadRaw:      ex.weightLbs || '',
+            durationRaw:  ex.duration || '',
+            distanceKm:   ex.distanceKm !== '' ? inputDist(ex.distanceKm, store.units) : 0,
+            elevationM:   ex.elevationM !== '' ? inputElev(ex.elevationM, store.units) : 0,
+            pace:         ex.pace || '',
+            phase:        ex.phase || '',
+            groupId:      ex.groupId || '',
+            groupOrder:   Number(ex.groupOrder) || 0,
+            groupStyle:   ex.groupStyle || '',
+            targetHrZone: Number(ex.targetHrZone) || 0,
+            hrZoneTime:   ex.hrZoneTime || null,
+            metValue:     Number(ex.met) || 0,
+            notes:        ex.notes || '',
+            surface:      ex.surface || '',
+          }
+        }),
       }
       await api.postWorkout(payload)
       success = 'Workout saved!'
@@ -220,11 +332,16 @@
       .reduce((a, b) => a + b, 0)
   }
 
-  function computeTUT(tempo, reps, sets) {
-    if (!tempo) return null
-    const parts = String(tempo).split('-').map(Number)
+  function tutSummary(ex) {
+    if (!ex.tempo) return null
+    const parts = String(ex.tempo).split('-').map(Number)
     if (parts.length < 2 || parts.some(isNaN)) return null
-    return parts.reduce((a, b) => a + b, 0) * (Number(reps) || 0) * (Number(sets) || 0)
+    const perRep = parts.reduce((a, b) => a + b, 0)
+    const totalReps = (Array.isArray(ex._sets) && ex._sets.length > 0)
+      ? ex._sets.reduce((acc, s) => acc + (Number(s.reps) || 0), 0)
+      : (Number(ex.reps) || 0) * (Number(ex.sets) || 0)
+    const tut = perRep * totalReps
+    return tut > 0 ? tut : null
   }
 
   function epleyPct(load, reps) {
@@ -234,14 +351,18 @@
   }
 
   function exerciseLine(ex) {
-    // sets/reps: prefer _sets array length if available
-    const sets = (Array.isArray(ex._sets) && ex._sets.length > 0)
-      ? ex._sets.length
-      : (Number(ex.sets) || 0)
-    const reps = (Array.isArray(ex._sets) && ex._sets[0])
-      ? ex._sets[0].reps
-      : (Number(ex.reps) || 0)
-    const load = ex.weightLbs || ''
+    const hasRows = Array.isArray(ex._sets) && ex._sets.length > 0
+    const rowReps = hasRows ? ex._sets.map(s => Number(s.reps) || 0) : []
+    const sets = hasRows ? ex._sets.length : (Number(ex.sets) || 0)
+    const reps = hasRows ? (rowReps[0] || 0) : (Number(ex.reps) || 0)
+    // Show the real rep scheme: "10" when uniform, "10/8/6" when it varies.
+    const repsText = hasRows && rowReps.some(r => r !== reps)
+      ? rowReps.join('/')
+      : reps
+    // Load: the quick field wins, else the heaviest per-set load.
+    const setLoads = hasRows ? ex._sets.map(s => Number(s.loadKg) || 0).filter(v => v > 0) : []
+    const load = ex.weightLbs
+      || (setLoads.length > 0 ? `${dispLoad(Math.max(...setLoads), store.units)} ${loadUnit(store.units)}` : '')
     const loadNum = parseLoad(load)
 
     // Build duration fallback chain similar to History view:
@@ -253,14 +374,17 @@
     const shouldUseWorkoutDuration = reps <= 0 && !durationValue && workoutHasOneExercise && workout.durationMin
     const hasDuration = durationValue || (shouldUseWorkoutDuration ? `${workout.durationMin} min` : '')
     // Priority: duration if reps <= 0, else reps
-    const displayValue = (reps <= 0 && hasDuration) ? durationValue : reps
+    const displayValue = (reps <= 0 && hasDuration) ? durationValue : repsText
     let base = `${ex.name || 'Exercise'}: ${sets}×${displayValue}`
     if (load) base += ` @ ${load}`
 
     const extras = []
-    const tut = computeTUT(ex.tempo, reps, sets)
-    if (tut) extras.push(`TUT: ${tut}s`)
-    const vol = loadNum > 0 ? Math.round(loadNum * (reps > 0 ? reps : 1) * sets) : 0
+    const tut = tutSummary(ex)
+    if (tut) extras.push(`TUT: ${Math.round(tut)}s`)
+    const totalReps = hasRows
+      ? rowReps.reduce((a, r) => a + r, 0)
+      : (reps > 0 ? reps : 1) * sets
+    const vol = loadNum > 0 ? Math.round(loadNum * totalReps) : 0
     if (vol > 0) extras.push(`vol: ${vol}`)
     const pct = epleyPct(loadNum, reps)
     if (pct) extras.push(`${pct}%1RM`)
@@ -354,10 +478,12 @@
           surface: ex.surface || '',
           notes: ex.notes || '',
           
-          // Strength: sets/reps/weight
+          // Strength: sets/reps/weight (quick fields; rows carry the real sets)
           sets: exerciseSets.length > 0 ? String(exerciseSets.length) : '',
           reps: firstExerciseSet.reps ? String(firstExerciseSet.reps) : '',
-          weightLbs: firstExerciseSet.loadLbs ? String(Math.round(firstExerciseSet.loadLbs)) : '',
+          weightLbs: firstExerciseSet.loadKg
+            ? String(dispLoad(firstExerciseSet.loadKg, store.units))
+            : (firstExerciseSet.loadLbs ? String(Math.round(firstExerciseSet.loadLbs)) : ''),
           
           // Conditioning: distance/elevation/pace/duration (JSON uses snake_case)
           distanceKm: ex.distanceKm ?? '',
@@ -385,15 +511,9 @@
           surface:      ex.surface      || '',
           met:          ex.metValue     ?? '',
 
-          // _sets array preserves all set data for save
-           _sets: exerciseSets.map(s => ({
-            loadKg: s.loadKg ?? 0,
-            loadLbs: s.loadLbs ?? 0,
-            reps: s.reps || 0,
-            // Preserve TUT/rest so editing a parsed workout never zeroes them.
-            tutSeconds: s.tutSeconds ?? 0,
-            restSeconds: s.restSeconds ?? 0,
-          }))
+          // _sets array preserves every set (reps + load per set) for the
+          // per-set editor and the save path.
+          _sets: exerciseSets.map(storedSetRow)
         }
       })
 
@@ -409,11 +529,7 @@
           ...blankWorkout(),
           ...draft,
           exercises: Array.isArray(draft.exercises)
-            ? draft.exercises.map((ex) => ({
-                ...blankExercise(),
-                ...(ex && typeof ex === 'object' ? ex : {}),
-                _sets: Array.isArray(ex?._sets) ? ex._sets : [],
-              }))
+            ? draft.exercises.map((ex) => normalizeExerciseSets(ex))
             : [],
         }
         draftRestored = true
@@ -592,19 +708,22 @@
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-sets">Sets</label>
-            <input class="input" id="ex-{idx}-sets" type="number" bind:value={ex.sets} oninput={() => ex._sets = []} />
+            <input class="input" id="ex-{idx}-sets" type="number" min="0" value={ex.sets}
+              oninput={(e) => { ex.sets = e.currentTarget.value; syncSetCount(ex, e.currentTarget.value) }} />
           </div>
           <div>
-            <label class="text-xs text-gray-400" for="ex-{idx}-reps">Reps</label>
-            <input class="input" id="ex-{idx}-reps" type="number" bind:value={ex.reps} oninput={() => ex._sets = []} />
+            <label class="text-xs text-gray-400" for="ex-{idx}-reps">Reps (all sets)</label>
+            <input class="input" id="ex-{idx}-reps" type="number" min="0" value={ex.reps}
+              oninput={(e) => applyRepsToAll(ex, e.currentTarget.value)} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-duration">Duration (timed)</label>
             <input class="input" id="ex-{idx}-duration" bind:value={ex.duration} placeholder="35 sec" />
           </div>
           <div>
-            <label class="text-xs text-gray-400" for="ex-{idx}-load">Load ({loadUnit(store.units)})</label>
-            <input class="input" id="ex-{idx}-load" bind:value={ex.weightLbs} placeholder="BW / 85 lbs" oninput={() => ex._sets = []} />
+            <label class="text-xs text-gray-400" for="ex-{idx}-load">Load ({loadUnit(store.units)}, all sets)</label>
+            <input class="input" id="ex-{idx}-load" value={ex.weightLbs} placeholder="BW / 85"
+              oninput={(e) => applyLoadToAll(ex, e.currentTarget.value)} />
           </div>
           <div>
             <label class="text-xs text-gray-400" for="ex-{idx}-tempo">Tempo</label>
@@ -681,6 +800,38 @@
             <label class="text-xs text-gray-400" for="ex-{idx}-notes">Notes</label>
             <textarea class="input" id="ex-{idx}-notes" rows="1" placeholder="Exercise notes…" bind:value={ex.notes}></textarea>
           </div>
+        </div>
+        <div class="mt-3 border-t border-gray-600 pt-2">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-gray-400">
+              Set detail — reps and load per set
+              {#if ex._sets && ex._sets.length > 0}({ex._sets.length}){/if}
+            </span>
+            <button type="button" class="text-xs text-emerald-400 hover:text-emerald-300" onclick={() => addSet(ex)}>+ Add set</button>
+          </div>
+          {#if ex._sets && ex._sets.length > 0}
+            <div class="space-y-1">
+              {#each ex._sets as row, sIdx}
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-gray-500 w-6 shrink-0">#{sIdx + 1}</span>
+                  <div class="w-20 shrink-0">
+                    <input class="input" type="number" min="0" placeholder="reps"
+                      aria-label="Set {sIdx + 1} reps" bind:value={row.reps} />
+                  </div>
+                  <div class="w-28 shrink-0">
+                    <input class="input" placeholder={loadUnit(store.units)}
+                      aria-label="Set {sIdx + 1} load"
+                      value={row.load}
+                      oninput={(e) => updateSetLoad(ex, sIdx, e.currentTarget.value)} />
+                  </div>
+                  <button type="button" class="text-xs text-gray-500 hover:text-red-400 px-1"
+                    aria-label="Remove set {sIdx + 1}" onclick={() => removeSet(ex, sIdx)}>✕</button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-xs text-gray-500">No individual sets yet — enter a set count or add a set.</p>
+          {/if}
         </div>
       </div>
     {/each}
