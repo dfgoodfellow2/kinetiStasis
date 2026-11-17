@@ -572,7 +572,7 @@
   <!-- ═══════════════════════ AI TAB ═══════════════════════ -->
   {#if tab === 'ai'}
     <div>
-      <AITab bind:workout={workout} onParsed={onParsed} />
+      <AITab bind:workout={workout} onParsed={onParsed} context="workout" />
       {#if parseReady}
         <div class="border-t border-gray-700 pt-3 space-y-3">
           <p class="text-xs text-gray-400 uppercase">Parsed — edit before saving</p>

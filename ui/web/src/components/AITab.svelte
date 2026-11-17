@@ -2,7 +2,16 @@
   import { api } from '../lib/api.js'
   import { today, lbsToKg } from '../lib/utils.js'
 
-  let { workout = $bindable(), onParsed = () => {} } = $props()
+  // `context` selects the placeholder example. Callers pass 'workout' so the
+  // workout page never advertises the meal example (and vice versa); 'meal'
+  // stays the default for any future food-logging caller.
+  let { workout = $bindable(), onParsed = () => {}, context = 'meal' } = $props()
+
+  const placeholder = $derived(
+    context === 'workout'
+      ? 'Workout: deadlifts 5 sets 10 reps @ 135, 225, 315, 315, 315'
+      : 'Meal: 200g chicken, 1 cup rice, 2 tbsp olive oil'
+  )
 
   let aiRaw = $state('')
   let aiParsed = $state(false)
@@ -132,7 +141,7 @@
     bind:value={aiRaw}
     class="input font-mono text-sm mb-3"
     rows="6"
-    placeholder={"Meal: 200g chicken, 1 cup rice, 2 tbsp olive oil\nWorkout: Bench 135x12, 185x8, 205x6"}
+    placeholder={placeholder}
   ></textarea>
   <button
     onclick={parseAI}
