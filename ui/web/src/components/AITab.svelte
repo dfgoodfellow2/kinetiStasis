@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.js'
-  import { today } from '../lib/utils.js'
+  import { today, lbsToKg } from '../lib/utils.js'
 
   let { workout = $bindable(), onParsed = () => {} } = $props()
 
@@ -103,14 +103,20 @@
       targetHrZone: e.targetHrZone ?? '',
       hrZoneTime:  e.hrZoneTime   || null,
       // Carry the full parsed sets array through to save; WorkoutLog renders
-      // one editable row per set, so a 10/8/6 pyramid survives.
-      _sets: setsArr.map(s => ({
-        reps: s.reps ?? 0,
-        loadKg: s.loadKg ?? 0,
-        loadLbs: s.loadLbs ?? 0,
-        tutSeconds: s.tutSeconds ?? 0,
-        restSeconds: s.restSeconds ?? 0,
-      })),
+      // one editable row per set, so a 10/8/6 pyramid survives. A row that
+      // carries pounds but a zero kg mirror still has a real load, so recover
+      // kg from lbs instead of dropping it.
+      _sets: setsArr.map(s => {
+        const loadKg = Number(s.loadKg) || 0
+        const loadLbs = Number(s.loadLbs) || 0
+        return {
+          reps: s.reps ?? 0,
+          loadKg: loadKg || (loadLbs > 0 ? lbsToKg(loadLbs) : 0),
+          loadLbs,
+          tutSeconds: s.tutSeconds ?? 0,
+          restSeconds: s.restSeconds ?? 0,
+        }
+      }),
     }
   }
 </script>
@@ -126,7 +132,7 @@
     bind:value={aiRaw}
     class="input font-mono text-sm mb-3"
     rows="6"
-    placeholder="Paste meal text or workout description..."
+    placeholder={"Meal: 200g chicken, 1 cup rice, 2 tbsp olive oil\nWorkout: Bench 135x12, 185x8, 205x6"}
   ></textarea>
   <button
     onclick={parseAI}

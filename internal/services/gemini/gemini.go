@@ -17,6 +17,7 @@ import (
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/config"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/units"
 )
 
 const (
@@ -249,7 +250,10 @@ func (c *Client) ParseWorkout(ctx context.Context, text string) (models.ParsedWo
 
 Rules:
 - sets is an ARRAY of set objects, one element per set (repeat identical sets)
-- loadRaw: preserve the original load string ("BW", "35+35 lbs", "50 lbs")
+- every set element MUST carry a numeric loadLbs (use 0 for bodyweight or an unloaded set)
+- when the sets use different loads, put EACH load in its own set element (135, 185, 205 becomes three sets with loadLbs 135, 185 and 205)
+- NEVER put multiple loads in loadRaw: a comma/semicolon list in loadRaw is invalid
+- loadRaw only preserves genuinely ambiguous free text that cannot be split into per-set numbers ("35+35 lbs", "heavy"); when the per-set loads are clear, loadRaw must be ""
 - tutSeconds per set: sum tempo phases × reps, OR duration in seconds for timed sets
 - focus: array of movement patterns with bilateral/unilateral bias e.g. ["Hinge(B)", "Push(U)"]
 - bias: "bilateral" for two-limb movements (B), "unilateral" for single-limb (U), "" if unknown
@@ -287,6 +291,7 @@ func parseWorkoutResponse(respText, text, model string) (models.ParsedWorkout, e
 		return out, fmt.Errorf("%w: %v", ErrUnparseableResponse, err)
 	}
 	clampWorkout(&out)
+	normalizeWorkoutLoads(&out)
 	out.RawInput = text
 	return out, nil
 }
@@ -966,6 +971,129 @@ func clampWorkout(workout *models.ParsedWorkout) {
 			}
 		}
 	}
+}
+
+// normalizeWorkoutLoads recovers per-set loads that the model collapsed into a
+// single loadRaw string ("135, 185, 205"). It only acts when the exercise has
+// sets and every set load is zero; a partially loaded exercise is left alone
+// because guessing which rows were missing would rewrite good data. After a
+// successful split the loadRaw field is cleared so the UI can never broadcast
+// the comma string to every row. The pass is idempotent: a cleared loadRaw is
+// skipped, and an already-normalised exercise has nonzero set loads.
+func normalizeWorkoutLoads(workout *models.ParsedWorkout) {
+	if workout == nil {
+		return
+	}
+	for i := range workout.Exercises {
+		exercise := &workout.Exercises[i]
+		if len(exercise.Sets) == 0 || strings.TrimSpace(exercise.LoadRaw) == "" {
+			continue
+		}
+
+		loaded := false
+		for _, set := range exercise.Sets {
+			if set.LoadKg > 0 || set.LoadLbs > 0 {
+				loaded = true
+				break
+			}
+		}
+		if loaded {
+			continue
+		}
+
+		loads := splitLoadRawLbs(exercise.LoadRaw)
+		if len(loads) == 0 {
+			// Nothing numeric to recover ("BW", "heavy", "bodyweight"): bodyweight
+			// sets stay at zero load and the broadcast string is discarded.
+			exercise.LoadRaw = ""
+			continue
+		}
+
+		if len(loads) == 1 {
+			// A single load across an N-set exercise is the common case
+			// ("3x5 @ 100kg"); repeat it for every set.
+			repeated := make([]float64, len(exercise.Sets))
+			for j := range repeated {
+				repeated[j] = loads[0]
+			}
+			loads = repeated
+		}
+		// Equal lengths assign index-wise, a shorter list fills in order and
+		// leaves the remainder at zero, and a longer list is truncated.
+		for j := range exercise.Sets {
+			if j >= len(loads) {
+				break
+			}
+			lbs := loads[j]
+			exercise.Sets[j].LoadLbs = lbs
+			exercise.Sets[j].LoadKg = units.LbsToKilograms(lbs)
+		}
+		exercise.LoadRaw = ""
+	}
+}
+
+// splitLoadRawLbs turns a comma/semicolon separated load string into pounds.
+// Only those two separators are used: '+' is legitimate unilateral notation
+// ("35+35") and must not be split, and 'x' is left to fail parsing. Values may
+// carry a kg/lb suffix; bare numbers are pounds because the workout prompt
+// emits pounds.
+func splitLoadRawLbs(raw string) []float64 {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';'
+	})
+
+	loads := make([]float64, 0, len(fields))
+	for _, field := range fields {
+		token := strings.ToLower(strings.TrimSpace(field))
+		if token == "" {
+			continue
+		}
+		if token == "bw" || token == "bodyweight" || token == "body weight" {
+			loads = append(loads, 0)
+			continue
+		}
+
+		kilograms := false
+		switch {
+		case strings.HasSuffix(token, "kgs"):
+			token, kilograms = strings.TrimSpace(strings.TrimSuffix(token, "kgs")), true
+		case strings.HasSuffix(token, "kg"):
+			token, kilograms = strings.TrimSpace(strings.TrimSuffix(token, "kg")), true
+		case strings.HasSuffix(token, "lbs"):
+			token = strings.TrimSpace(strings.TrimSuffix(token, "lbs"))
+		case strings.HasSuffix(token, "lb"):
+			token = strings.TrimSpace(strings.TrimSuffix(token, "lb"))
+		}
+
+		lbs, ok := parseLoadNumber(token)
+		if !ok {
+			continue
+		}
+		if kilograms {
+			// Convert back through the same constant LbsToKilograms uses so the
+			// stored kg value matches the source exactly.
+			lbs = lbs / units.LbsToKg
+		}
+		loads = append(loads, lbs)
+	}
+	return loads
+}
+
+// parseLoadNumber reads one load token as pounds. Unilateral notation is summed
+// ("35+35" becomes 70) exactly like the manual workout parser, so it is never
+// mistaken for two per-set loads. Anything else that is not a non-negative
+// finite number is rejected.
+func parseLoadNumber(token string) (float64, bool) {
+	parts := strings.Split(token, "+")
+	total := 0.0
+	for _, part := range parts {
+		value, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			return 0, false
+		}
+		total += value
+	}
+	return total, true
 }
 
 func clampFloat(value, low, high float64) float64 {

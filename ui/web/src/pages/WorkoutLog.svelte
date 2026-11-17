@@ -164,14 +164,27 @@
 
   function applyLoadToAll(ex, value) {
     ex.weightLbs = value
-    const loadKg = String(value ?? '').trim() ? (inputLoad(parseLoad(value), store.units) || 0) : 0
-    if (Array.isArray(ex._sets) && ex._sets.length > 0) {
-      ex._sets = ex._sets.map((s) => ({
-        ...s,
-        load: value,
+    const raw = String(value ?? '')
+    // Defense in depth for payloads that still arrive as a list ("135, 185,
+    // 205" from an old AI response or a hand-edited YAML): assign one load per
+    // set row instead of broadcasting the whole comma string to every row.
+    // A short list fills rows in order and leaves the rest untouched; a long
+    // list is truncated to the row count.
+    const parts = raw.split(/[,;]/).map((p) => p.trim()).filter((p) => p !== '')
+    const perSet = parts.length > 1
+    const assign = (row, token) => {
+      const loadKg = String(token ?? '').trim() ? (inputLoad(parseLoad(token), store.units) || 0) : 0
+      return {
+        ...row,
+        load: token,
         loadKg,
         loadLbs: loadKg > 0 ? kgToLbs(loadKg) : 0,
-      }))
+      }
+    }
+    if (Array.isArray(ex._sets) && ex._sets.length > 0) {
+      ex._sets = perSet
+        ? ex._sets.map((s, i) => (i < parts.length ? assign(s, parts[i]) : s))
+        : ex._sets.map((s) => assign(s, raw))
     }
   }
 

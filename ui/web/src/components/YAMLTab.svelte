@@ -1,7 +1,7 @@
 <script>
   import { api } from '../lib/api.js'
   import { store } from '../lib/stores.svelte.js'
-  import { kgToLbs, inputLoad } from '../lib/utils.js'
+  import { kgToLbs, lbsToKg, inputLoad } from '../lib/utils.js'
 
   let { workout = $bindable(), onParsed = () => {} } = $props()
 
@@ -172,7 +172,9 @@
     for (let i = 0; i < count; i++) {
       const src = base[Math.min(i, base.length - 1)] || {}
       const baseReps = Number(src.reps) || 0
-      const baseKg = Number(src.loadKg) || 0
+      const srcLbs = Number(src.loadLbs) || 0
+      // Recover a pounds-only row (kg mirror zero) instead of losing its load.
+      const baseKg = Number(src.loadKg) || (srcLbs > 0 ? lbsToKg(srcLbs) : 0)
       const rep = repOverrides[i]
       const load = loadOverrides[i]
       const reps = rep === null || rep === undefined ? baseReps : rep

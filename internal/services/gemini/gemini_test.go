@@ -3,12 +3,15 @@ package gemini
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	genai "github.com/google/generative-ai-go/genai"
 
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/units"
 )
 
 func TestBuildMealPromptTextOnly(t *testing.T) {
@@ -223,8 +226,13 @@ func TestParseWorkoutResponseRepairsTruncatedNestedJSON(t *testing.T) {
 	if exercise.Name != "Row" || len(exercise.Sets) != 1 {
 		t.Fatalf("nested exercise lost: %+v", exercise)
 	}
-	if exercise.Sets[0].Reps != 10 || exercise.LoadRaw != "4" {
+	// The repaired loadRaw "4" is a single unambiguous load, so the normaliser
+	// moves it onto the set and clears the broadcast string.
+	if exercise.Sets[0].Reps != 10 || exercise.Sets[0].LoadLbs != 4 {
 		t.Fatalf("last sane nested fields lost: %+v", exercise)
+	}
+	if exercise.LoadRaw != "" {
+		t.Fatalf("loadRaw = %q, want cleared after the load moved onto the set", exercise.LoadRaw)
 	}
 }
 
@@ -315,5 +323,128 @@ func TestCandidateTextBlockedAndEmpty(t *testing.T) {
 	}
 	if got != "ab" {
 		t.Fatalf("candidate text = %q, want %q", got, "ab")
+	}
+}
+
+func TestParseWorkoutResponseSplitsCommaLoads(t *testing.T) {
+	cases := map[string]string{
+		"comma":     `{"title":"Bench","exercises":[{"name":"Bench","loadRaw":"135, 185, 205","sets":[{"reps":12},{"reps":8},{"reps":6}]}]}`,
+		"semicolon": `{"title":"Bench","exercises":[{"name":"Bench","loadRaw":"135;185;205","sets":[{"reps":12},{"reps":8},{"reps":6}]}]}`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			parsed, err := parseWorkoutResponse(raw, "bench", "test-model")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			exercise := parsed.Exercises[0]
+			if exercise.LoadRaw != "" {
+				t.Fatalf("loadRaw = %q, want cleared after a successful split", exercise.LoadRaw)
+			}
+			wantLbs := []float64{135, 185, 205}
+			for i, want := range wantLbs {
+				if got := exercise.Sets[i].LoadLbs; got != want {
+					t.Fatalf("set %d loadLbs = %v, want %v", i, got, want)
+				}
+				if got, wantKg := exercise.Sets[i].LoadKg, units.LbsToKilograms(want); got != wantKg {
+					t.Fatalf("set %d loadKg = %v, want %v", i, got, wantKg)
+				}
+			}
+			if exercise.Sets[0].Reps != 12 || exercise.Sets[2].Reps != 6 {
+				t.Fatalf("reps were disturbed: %+v", exercise.Sets)
+			}
+		})
+	}
+}
+
+func TestNormalizeWorkoutLoadsLengthRules(t *testing.T) {
+	cases := []struct {
+		name     string
+		loadRaw  string
+		setCount int
+		wantLbs  []float64
+	}{
+		{name: "single load repeats", loadRaw: "100", setCount: 3, wantLbs: []float64{100, 100, 100}},
+		{name: "fewer loads fill in order", loadRaw: "135, 185", setCount: 3, wantLbs: []float64{135, 185, 0}},
+		{name: "more loads truncate", loadRaw: "95, 115, 135, 155", setCount: 2, wantLbs: []float64{95, 115}},
+		{name: "kg suffix converted", loadRaw: "100kg", setCount: 2, wantLbs: []float64{100 / units.LbsToKg, 100 / units.LbsToKg}},
+		{name: "unilateral notation is one load", loadRaw: "35+35 lbs", setCount: 2, wantLbs: []float64{70, 70}},
+		{name: "bodyweight stays zero", loadRaw: "BW", setCount: 2, wantLbs: []float64{0, 0}},
+		{name: "no numbers stays zero", loadRaw: "heavy-ish", setCount: 2, wantLbs: []float64{0, 0}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workout := models.ParsedWorkout{Exercises: []models.ExerciseEntry{{
+				Name:    "Bench",
+				LoadRaw: tc.loadRaw,
+				Sets:    make([]models.ExerciseSet, tc.setCount),
+			}}}
+			normalizeWorkoutLoads(&workout)
+
+			exercise := workout.Exercises[0]
+			for i, want := range tc.wantLbs {
+				if got := exercise.Sets[i].LoadLbs; got != want {
+					t.Fatalf("set %d loadLbs = %v, want %v", i, got, want)
+				}
+			}
+			if exercise.LoadRaw != "" {
+				t.Fatalf("loadRaw = %q, want cleared", exercise.LoadRaw)
+			}
+		})
+	}
+}
+
+func TestNormalizeWorkoutLoadsLeavesLoadedExerciseUntouched(t *testing.T) {
+	sets := []models.ExerciseSet{
+		{Reps: 5, LoadKg: 60, LoadLbs: units.KilogramsToLbs(60)},
+		{Reps: 5, LoadKg: 60, LoadLbs: units.KilogramsToLbs(60)},
+	}
+	workout := models.ParsedWorkout{Exercises: []models.ExerciseEntry{{
+		Name:    "Squat",
+		LoadRaw: "135, 225",
+		Sets:    sets,
+	}}}
+	before := append([]models.ExerciseSet(nil), sets...)
+
+	normalizeWorkoutLoads(&workout)
+
+	exercise := workout.Exercises[0]
+	if exercise.LoadRaw != "135, 225" {
+		t.Fatalf("loadRaw = %q, want the ambiguous string preserved", exercise.LoadRaw)
+	}
+	if !reflect.DeepEqual(exercise.Sets, before) {
+		t.Fatalf("loaded sets were rewritten: got %+v want %+v", exercise.Sets, before)
+	}
+}
+
+func TestNormalizeWorkoutLoadsIsIdempotent(t *testing.T) {
+	workout := models.ParsedWorkout{Exercises: []models.ExerciseEntry{{
+		Name:    "Deadlift",
+		LoadRaw: "135, 225, 315",
+		Sets:    []models.ExerciseSet{{Reps: 8}, {Reps: 5}, {Reps: 3}},
+	}}}
+
+	normalizeWorkoutLoads(&workout)
+	first := append([]models.ExerciseSet(nil), workout.Exercises[0].Sets...)
+	normalizeWorkoutLoads(&workout)
+
+	if !reflect.DeepEqual(workout.Exercises[0].Sets, first) {
+		t.Fatalf("second pass changed sets: got %+v want %+v", workout.Exercises[0].Sets, first)
+	}
+	if workout.Exercises[0].LoadRaw != "" {
+		t.Fatalf("loadRaw = %q, want cleared", workout.Exercises[0].LoadRaw)
+	}
+}
+
+func TestNormalizeWorkoutLoadsSkipsExercisesWithoutSets(t *testing.T) {
+	workout := models.ParsedWorkout{Exercises: []models.ExerciseEntry{{
+		Name:    "Row",
+		LoadRaw: "135, 185",
+	}}}
+
+	normalizeWorkoutLoads(&workout)
+
+	if workout.Exercises[0].LoadRaw != "135, 185" {
+		t.Fatalf("loadRaw = %q, want untouched for an exercise with no sets", workout.Exercises[0].LoadRaw)
 	}
 }
