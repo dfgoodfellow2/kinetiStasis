@@ -249,6 +249,22 @@ type CheckinPreview struct {
 	// UI uses it to render empty weight markers instead of misleading zeros.
 	HasWeighinData bool `json:"hasWeighinData"`
 
+	// Since-last-check-in cycle. CycleWeightStart is the first weigh-in on or
+	// after the previous check-in date and CycleWeightEnd the latest weigh-in,
+	// making this the PRIMARY weight read on the check-in card. When no prior
+	// check-in exists (or none has a weigh-in after it) these mirror the
+	// window values above and CycleAnchored is false, so the UI labels the
+	// tiles "This window" instead of "Since last check-in".
+	//
+	// WeightStart/End/Change remain the full-lookback values and back the
+	// compact supplement line ("90-day trend: …"), labelled by
+	// WeightChangeWindowDays.
+	CycleWeightStart       float64 `json:"cycleWeightStart"`
+	CycleWeightEnd         float64 `json:"cycleWeightEnd"`
+	CycleWeightChange      float64 `json:"cycleWeightChange"`
+	CycleAnchored          bool    `json:"cycleAnchored"`
+	WeightChangeWindowDays int     `json:"weightChangeWindowDays"`
+
 	// Current nutritional state
 	CurrentCalories float64 `json:"currentCalories"`
 	EatBackExercise bool    `json:"eatBackExercise"`

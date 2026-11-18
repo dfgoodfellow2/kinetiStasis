@@ -58,6 +58,20 @@ type checkinState struct {
 	canCheckIn       bool
 	warning          string
 
+	// Since-last-check-in cycle read. cycleStart is the first weight-bearing
+	// log on or after the last check-in date; cycleEnd is the latest weigh-in.
+	// When there is no prior check-in (or no weigh-in since it) these fall back
+	// to the window values above and cycleAnchored stays false, so the UI can
+	// label the primary tiles honestly.
+	cycleWeightStart  float64
+	cycleWeightEnd    float64
+	cycleWeightChange float64
+	cycleAnchored     bool
+
+	// windowDays is the lookback actually used for the fetch, so the UI can
+	// label the supplemental trend line ("90-day trend").
+	windowDays int
+
 	// Calibration shield overlay, derived from the earliest weight-bearing
 	// date. It is only ever true when the check-in and reliability gates are
 	// both open, so it never masks the frozen path.
@@ -113,6 +127,22 @@ func (h *CheckinHandler) loadCheckinState(ctx context.Context, userID string) (*
 		nutLogs:    nutLogs,
 		bioLogs:    bioLogs,
 		tdee:       calculator.ComputeObservedTDEE(nutLogs, bioLogs, profile, bodyFatPct),
+		windowDays: lookback,
+	}
+
+	// Resolve the most recent check-in before the weight read: the
+	// since-last-check-in cycle is anchored to it, and the date gate below
+	// reuses the same value so the two can never disagree.
+	state.daysSinceCheckIn = int(math.MaxInt32)
+	var lastPtr *models.CheckInLog
+	if lastDate, err := h.s.FetchLastCheckin(ctx, userID); err == nil {
+		if lastDate != "" {
+			lastPtr = &models.CheckInLog{CheckInDate: lastDate}
+		}
+	} else {
+		if l, err2 := h.s.GetLastCheckin(ctx, userID); err2 == nil {
+			lastPtr = &l
+		}
 	}
 
 	// The weigh-in gate counts actual weight entries, not biometric rows.
@@ -134,6 +164,25 @@ func (h *CheckinHandler) loadCheckinState(ctx context.Context, userID string) (*
 		state.weightEnd = weightLogs[0].WeightKg
 	}
 
+	// Primary read: the cycle that opened at the last check-in. It starts at
+	// the first weigh-in ON OR AFTER that date (dates are YYYY-MM-DD, so lexical
+	// comparison is chronological) and ends at the latest weigh-in. Without a
+	// prior check-in, or with no weigh-ins since one, the window values stand in
+	// and cycleAnchored is false.
+	state.cycleWeightStart, state.cycleWeightEnd, state.cycleWeightChange =
+		state.weightStart, state.weightEnd, state.weightChange
+	if lastPtr != nil && lastPtr.CheckInDate != "" && state.hasWeighinData {
+		for _, bio := range weightLogs {
+			if bio.Date >= lastPtr.CheckInDate {
+				state.cycleWeightStart = bio.WeightKg
+				state.cycleWeightEnd = weightLogs[len(weightLogs)-1].WeightKg
+				state.cycleWeightChange = state.cycleWeightEnd - state.cycleWeightStart
+				state.cycleAnchored = true
+				break
+			}
+		}
+	}
+
 	// The calibration shield is measured from the account's FIRST weigh-in,
 	// i.e. the earliest weight-bearing date in the fetched history. Date-only
 	// strings are YYYY-MM-DD, so lexical comparison is chronological.
@@ -145,18 +194,7 @@ func (h *CheckinHandler) loadCheckinState(ctx context.Context, userID string) (*
 
 	// Date gate: at most one adjust-capable check-in per interval. This is a
 	// cooldown, not a data requirement, so it only blocks the check-in itself.
-	state.daysSinceCheckIn = int(math.MaxInt32)
 	dateGateOpen := true
-	var lastPtr *models.CheckInLog
-	if lastDate, err := h.s.FetchLastCheckin(ctx, userID); err == nil {
-		if lastDate != "" {
-			lastPtr = &models.CheckInLog{CheckInDate: lastDate}
-		}
-	} else {
-		if l, err2 := h.s.GetLastCheckin(ctx, userID); err2 == nil {
-			lastPtr = &l
-		}
-	}
 	if lastPtr != nil {
 		if days, ok := daysSinceLocalDate(lastPtr.CheckInDate); ok {
 			state.daysSinceCheckIn = days
@@ -271,8 +309,12 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	// Weight context is display-only and must not imply usable history when the
 	// check-in itself is blocked.
 	weightStart, weightEnd, weightChange := 0.0, 0.0, 0.0
+	cycleWeightStart, cycleWeightEnd, cycleWeightChange := 0.0, 0.0, 0.0
+	cycleAnchored := false
 	if state.canCheckIn && state.hasWeighinData {
 		weightStart, weightEnd, weightChange = state.weightStart, state.weightEnd, state.weightChange
+		cycleWeightStart, cycleWeightEnd, cycleWeightChange = state.cycleWeightStart, state.cycleWeightEnd, state.cycleWeightChange
+		cycleAnchored = state.cycleAnchored
 	}
 
 	// Low-confidence + full-clamp warning: when the adjustment is maxed at
@@ -302,6 +344,13 @@ func (h *CheckinHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		WeightEnd:      weightEnd,
 		WeightChange:   weightChange,
 		HasWeighinData: state.hasWeighinData,
+
+		// Primary since-last-check-in read plus the window it supplements.
+		CycleWeightStart:       cycleWeightStart,
+		CycleWeightEnd:         cycleWeightEnd,
+		CycleWeightChange:      cycleWeightChange,
+		CycleAnchored:          cycleAnchored,
+		WeightChangeWindowDays: state.windowDays,
 
 		CurrentCalories: currentCals,
 		EatBackExercise: state.targets.EatBackExercise,

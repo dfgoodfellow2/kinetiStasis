@@ -59,9 +59,20 @@
   function hasStartWeight(p) {
     return !!p && p.hasWeighinData === true && p.weightStart > 0
   }
-  function hasEndWeight(p) {
-    return !!p && p.hasWeighinData === true && p.weightEnd > 0
+  // Cycle tiles are zeroed by the preview whenever weight context is not
+  // usable, so the same positive-value test distinguishes a real reading.
+  function hasCycleStart(p) {
+    return !!p && p.hasWeighinData === true && p.cycleWeightStart > 0
   }
+  function hasCycleEnd(p) {
+    return !!p && p.hasWeighinData === true && p.cycleWeightEnd > 0
+  }
+
+  // Primary tiles read the since-last-check-in cycle. Without a prior check-in
+  // the server mirrors the window values into the cycle fields, so the label
+  // must say "This window" rather than imply a cycle that does not exist.
+  let weightCycleLabel = $derived(checkinPreview?.cycleAnchored ? 'Since last check-in' : 'This window')
+  let windowTrendLabel = $derived(`${checkinPreview?.weightChangeWindowDays ?? 90}-day trend`)
 
   async function acceptCheckin() {
       if (!checkinPreview || !checkinPreview.canCheckIn || checkinPreview.targetUpdateBlocked) return
@@ -794,39 +805,51 @@
               </div>
             </div>
 
-            <!-- Weight trend — render "—" unless a real weigh-in backs the value -->
-            <div class="grid grid-cols-2 gap-3">
-              <div class="bg-gray-700 rounded-lg p-3">
-                <div class="text-xs text-gray-400">Weight Start</div>
-                <div class="text-lg font-semibold">
-                  {#if hasStartWeight(checkinPreview)}
-                    {dispWeight(checkinPreview.weightStart, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
-                  {:else}
-                    <span class="text-gray-500">—</span>
-                  {/if}
+            <!-- Weight trend. Primary read: since the last check-in (falls back
+                 to the window values with a "This window" label when there is
+                 no prior check-in). The full lookback becomes one compact
+                 supplement line, not another card. -->
+            <div class="space-y-2">
+              <div class="text-xs text-gray-400">{weightCycleLabel}</div>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="bg-gray-700 rounded-lg p-3">
+                  <div class="text-xs text-gray-400">{checkinPreview.cycleAnchored ? 'Start' : 'Window start'}</div>
+                  <div class="text-lg font-semibold">
+                    {#if hasCycleStart(checkinPreview)}
+                      {dispWeight(checkinPreview.cycleWeightStart, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
+                    {:else}
+                      <span class="text-gray-500">—</span>
+                    {/if}
+                  </div>
+                </div>
+                <div class="bg-gray-700 rounded-lg p-3">
+                  <div class="text-xs text-gray-400">{checkinPreview.cycleAnchored ? 'End' : 'Window end'}</div>
+                  <div class="text-lg font-semibold">
+                    {#if hasCycleEnd(checkinPreview)}
+                      {dispWeight(checkinPreview.cycleWeightEnd, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
+                    {:else}
+                      <span class="text-gray-500">—</span>
+                    {/if}
+                  </div>
                 </div>
               </div>
-              <div class="bg-gray-700 rounded-lg p-3">
-                <div class="text-xs text-gray-400">Weight End</div>
-                <div class="text-lg font-semibold">
-                  {#if hasEndWeight(checkinPreview)}
-                    {dispWeight(checkinPreview.weightEnd, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
-                  {:else}
-                    <span class="text-gray-500">—</span>
-                  {/if}
-                </div>
-              </div>
-            </div>
 
-            <div class="bg-gray-700 rounded-lg p-3">
-              <div class="text-xs text-gray-400">Weight Change</div>
-              <div class="text-lg font-semibold">
-                {#if hasStartWeight(checkinPreview)}
-                  {dispWeightDelta(checkinPreview.weightChange, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
-                {:else}
-                  <span class="text-gray-500">—</span>
-                {/if}
+              <div class="bg-gray-700 rounded-lg p-3">
+                <div class="text-xs text-gray-400">{checkinPreview.cycleAnchored ? 'Weight change' : 'Window change'}</div>
+                <div class="text-lg font-semibold">
+                  {#if hasCycleStart(checkinPreview)}
+                    {dispWeightDelta(checkinPreview.cycleWeightChange, store.units)} <span class="text-xs text-gray-400">{weightUnit(store.units)}</span>
+                  {:else}
+                    <span class="text-gray-500">—</span>
+                  {/if}
+                </div>
               </div>
+
+              {#if hasStartWeight(checkinPreview)}
+                <div class="text-xs text-gray-500">
+                  {windowTrendLabel}: {dispWeightDelta(checkinPreview.weightChange, store.units)} {weightUnit(store.units)}
+                </div>
+              {/if}
             </div>
 
             <!-- Recommendation -->

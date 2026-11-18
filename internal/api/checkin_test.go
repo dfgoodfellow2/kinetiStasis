@@ -150,6 +150,12 @@ func TestCheckinZeroWeighInsBlocksCheckin(t *testing.T) {
 	if preview.WeightStart != 0 || preview.WeightEnd != 0 || preview.WeightChange != 0 {
 		t.Errorf("weight markers = (%v,%v,%v), want zeros", preview.WeightStart, preview.WeightEnd, preview.WeightChange)
 	}
+	if preview.CycleWeightStart != 0 || preview.CycleWeightEnd != 0 || preview.CycleWeightChange != 0 {
+		t.Errorf("cycle markers = (%v,%v,%v), want zeros", preview.CycleWeightStart, preview.CycleWeightEnd, preview.CycleWeightChange)
+	}
+	if preview.CycleAnchored {
+		t.Error("CycleAnchored = true with zero weigh-ins, want false")
+	}
 
 	// POST must reject and leave targets untouched.
 	h.do(t, http.MethodPost, "/v1/checkin", map[string]any{"caloriesAfter": 2500}, http.StatusBadRequest)
@@ -187,6 +193,10 @@ func TestCheckinTwoWeighInsRemainGated(t *testing.T) {
 	if preview.WeightStart != 0 || preview.WeightEnd != 0 || preview.WeightChange != 0 {
 		t.Errorf("weight markers = (%v,%v,%v), want zeros while check-in is blocked",
 			preview.WeightStart, preview.WeightEnd, preview.WeightChange)
+	}
+	if preview.CycleWeightStart != 0 || preview.CycleWeightEnd != 0 || preview.CycleWeightChange != 0 {
+		t.Errorf("cycle markers = (%v,%v,%v), want zeros while check-in is blocked",
+			preview.CycleWeightStart, preview.CycleWeightEnd, preview.CycleWeightChange)
 	}
 }
 
@@ -288,6 +298,19 @@ func TestCheckinFullPathUpdatesCaloriesAndMacros(t *testing.T) {
 	}
 	if math.Abs(preview.ObservedTDEE-2900) > 25 {
 		t.Fatalf("ObservedTDEE = %v, want ~2900 (flat weight)", preview.ObservedTDEE)
+	}
+	// No prior check-in: the cycle tiles must mirror the window instead of
+	// claiming a since-last-check-in reading.
+	if preview.CycleAnchored {
+		t.Error("CycleAnchored = true with no prior check-in, want false")
+	}
+	if preview.CycleWeightStart != preview.WeightStart || preview.CycleWeightEnd != preview.WeightEnd || preview.CycleWeightChange != preview.WeightChange {
+		t.Errorf("cycle = (%v,%v,%v), want window values (%v,%v,%v) without a prior check-in",
+			preview.CycleWeightStart, preview.CycleWeightEnd, preview.CycleWeightChange,
+			preview.WeightStart, preview.WeightEnd, preview.WeightChange)
+	}
+	if preview.WeightChangeWindowDays != 90 {
+		t.Errorf("WeightChangeWindowDays = %d, want 90", preview.WeightChangeWindowDays)
 	}
 
 	h.do(t, http.MethodPost, "/v1/checkin", map[string]any{"caloriesAfter": preview.RecommendedCalories}, http.StatusCreated)
@@ -413,5 +436,155 @@ func TestCheckinEatBackAddsTodaysWorkoutCalories(t *testing.T) {
 	created := decodeJSON[models.CheckInLog](t, h.do(t, http.MethodPost, "/v1/checkin", map[string]any{"checkInDate": today}, http.StatusCreated))
 	if created.CaloriesAfter != 3000 {
 		t.Fatalf("persisted CaloriesAfter = %d, want 3000 (create includes eat-back)", created.CaloriesAfter)
+	}
+}
+
+// TestCheckinCycleAnchoredAtLastCheckin pins the primary weight read: the cycle
+// starts at the first weigh-in on or after the last check-in date, not at the
+// first weigh-in in the 90-day window. Weigh-ins before the check-in must only
+// feed the supplemental window values.
+func TestCheckinCycleAnchoredAtLastCheckin(t *testing.T) {
+	h := newHarness(t)
+	seedCheckinProfile(t, h)
+	seedCheckinTargets(t, h, 2000)
+
+	today := time.Now().UTC().Format("2006-01-02")
+
+	// Before the last check-in: window start only.
+	for _, w := range []struct {
+		offset int
+		kg     float64
+	}{{-20, 85.0}, {-18, 84.5}, {-16, 84.0}} {
+		postWeight(t, h, shiftDate(today, w.offset), w.kg)
+	}
+
+	// Last check-in 14 days ago: outside the 5-day cooldown, so today's
+	// check-in is still allowed.
+	h.do(t, http.MethodPost, "/v1/checkin", map[string]any{
+		"checkInDate": shiftDate(today, -14),
+	}, http.StatusCreated)
+
+	// After the check-in: the cycle start is the first of these.
+	for _, w := range []struct {
+		offset int
+		kg     float64
+	}{{-10, 83.0}, {-5, 82.5}, {-1, 82.0}} {
+		postWeight(t, h, shiftDate(today, w.offset), w.kg)
+	}
+
+	preview := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
+	if !preview.CanCheckIn {
+		t.Fatalf("CanCheckIn = false, want true: %+v", preview)
+	}
+	if !preview.CycleAnchored {
+		t.Fatal("CycleAnchored = false, want true with weigh-ins after a prior check-in")
+	}
+	if preview.CycleWeightStart != 83.0 {
+		t.Errorf("CycleWeightStart = %v, want 83.0 (first weigh-in after the check-in)", preview.CycleWeightStart)
+	}
+	if preview.CycleWeightEnd != 82.0 {
+		t.Errorf("CycleWeightEnd = %v, want 82.0 (latest weigh-in)", preview.CycleWeightEnd)
+	}
+	if preview.CycleWeightChange != -1.0 {
+		t.Errorf("CycleWeightChange = %v, want -1.0", preview.CycleWeightChange)
+	}
+
+	// The 90-day window still starts at the pre-check-in weigh-in.
+	if preview.WeightStart != 85.0 {
+		t.Errorf("WeightStart = %v, want 85.0 (first weigh-in in the window)", preview.WeightStart)
+	}
+	if preview.WeightEnd != 82.0 {
+		t.Errorf("WeightEnd = %v, want 82.0", preview.WeightEnd)
+	}
+	if preview.WeightChange != -3.0 {
+		t.Errorf("WeightChange = %v, want -3.0 (window supplement)", preview.WeightChange)
+	}
+	if preview.WeightChangeWindowDays != 90 {
+		t.Errorf("WeightChangeWindowDays = %d, want 90", preview.WeightChangeWindowDays)
+	}
+}
+
+// TestCheckinCycleFallsBackWithoutCheckin pins the fallback: with no prior
+// check-in the cycle fields mirror the window and CycleAnchored stays false so
+// the UI can label the tiles "This window".
+func TestCheckinCycleFallsBackWithoutCheckin(t *testing.T) {
+	h := newHarness(t)
+	seedCheckinProfile(t, h)
+	seedCheckinTargets(t, h, 2000)
+
+	postWeight(t, h, shiftDate(testDate, -4), 84.0)
+	postWeight(t, h, shiftDate(testDate, -2), 83.5)
+	postWeight(t, h, testDate, 83.0)
+
+	preview := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
+	if !preview.CanCheckIn {
+		t.Fatalf("CanCheckIn = false, want true: %+v", preview)
+	}
+	if preview.CycleAnchored {
+		t.Error("CycleAnchored = true without a prior check-in, want false")
+	}
+	if preview.CycleWeightStart != preview.WeightStart || preview.CycleWeightEnd != preview.WeightEnd || preview.CycleWeightChange != preview.WeightChange {
+		t.Errorf("cycle = (%v,%v,%v), want window (%v,%v,%v)",
+			preview.CycleWeightStart, preview.CycleWeightEnd, preview.CycleWeightChange,
+			preview.WeightStart, preview.WeightEnd, preview.WeightChange)
+	}
+	if preview.CycleWeightStart != 84.0 || preview.CycleWeightEnd != 83.0 || preview.CycleWeightChange != -1.0 {
+		t.Errorf("cycle = (%v,%v,%v), want (84,83,-1)", preview.CycleWeightStart, preview.CycleWeightEnd, preview.CycleWeightChange)
+	}
+}
+
+// TestCheckinCycleSingleWeighInSinceCheckin pins the one-point cycle: start and
+// end collapse onto the single weigh-in and the change is exactly zero. A
+// check-in with no weigh-ins after it falls back to the window.
+func TestCheckinCycleSingleWeighInSinceCheckin(t *testing.T) {
+	h := newHarness(t)
+	seedCheckinProfile(t, h)
+	seedCheckinTargets(t, h, 2000)
+
+	today := time.Now().UTC().Format("2006-01-02")
+	for _, w := range []struct {
+		offset int
+		kg     float64
+	}{{-20, 85.0}, {-18, 84.0}, {-16, 83.5}} {
+		postWeight(t, h, shiftDate(today, w.offset), w.kg)
+	}
+	h.do(t, http.MethodPost, "/v1/checkin", map[string]any{
+		"checkInDate": shiftDate(today, -14),
+	}, http.StatusCreated)
+	postWeight(t, h, shiftDate(today, -6), 82.4)
+
+	preview := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
+	if !preview.CanCheckIn {
+		t.Fatalf("CanCheckIn = false, want true: %+v", preview)
+	}
+	if !preview.CycleAnchored {
+		t.Fatal("CycleAnchored = false, want true with one weigh-in after the check-in")
+	}
+	if preview.CycleWeightStart != 82.4 || preview.CycleWeightEnd != 82.4 {
+		t.Errorf("cycle start/end = (%v,%v), want (82.4,82.4)",
+			preview.CycleWeightStart, preview.CycleWeightEnd)
+	}
+	if preview.CycleWeightChange != 0 {
+		t.Errorf("CycleWeightChange = %v, want 0 for a single weigh-in", preview.CycleWeightChange)
+	}
+	// The window still spans the pre-check-in weigh-ins.
+	if preview.WeightStart != 85.0 || math.Abs(preview.WeightChange-(-2.6)) > 1e-9 {
+		t.Errorf("window = (start %v, change %v), want (85,-2.6)", preview.WeightStart, preview.WeightChange)
+	}
+
+	// A second check-in dated after every weigh-in leaves no weigh-in in the
+	// cycle, so the tiles must fall back to the window rather than show zeros.
+	h.do(t, http.MethodPost, "/v1/checkin", map[string]any{
+		"checkInDate": today,
+	}, http.StatusCreated)
+
+	fallback := decodeJSON[models.CheckinPreview](t, h.do(t, http.MethodGet, "/v1/checkin", nil, http.StatusOK))
+	if fallback.CycleAnchored {
+		t.Error("CycleAnchored = true with no weigh-in after the latest check-in, want false")
+	}
+	if fallback.CycleWeightStart != fallback.WeightStart || fallback.CycleWeightEnd != fallback.WeightEnd {
+		t.Errorf("cycle = (%v,%v), want window (%v,%v)",
+			fallback.CycleWeightStart, fallback.CycleWeightEnd,
+			fallback.WeightStart, fallback.WeightEnd)
 	}
 }

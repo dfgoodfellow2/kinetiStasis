@@ -39,6 +39,11 @@ const BASE = '/v1'
  * @property {number} weightEnd            0 when the preview has no usable weight context
  * @property {number} weightChange         0 when the preview has no usable weight context
  * @property {boolean} hasWeighinData      False when the window has no weight-bearing logs
+ * @property {number} cycleWeightStart     PRIMARY: first weigh-in on/after the last check-in (0 when gated)
+ * @property {number} cycleWeightEnd       PRIMARY: latest weigh-in in that cycle (0 when gated)
+ * @property {number} cycleWeightChange    cycleWeightEnd − cycleWeightStart (0 when gated)
+ * @property {boolean} cycleAnchored       True when a prior check-in anchors the cycle; false means the cycle fields mirror the window values ("This window")
+ * @property {number} weightChangeWindowDays Lookback behind weightStart/End/Change, for the "90-day trend" supplement label
  * @property {number} currentCalories
  * @property {boolean} eatBackExercise
  * @property {number} recommendedCalories  Equals currentCalories while TargetUpdateBlocked
