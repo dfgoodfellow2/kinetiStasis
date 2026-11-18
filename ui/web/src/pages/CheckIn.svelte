@@ -291,34 +291,39 @@
     }
   }
 
-  // --- Calibration shield ---
-  // Inside the 14-day window the backend caps target moves at ±150 kcal, so the
-  // recommendation already carries the clamped adjustment. This line translates
-  // that gap into the weekly rate the plan implies.
+  // --- Planned weekly rate ---
+  // A calorie target implies a rate through the energy balance it creates:
+  // (observed TDEE − recommended) × 7 ÷ 7,700 kcal/kg. Measuring the target
+  // delta (current → recommended) instead would label any raised target a
+  // "gain", even when the new target is well below observed burn on a cut.
   //
-  // CheckinPreview has no goal field today (verified against
-  // internal/models/domain.go), so direction wording falls back to the profile
-  // this page already loads. A server that adds goalLabel to the preview wins.
+  // Sign is inherent to the balance: eating under observed burn loses weight,
+  // eating over it gains. 7,700 kcal/kg matches the TDEE engine.
   function impliedRateLine(p) {
     if (!p) return ''
-    const current = Number(p.currentCalories)
     const recommended = Number(p.recommendedCalories)
-    if (!Number.isFinite(current) || !Number.isFinite(recommended)) return ''
-    if (current <= 0 || recommended <= 0) return ''
-    // Preview calories are ints; match the same rounding before comparing.
-    if (Math.round(current) === recommended) return ''
-    const goal = String(p.goalLabel ?? p.goal ?? profile?.goal ?? '').toLowerCase()
-    if (!goal) return ''
-    // 7,700 kcal per kg — the same energy density the TDEE engine uses.
-    const rateKg = (Math.abs(current - recommended) * 7) / 7700
+    if (!Number.isFinite(recommended) || recommended <= 0) return ''
+    // Frozen recommendation: targetUpdateBlocked means the "recommendation" is
+    // the current target with no adjustment, so there is no planned change.
+    if (p.targetUpdateBlocked) return ''
+    // Only a scale-verified observed TDEE describes a real energy balance.
+    // Without weigh-in support (intake-only, pre-reliability) the number is an
+    // assumption, so render nothing rather than restate it as a rate.
+    if (p.weightReliable !== true) return ''
+    const observed = Number(p.observedTdee)
+    if (!Number.isFinite(observed) || observed <= 0) return ''
+    // Preview calories are ints; compare at the same resolution.
+    if (Math.round(observed) === recommended) {
+      return `At ${recommended} kcal your planned rate ≈ maintenance`
+    }
+    const rateKg = (Math.abs(observed - recommended) * 7) / 7700
     if (!(rateKg >= 0.05)) return ''
     // Weight tiles on this page render through store.units, so mirror it here.
     // 2.20462 lb/kg matches utils.kgToLbs; kept inline because a weekly rate is
     // often a few hundredths of a pound and kgToLbs rounds to one decimal.
     const rate = store.units === 'imperial' ? rateKg * 2.20462 : rateKg
     const amount = rate.toFixed(2)
-    const neutral = goal.includes('maint')
-    const wording = neutral ? '' : (recommended < current ? ' loss' : ' gain')
+    const wording = observed > recommended ? ' loss' : ' gain'
     return `At ${recommended} kcal your planned rate ≈ ${amount} ${weightUnit(store.units)}/wk${wording}`
   }
 
