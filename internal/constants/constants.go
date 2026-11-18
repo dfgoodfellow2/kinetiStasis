@@ -55,6 +55,19 @@ const (
 	// 7-day reliability gate is unchanged.
 	MinTrendCurveDays = 6
 
+	// ExponentialTrendHalfLifeDays is the half-life of the observation weight
+	// used by the engine's decayed regressions. Each weigh-in (and each intake
+	// day) is weighted w = 2^(-ageDays/ExponentialTrendHalfLifeDays), so the
+	// effective sample is a decayed weighted least squares over the 90-day
+	// lookback: a weigh-in from 14 days ago carries half the vote of today's,
+	// one from 28 days ago a quarter, and so on.
+	//
+	// Rationale: recent weigh-ins vote more, so startup water/glycogen spikes
+	// fade out of the fit instead of having to be deleted by hand. Fourteen
+	// days matches the calibration-shield philosophy (CalibrationShieldDays):
+	// it is the window over which early noise is expected to wash out.
+	ExponentialTrendHalfLifeDays = 14.0
+
 	// MinCalorieFloor is the absolute minimum daily calorie target that the adaptive
 	// TDEE algorithm will ever recommend, regardless of goal or adjustment.
 	MinCalorieFloor = 1200.0

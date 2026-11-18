@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dfgoodfellow2/diet-tracker/v2/internal/constants"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/models"
 	"github.com/dfgoodfellow2/diet-tracker/v2/internal/services/nutrition"
 )
@@ -242,8 +243,15 @@ func TestComputeObservedTDEEShortSeriesUsesFittedLevelNotForecast(t *testing.T) 
 	if res.Method != "linear_regression" {
 		t.Fatalf("Method = %q, want linear_regression", res.Method)
 	}
-	slope, intercept, forecast := LinearRegression(spikes)
+	// The tier fits a decay-weighted line over the row index; the expected
+	// level is computed with the exact same shared helpers the engine uses.
+	offsets := make([]float64, len(spikes))
+	for i := range offsets {
+		offsets[i] = float64(i)
+	}
+	slope, intercept := weightedRegressionFit(spikes, offsets, decayWeightsForDates(dates))
 	fittedLevel := slope*float64(len(spikes)-1) + intercept
+	forecast := slope*float64(len(spikes)) + intercept
 
 	if math.Abs(res.ObservedTDEE-fittedLevel) > 1 {
 		t.Fatalf("ObservedTDEE = %v, want fitted level %v", res.ObservedTDEE, fittedLevel)
@@ -449,5 +457,249 @@ func TestComputeObservedTDEEImplausibleFallsBackToStatic(t *testing.T) {
 	}
 	if res.Warning == "" {
 		t.Error("Warning is empty, want implausible-estimate notice")
+	}
+}
+
+// TestDecayWeightHalfLife pins the observation weight used by every decayed
+// regression in the engine:
+//
+//	w(ageDays) = 2^(-ageDays/ExponentialTrendHalfLifeDays)
+//
+// Today's observation carries full weight, the half-life is 14 days, and each
+// further half-life halves the vote again. This is the constant the trend fit,
+// the trend curve, and the intake estimate all share, so a regression here is
+// a silent change to every number the dashboard shows.
+func TestDecayWeightHalfLife(t *testing.T) {
+	if constants.ExponentialTrendHalfLifeDays != 14 {
+		t.Fatalf("ExponentialTrendHalfLifeDays = %v, want 14", constants.ExponentialTrendHalfLifeDays)
+	}
+
+	// w(0) = 1: a weigh-in logged today is the reference observation.
+	if got := decayWeightForAgeDays(0); got != 1 {
+		t.Errorf("w(0) = %v, want exactly 1", got)
+	}
+
+	cases := []struct {
+		name    string
+		ageDays float64
+		want    float64
+	}{
+		{"one half-life", 14, 0.5},
+		{"two half-lives", 28, 0.25},
+		{"half a half-life", 7, math.Sqrt(0.5)},
+		{"three half-lives", 42, 0.125},
+		{"a year old", 365, math.Pow(2, -365.0/14.0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := decayWeightForAgeDays(tc.ageDays)
+			if math.Abs(got-tc.want) > 1e-12 {
+				t.Fatalf("w(%v) = %.15f, want %.15f", tc.ageDays, got, tc.want)
+			}
+		})
+	}
+
+	// Future-dated logs are clamped rather than amplifying above full weight:
+	// one bad timestamp must not be able to outvote every real observation.
+	for _, ageDays := range []float64{-1, -30} {
+		if got := decayWeightForAgeDays(ageDays); got != 1 {
+			t.Errorf("w(%v) = %v, want clamped 1", ageDays, got)
+		}
+	}
+
+	// Monotonic decay: older observations never gain weight.
+	prev := 1.0
+	for age := 1.0; age <= 90; age++ {
+		w := decayWeightForAgeDays(age)
+		if w >= prev {
+			t.Fatalf("w(%v) = %v did not decrease from %v", age, w, prev)
+		}
+		prev = w
+	}
+
+	// The date-driven helper must measure the same age in calendar days. Dates
+	// are built from the wall clock because decayWeightsForDates compares
+	// against today, exactly as the estimator does.
+	today := time.Now()
+	dates := []string{
+		today.AddDate(0, 0, -28).Format(constants.DateFormat),
+		today.AddDate(0, 0, -14).Format(constants.DateFormat),
+		today.Format(constants.DateFormat),
+	}
+	weights := decayWeightsForDates(dates)
+	if len(weights) != 3 {
+		t.Fatalf("len(decayWeightsForDates) = %d, want 3", len(weights))
+	}
+	if math.Abs(weights[0]-0.25) > 1e-12 {
+		t.Errorf("weight for 28 days ago = %v, want 0.25", weights[0])
+	}
+	if math.Abs(weights[1]-0.5) > 1e-12 {
+		t.Errorf("weight for 14 days ago = %v, want 0.5", weights[1])
+	}
+	if math.Abs(weights[2]-1) > 1e-12 {
+		t.Errorf("weight for today = %v, want 1", weights[2])
+	}
+}
+
+// TestComputeWeightTrendSpikeDecayDifferentiatesRecency proves the half-life
+// actually buys what it is for: an identical +3 kg water spike moves the
+// reported trend roughly thirty times more when it is recent than when it is
+// old. An unweighted (unit-weight) fit over the same series cannot tell the two
+// apart, which is the defect this weighting removes.
+func TestComputeWeightTrendSpikeDecayDifferentiatesRecency(t *testing.T) {
+	const (
+		n         = 90
+		spikeKg   = 3.0
+		earlyIdx  = 5
+		lateIdx   = n - 5
+		startKg   = 85.0
+		totalDrop = 5.0
+	)
+	dates := windowDates(n)
+
+	// A smooth, honest decline. The spike is layered on one day only.
+	series := func(spikeIdx int) []models.BiometricLog {
+		bios := make([]models.BiometricLog, n)
+		for i := range bios {
+			w := startKg - totalDrop*float64(i)/float64(n-1)
+			if i == spikeIdx {
+				w += spikeKg
+			}
+			bios[i] = models.BiometricLog{Date: dates[i], WeightKg: w}
+		}
+		return bios
+	}
+
+	// Weighted: the engine's own decayed fit.
+	weightedLevel := func(spikeIdx int) float64 {
+		trend, _, days := ComputeWeightTrend(series(spikeIdx), dates[0])
+		if days != n {
+			t.Fatalf("ComputeWeightTrend days = %d, want %d", days, n)
+		}
+		return trend
+	}
+
+	// Unweighted control: the same series and calendar offsets, unit weights.
+	unweightedLevel := func(spikeIdx int) float64 {
+		values, obsDates := WeightSeriesForWindow(series(spikeIdx), dates[0])
+		offsets := dayOffsetsForDates(obsDates)
+		slope, intercept := weightedRegressionFit(values, offsets, nil)
+		return slope*offsets[len(offsets)-1] + intercept
+	}
+
+	weightedBase, weightedEarly, weightedLate :=
+		weightedLevel(-1), weightedLevel(earlyIdx), weightedLevel(lateIdx)
+	unweightedBase, unweightedEarly, unweightedLate :=
+		unweightedLevel(-1), unweightedLevel(earlyIdx), unweightedLevel(lateIdx)
+
+	weightedEarlyDelta := math.Abs(weightedEarly - weightedBase)
+	weightedLateDelta := math.Abs(weightedLate - weightedBase)
+	unweightedEarlyDelta := math.Abs(unweightedEarly - unweightedBase)
+	unweightedLateDelta := math.Abs(unweightedLate - unweightedBase)
+
+	if weightedEarlyDelta <= 0 || unweightedEarlyDelta <= 0 {
+		t.Fatalf("spike had no effect: weighted early delta %v, unweighted %v",
+			weightedEarlyDelta, unweightedEarlyDelta)
+	}
+
+	weightedRatio := weightedLateDelta / weightedEarlyDelta
+	if weightedRatio <= 10 {
+		t.Fatalf("weighted late/early spike ratio = %.2f, want > 10 (recent spikes must dominate the fit)",
+			weightedRatio)
+	}
+
+	unweightedRatio := unweightedLateDelta / unweightedEarlyDelta
+	if unweightedRatio >= 4 {
+		t.Fatalf("unweighted late/early spike ratio = %.2f, want < 4 (control shows the decay is doing the work)",
+			unweightedRatio)
+	}
+
+	// The recent spike must still be present but bounded: exponential decay
+	// tames it, it does not erase it or amplify it.
+	if weightedLateDelta <= 0.05 || weightedLateDelta > spikeKg {
+		t.Fatalf("weighted late spike delta = %.4f kg, want within (0.05, %.1f]", weightedLateDelta, spikeKg)
+	}
+}
+
+// TestComputeObservedTDEEIntakeDecayFavoursRecentDays proves the intake half of
+// the half-life: five old 4000 kcal days and two recent 2000 kcal days do not
+// average to the 3429 kcal plain mean. The decayed estimator reports the recent
+// regime (≈2112 kcal), because the recent days carry far more weight.
+func TestComputeObservedTDEEIntakeDecayFavoursRecentDays(t *testing.T) {
+	const (
+		oldCalories    = 4000.0
+		recentCalories = 2000.0
+		oldDays        = 5
+		recentDays     = 2
+		wantObserved   = 2112.0
+	)
+	// A 90-day calendar so the old days are genuinely old (ages 80..72), while
+	// the two recent days are yesterday and today.
+	dates := windowDates(90)
+	ages := []int{80, 78, 76, 74, 72, 2, 1}
+	calories := []float64{
+		oldCalories, oldCalories, oldCalories, oldCalories, oldCalories,
+		recentCalories, recentCalories,
+	}
+
+	sparse := make([]models.NutritionLog, 0, len(ages))
+	for i, age := range ages {
+		sparse = append(sparse, models.NutritionLog{
+			Date:     dates[len(dates)-1-age],
+			Calories: calories[i],
+		})
+	}
+
+	res := ComputeObservedTDEE(sparse, nil, models.Profile{}, 0)
+
+	if res.Method != "rls" {
+		t.Fatalf("Method = %q, want rls (7 logged days)", res.Method)
+	}
+	if res.DaysOfData != oldDays+recentDays {
+		t.Fatalf("DaysOfData = %d, want %d", res.DaysOfData, oldDays+recentDays)
+	}
+	if math.Abs(res.ObservedTDEE-wantObserved) > 20 {
+		t.Fatalf("ObservedTDEE = %v, want ≈%v (recent-dominant)", res.ObservedTDEE, wantObserved)
+	}
+
+	// The whole point: it must sit far below the unweighted mean of the same
+	// logged days, which would be 24000/7 ≈ 3429.
+	plainMean := (oldDays*oldCalories + recentDays*recentCalories) / float64(oldDays+recentDays)
+	if res.ObservedTDEE >= plainMean {
+		t.Fatalf("ObservedTDEE = %v, want below the plain mean %v (recent days must dominate)",
+			res.ObservedTDEE, plainMean)
+	}
+	if res.ObservedTDEE >= 2400 {
+		t.Fatalf("ObservedTDEE = %v, want ≈2112, not a near-even blend with the old 4000 kcal days", res.ObservedTDEE)
+	}
+
+	// Zero-calorie placeholder rows (a day opened but not eaten) are not
+	// observations: they must be skipped, contribute no weight, and leave both
+	// the estimate and DaysOfData untouched.
+	logged := make(map[string]bool, len(sparse))
+	for _, l := range sparse {
+		logged[l.Date] = true
+	}
+	withPlaceholders := make([]models.NutritionLog, 0, len(dates))
+	withPlaceholders = append(withPlaceholders, sparse...)
+	for _, date := range dates {
+		if !logged[date] {
+			withPlaceholders = append(withPlaceholders, models.NutritionLog{Date: date, Calories: 0})
+		}
+	}
+
+	placeholderRes := ComputeObservedTDEE(withPlaceholders, nil, models.Profile{}, 0)
+
+	if placeholderRes.DaysOfData != oldDays+recentDays {
+		t.Fatalf("DaysOfData with zero-calorie placeholders = %d, want %d (placeholders are not days of data)",
+			placeholderRes.DaysOfData, oldDays+recentDays)
+	}
+	if placeholderRes.ObservedTDEE != res.ObservedTDEE {
+		t.Fatalf("ObservedTDEE with placeholders = %v, want identical to sparse %v",
+			placeholderRes.ObservedTDEE, res.ObservedTDEE)
+	}
+	if placeholderRes.Method != res.Method {
+		t.Fatalf("Method with placeholders = %q, want identical to sparse %q",
+			placeholderRes.Method, res.Method)
 	}
 }

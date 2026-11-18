@@ -88,28 +88,36 @@ func LinearRegression(values []float64) (m, b, predicted float64) {
 	return mval, b, predicted
 }
 
-// ComputeWeightTrend fits a least-squares line over the weight observations on
-// or after since. trendKg is the fitted value at the newest observation and
-// rateKgPerWeek is the slope expressed per week. days reports how many distinct
-// weight-bearing days fed the fit, even during burn-in (when trendKg is 0).
+// ComputeWeightTrend fits a decayed weighted least-squares line over the weight
+// observations on or after since. trendKg is the fitted value at the newest
+// observation and rateKgPerWeek is the slope expressed per week. days reports
+// how many distinct weight-bearing days fed the fit, even during burn-in (when
+// trendKg is 0).
 //
 // The regression uses real calendar-day offsets rather than row indices, so
 // weekly or otherwise sparse weigh-ins produce a truthful weekly rate. With
 // row-index spacing, seven weekly weigh-ins a kilogram apart looked like
 // -7 kg/week instead of -1 kg/week.
 //
+// Each observation is weighted by its age in calendar days:
+// w = 2^(-ageDays/ExponentialTrendHalfLifeDays). Recent weigh-ins therefore
+// dominate the fit, and a startup water spike fades over ~14 days instead of
+// being deleted (deleting data is destructive and hides real trends). The
+// slope and the level are still the same energy-balance inputs; only the
+// weighting changed.
+//
 // biometrics must be ordered oldest to newest, which is how the store returns
 // them. Observations outside the plausible human range (20-300 kg) are skipped
 // to match the dashboard's existing weight-trend filtering.
 func ComputeWeightTrend(biometrics []models.BiometricLog, since string) (trendKg, rateKgPerWeek float64, days int) {
-	weights, dayOffsets, _ := weightSeriesForWindow(biometrics, since)
+	values, dayOffsets, dates, _ := weightSeriesForWindow(biometrics, since)
 
-	days = len(weights)
+	days = len(values)
 	if days < MinWeightTrendDays {
 		return 0, 0, days
 	}
 
-	slope, intercept := regressionFit(weights, dayOffsets)
+	slope, intercept := weightedRegressionFit(values, dayOffsets, decayWeightsForDates(dates))
 	// Evaluate the fit at the newest observation's calendar offset. This is the
 	// smoothed level, not a forecast beyond the data.
 	trendKg = slope*dayOffsets[len(dayOffsets)-1] + intercept
@@ -172,11 +180,13 @@ func dayOffsetsForDates(dates []string) []float64 {
 // weightSeriesForWindow collects plausible weight observations inside the
 // lookback window, oldest to newest, and expresses each observation as days
 // since the first one. Real calendar offsets (rather than row indices) keep the
-// slope correct when the user weighs in sparsely.
-func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weights, dayOffsets []float64, spanDays float64) {
-	weights, dates := weightSeriesWithDates(biometrics, since)
-	if len(weights) == 0 {
-		return nil, nil, 0
+// slope correct when the user weighs in sparsely. The dates are returned so
+// callers can derive observation weights (age relative to today) from exactly
+// the same deduplicated series the fit uses.
+func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (values, dayOffsets []float64, dates []string, spanDays float64) {
+	values, dates = weightSeriesWithDates(biometrics, since)
+	if len(values) == 0 {
+		return nil, nil, nil, 0
 	}
 
 	dayOffsets = dayOffsetsForDates(dates)
@@ -192,10 +202,200 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 	if maxOffset > minOffset {
 		spanDays = maxOffset - minOffset
 	}
-	return weights, dayOffsets, spanDays
+	return values, dayOffsets, dates, spanDays
 }
 
-// RollingWeightTrendLevels fits the same least-squares regression used by
+// decayWeightForAgeDays is the engine-wide observation weight:
+//
+//	w(age) = 2^(-age/halfLife) = exp(-ln2 * age / halfLife)
+//
+// At the half-life (14 days) an observation carries half the weight of one
+// logged today; at twice the half-life, a quarter.
+func decayWeightForAgeDays(ageDays float64) float64 {
+	if ageDays <= 0 {
+		// Today's observation, or a future-dated log (clamped): full weight.
+		return 1
+	}
+	return math.Exp(-math.Ln2 * ageDays / constants.ExponentialTrendHalfLifeDays)
+}
+
+// decayWeightsForDates returns one observation weight per date, measured as the
+// calendar-day distance from the date to today. Dates are parsed with the
+// canonical date format and compared on local-midnight boundaries so a DST day
+// cannot shift a weight. A malformed date falls back to its index distance from
+// the newest observation, which keeps one bad record from collapsing the fit.
+func decayWeightsForDates(dates []string) []float64 {
+	weights := make([]float64, len(dates))
+	if len(dates) == 0 {
+		return weights
+	}
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	newest := float64(len(dates) - 1)
+
+	for i, date := range dates {
+		d, err := time.Parse(constants.DateFormat, date)
+		if err != nil {
+			weights[i] = decayWeightForAgeDays(newest - float64(i))
+			continue
+		}
+		day := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+		ageDays := today.Sub(day).Hours() / 24
+		weights[i] = decayWeightForAgeDays(ageDays)
+	}
+	return weights
+}
+
+// weightedMean returns the weighted arithmetic mean of values. Entries with a
+// non-positive weight are skipped. Days with no observation are simply absent
+// from the slice: they contribute neither weight nor a zero value, which keeps
+// the "no log is not a zero-calorie day" policy intact.
+func weightedMean(values, sampleWeights []float64) float64 {
+	var num, den float64
+	for i, v := range values {
+		w := 1.0
+		if i < len(sampleWeights) {
+			w = sampleWeights[i]
+		}
+		if w <= 0 {
+			continue
+		}
+		num += w * v
+		den += w
+	}
+	if den == 0 {
+		return 0
+	}
+	return num / den
+}
+
+// weightedRegressionFit fits y = m*x + b by weighted least squares:
+//
+//	minimise sum_i w_i * (y_i - m*x_i - b)^2
+//
+// It returns the slope and the intercept at x = 0. A nil or short
+// sampleWeights slice means unit weights, which reproduces ordinary least
+// squares exactly, so every caller (weight trend, trend curve, intake level)
+// shares one implementation. When all x are identical the fit degenerates to
+// the weighted mean level.
+func weightedRegressionFit(values, dayOffsets, sampleWeights []float64) (slope, intercept float64) {
+	n := len(values)
+	if n < 2 {
+		if n == 1 {
+			return 0, values[0]
+		}
+		return 0, 0
+	}
+
+	weightAt := func(i int) float64 {
+		if i < len(sampleWeights) {
+			if w := sampleWeights[i]; w > 0 {
+				return w
+			}
+			return 0
+		}
+		return 1
+	}
+
+	var sumW, sumWX, sumWY float64
+	for i, v := range values {
+		w := weightAt(i)
+		if w == 0 {
+			continue
+		}
+		sumW += w
+		sumWX += w * dayOffsets[i]
+		sumWY += w * v
+	}
+	if sumW == 0 {
+		return 0, 0
+	}
+
+	meanX := sumWX / sumW
+	meanY := sumWY / sumW
+
+	var num, den float64
+	for i, v := range values {
+		w := weightAt(i)
+		if w == 0 {
+			continue
+		}
+		dx := dayOffsets[i] - meanX
+		num += w * dx * (v - meanY)
+		den += w * dx * dx
+	}
+	if den != 0 {
+		slope = num / den
+	}
+	return slope, meanY - slope*meanX
+}
+
+// weightedRegressionSlopeKgPerDay returns only the calendar-day slope of the
+// weighted fit.
+func weightedRegressionSlopeKgPerDay(values, dayOffsets, sampleWeights []float64) float64 {
+	slope, _ := weightedRegressionFit(values, dayOffsets, sampleWeights)
+	return slope
+}
+
+// weightedRLS is recursive least squares for a constant level with exponential
+// forgetting (lambda per sample) and per-sample observation weights. It tracks
+// the accumulated information I_k = lambda*I_{k-1} + w_k and moves the estimate
+// by the fraction w_k/I_k of the observed error, which is the exact recursive
+// solution of sum_i lambda^(k-i) * w_i * (y_i - level)^2. With unit weights the
+// second sample's gain is 1/(1+lambda).
+func weightedRLS(values, sampleWeights []float64, lambda float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	level := values[0]
+	var info float64
+	for i, v := range values {
+		w := 1.0
+		if i < len(sampleWeights) {
+			w = sampleWeights[i]
+		}
+		if w <= 0 {
+			continue
+		}
+		info = lambda*info + w
+		level += (w / info) * (v - level)
+	}
+	return level
+}
+
+// weightedEMA is an exponential moving average with per-sample observation
+// weights. Both the value and the weight mass are smoothed with the same alpha
+// and the result is their ratio, so the estimate is a properly normalised
+// average. With unit weights the denominator is exactly 1 and the recursion
+// reduces to the historical EMA (seeded at the first observation).
+func weightedEMA(values, sampleWeights []float64, alpha float64) float64 {
+	var num, den float64
+	for i, v := range values {
+		w := 1.0
+		if i < len(sampleWeights) {
+			w = sampleWeights[i]
+		}
+		if w <= 0 {
+			continue
+		}
+		if den == 0 {
+			// Seed on the first usable observation, matching the historical
+			// EMA which started from values[0].
+			num = w * v
+			den = w
+			continue
+		}
+		num = alpha*w*v + (1-alpha)*num
+		den = alpha*w + (1-alpha)*den
+	}
+	if den == 0 {
+		return 0
+	}
+	return num / den
+}
+
+// RollingWeightTrendLevels fits the same decayed weighted regression used by
 // ComputeWeightTrend at every observation. Each entry is the fitted level at
 // that observation using only the observations up to and including it (an
 // expanding-window, causal fit), so the curve never looks ahead. Entries before
@@ -205,11 +405,13 @@ func weightSeriesForWindow(biometrics []models.BiometricLog, since string) (weig
 // two-point line exists by the seventh weigh-in; the headline itself still
 // requires MinWeightTrendDays.
 //
-// The final entry fits the whole series and is evaluated at the newest
-// observation, which is exactly what ComputeWeightTrend reports as trendKg once
-// the headline gate is met. Passing the same weights/dates as the headline
-// therefore makes the dashboard curve and the headline number agree by
-// construction.
+// The observation weights come from the same decayWeightsForDates helper the
+// headline uses, and they are fixed per observation (age relative to today) for
+// every expanding fit. The final entry therefore fits the whole series with the
+// identical weights and is evaluated at the newest observation, which is
+// exactly what ComputeWeightTrend reports as trendKg once the headline gate is
+// met. Passing the same weights/dates as the headline makes the dashboard curve
+// and the headline number agree by construction.
 func RollingWeightTrendLevels(weights []float64, dates []string) []*float64 {
 	n := len(weights)
 	levels := make([]*float64, n)
@@ -226,52 +428,16 @@ func RollingWeightTrendLevels(weights []float64, dates []string) []*float64 {
 		}
 	}
 
+	sampleWeights := decayWeightsForDates(dates)
 	for i := 0; i < n; i++ {
 		if i+1 < MinTrendCurveDays {
 			continue
 		}
-		slope, intercept := regressionFit(weights[:i+1], offsets[:i+1])
+		slope, intercept := weightedRegressionFit(weights[:i+1], offsets[:i+1], sampleWeights[:i+1])
 		level := slope*offsets[i] + intercept
 		levels[i] = &level
 	}
 	return levels
-}
-
-// regressionFit fits weight against elapsed days and returns the slope and the
-// intercept at day zero (the first observation). It is the same least-squares
-// math as LinearRegression, parameterised by real day offsets so sparse
-// weigh-ins are not distorted.
-func regressionFit(weights, dayOffsets []float64) (slope, intercept float64) {
-	n := float64(len(weights))
-	if n < 2 {
-		if n == 1 {
-			return 0, weights[0]
-		}
-		return 0, 0
-	}
-	var sumX, sumY float64
-	for i, w := range weights {
-		sumX += dayOffsets[i]
-		sumY += w
-	}
-	meanX := sumX / n
-	meanY := sumY / n
-	var num, den float64
-	for i, w := range weights {
-		x := dayOffsets[i]
-		num += (x - meanX) * (w - meanY)
-		den += (x - meanX) * (x - meanX)
-	}
-	if den != 0 {
-		slope = num / den
-	}
-	return slope, meanY - slope*meanX
-}
-
-// regressionSlopeKgPerDay returns only the calendar-day slope of the fit.
-func regressionSlopeKgPerDay(weights, dayOffsets []float64) float64 {
-	slope, _ := regressionFit(weights, dayOffsets)
-	return slope
 }
 
 // ComputeObservedTDEE implements the energy-balance estimator:
@@ -305,9 +471,11 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 	// Weight-energy term inputs. Reliability requires both a minimum number of
 	// distinct weight days and a real calendar span: seven consecutive daily
 	// weigh-ins only span six days, which is too short to distinguish water
-	// shifts from a genuine trend.
-	weights, dayOffsets, weightSpanDays := weightSeriesForWindow(biometrics, startDate)
-	weightReliable := len(weights) >= MinWeightReliableDays && weightSpanDays >= MinWeightReliableSpanDays
+	// shifts from a genuine trend. The slope itself is decay-weighted (see
+	// weightedRegressionFit) so recent weigh-ins dominate, matching the intake
+	// estimate's half-life.
+	values, dayOffsets, weightDates, weightSpanDays := weightSeriesForWindow(biometrics, startDate)
+	weightReliable := len(values) >= MinWeightReliableDays && weightSpanDays >= MinWeightReliableSpanDays
 
 	// Static profile estimate. Used for display, and as the safety fallback
 	// when the observed energy balance is implausibly low.
@@ -329,11 +497,17 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 		}
 	}
 
-	// collect calorie values oldest->newest
+	// Collect calorie values oldest->newest. Only days with a logged intake are
+	// included: a missing day is not a zero-calorie day, so it contributes
+	// neither calories nor weight. Each logged day is then decay-weighted by
+	// its calendar age (same 14-day half-life as the weight fit), which is the
+	// "recent intake votes more" half of the engine.
 	var calories []float64
+	var calorieDates []string
 	for _, l := range logs {
 		if l.Date >= startDate && l.Calories > 0 {
 			calories = append(calories, l.Calories)
+			calorieDates = append(calorieDates, l.Date)
 		}
 	}
 	days := len(calories)
@@ -351,32 +525,7 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 		}
 	}
 
-	// helper functions
-	rlsFilter := func(values []float64, lambda float64) float64 {
-		if len(values) == 0 {
-			return 0
-		}
-		x := values[0]
-		gain := 1.0
-		for i := 1; i < len(values); i++ {
-			y := values[i]
-			err := y - x
-			x = x + gain*err
-			gain = gain * lambda / (lambda + gain)
-		}
-		return x
-	}
-
-	computeEMAValue := func(values []float64, alpha float64) float64 {
-		if len(values) == 0 {
-			return 0
-		}
-		ema := values[0]
-		for i := 1; i < len(values); i++ {
-			ema = alpha*values[i] + (1-alpha)*ema
-		}
-		return ema
-	}
+	decayWeights := decayWeightsForDates(calorieDates)
 
 	var intakeEstimate float64
 	method := ""
@@ -385,31 +534,30 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 	switch {
 	case days < 4:
 		// Tiny series: a mean is the only defensible level. A regression on
-		// three points can imply absurd slopes.
-		var sum float64
-		for _, c := range calories {
-			sum += c
-		}
-		intakeEstimate = sum / float64(days)
+		// three points can imply absurd slopes. The mean is decay-weighted, so
+		// with a one- or two-day history it is still just those days.
+		intakeEstimate = weightedMean(calories, decayWeights)
 		method = "mean"
 	case days < 7:
 		// Short series: use the fitted LEVEL at the last observation. Do NOT
-		// use LinearRegression's predicted value (evaluate at x = n), which is
-		// a one-step forecast beyond the data and amplifies the last intake
-		// spike. The historical bug: [3000,3200,3400,4600] forecast 4800
-		// instead of the fitted level near the series.
-		slope, intercept, _ := LinearRegression(calories)
+		// use a fitted value evaluated beyond the data, which is a one-step
+		// forecast and amplifies the last intake spike. The historical bug:
+		// [3000,3200,3400,4600] forecast 4800 instead of the fitted level near
+		// the series. The fit is decay-weighted like every other regression in
+		// the engine; x stays the row index, which is the established
+		// convention for this tier.
+		offsets := make([]float64, days)
+		for i := range offsets {
+			offsets[i] = float64(i)
+		}
+		slope, intercept := weightedRegressionFit(calories, offsets, decayWeights)
 		intakeEstimate = slope*float64(days-1) + intercept
 		method = "linear_regression"
 		confidence = "medium"
 	case days < 30:
-		rls := rlsFilter(calories, RLSForgettingFactor)
+		rls := weightedRLS(calories, decayWeights, RLSForgettingFactor)
 		if rls <= 0 {
-			var s float64
-			for _, c := range calories {
-				s += c
-			}
-			rls = s / float64(len(calories))
+			rls = weightedMean(calories, decayWeights)
 		}
 		intakeEstimate = rls
 		method = "rls"
@@ -419,7 +567,7 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 			confidence = "medium"
 		}
 	default:
-		ema := computeEMAValue(calories, TDEEEMAAlpha)
+		ema := weightedEMA(calories, decayWeights, TDEEEMAAlpha)
 		if ema <= 0 {
 			ema = DefaultFallbackTDEE
 		}
@@ -435,7 +583,7 @@ func ComputeObservedTDEE(logs []models.NutritionLog, biometrics []models.Biometr
 	observed := intakeEstimate
 	warning := ""
 	if weightReliable {
-		slopeKgPerDay := regressionSlopeKgPerDay(weights, dayOffsets)
+		slopeKgPerDay := weightedRegressionSlopeKgPerDay(values, dayOffsets, decayWeightsForDates(weightDates))
 		bodyEnergyRateKcalPerDay := slopeKgPerDay * BodyEnergyDensityKcalPerKg
 		observed = intakeEstimate - bodyEnergyRateKcalPerDay
 	}
