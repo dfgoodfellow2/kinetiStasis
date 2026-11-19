@@ -3,7 +3,7 @@
   import { api } from '../lib/api.js'
   import { store, clearEditData } from '../lib/stores.svelte.js'
   import { saveDraft, loadDraft, clearDraft } from '../lib/draft.js'
-  import { today, daysAgo, dispWeight, weightUnit, inputWeight, dispLength, lengthUnit, inputLength, inputLoad, dispLoad, loadUnit, kgToLbs } from '../lib/utils.js'
+  import { today, daysAgo, dispWeight, weightUnit, inputWeight, dispLength, lengthUnit, inputLength, inputLoad, dispLoad, loadUnit, kgToLbs, editWeightValue, editLoadValue } from '../lib/utils.js'
   import Card from '../components/Card.svelte'
   import Spinner from '../components/Spinner.svelte'
   import Alert from '../components/Alert.svelte'
@@ -127,6 +127,8 @@
   let draftRestored = $state(false)
   // True while the daily form was populated from an existing biometric row.
   let isEdit = $state(false)
+  // Raw stored kg behind an edit prefill, kept for symmetry checks in the DOM.
+  let storedKg = $state({ weightKg: null, gripKg: null })
 
   // Draft the daily check-in form only.
   function hasDraftContent(f) {
@@ -147,6 +149,7 @@
     draftRestored = false
     isEdit = false
     tab = 'daily'
+    storedKg = { weightKg: null, gripKg: null }
     dailyForm = emptyDailyForm()
   }
 
@@ -174,6 +177,7 @@
       clearDraft(DRAFT_KEY)
       draftRestored = false
       isEdit = false
+      storedKg = { weightKg: null, gripKg: null }
       dailyForm = emptyDailyForm()
     } catch (e) {
       dailyError = e.message
@@ -418,10 +422,13 @@
         // Mark the edit before touching the form so the draft effect cannot
         // snapshot the row being edited.
         isEdit = true
+        // Form fields are display units; stored kg is converted on prefill and
+        // back on submit, exactly like the measurement edit path.
+        storedKg = { weightKg: row.weightKg ?? null, gripKg: row.gripKg ?? null }
         dailyForm = { 
           date: row.date, 
-          weightKg: String(row.weightKg ?? ''),
-          gripKg: String(row.gripKg ?? ''),
+          weightKg: editWeightValue(row.weightKg, store.units),
+          gripKg: editLoadValue(row.gripKg, store.units),
           boltScore: String(row.boltScore ?? ''),
           sleepHours: String(row.sleepHours ?? ''),
           sleepQuality: String(row.sleepQuality ?? ''),
@@ -490,7 +497,8 @@
 
         <div>
           <label class="text-xs text-gray-400" for="ci-weight">Weight ({weightUnit(store.units)})</label>
-          <input class="input" id="ci-weight" type="number" step="0.1" bind:value={dailyForm.weightKg} />
+          <input class="input" id="ci-weight" type="number" step="0.1" bind:value={dailyForm.weightKg}
+            data-stored-kg={storedKg.weightKg ?? ''} />
         </div>
 
         <div>
@@ -498,7 +506,8 @@
             <label class="text-xs text-gray-400" for="ci-grip">Grip Strength ({loadUnit(store.units)})</label>
             <InfoTip label="grip strength" text="Hand-dynamometer grip in kg — same time of day, best of 2-3 tries. Grip dips when your nervous system is run down." />
           </div>
-          <input class="input" id="ci-grip" type="number" step="0.1" bind:value={dailyForm.gripKg} />
+          <input class="input" id="ci-grip" type="number" step="0.1" bind:value={dailyForm.gripKg}
+            data-stored-kg={storedKg.gripKg ?? ''} />
         </div>
 
         <div>

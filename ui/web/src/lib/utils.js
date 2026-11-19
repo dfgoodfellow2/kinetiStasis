@@ -77,6 +77,20 @@ export const distUnit    = units => units === 'imperial' ? 'mi'  : 'km'
 export const elevUnit    = units => units === 'imperial' ? 'ft'  : 'm'
 export const loadUnit    = units => units === 'imperial' ? 'lbs' : 'kg'
 
+// Edit prefill helpers (backend kg → display-unit string for an input field)
+// Return '' when there is no stored value, so blank rows stay blank. Reuse the
+// display helpers so prefill and inputWeight/inputLoad stay symmetric inverses.
+export const editWeightValue = (kg, units) => {
+    const n = +kg
+    if (!isFinite(n) || n <= 0) return ''
+    return String(dispWeight(n, units))
+}
+export const editLoadValue   = (kg, units) => {
+    const n = +kg
+    if (!isFinite(n) || n <= 0) return ''
+    return String(dispLoad(n, units))
+}
+
 // Input → backend: convert user-entered display value back to metric for storage
 export const inputWeight = (val, units) => units === 'imperial' ? lbsToKg(+val)  : +val  // store as kg
 export const inputLength = (val, units) => units === 'imperial' ? inToCm(+val)   : +val  // store as cm
